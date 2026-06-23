@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PT. BAS - Engineering Job Order (EJO) Web Dashboard. Track, manage, and analyze engineering maintenance and project job orders.">
+    <title>PT. BAS | EJO Dashboard</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="lucide.min.js"></script>
+    <!-- Chart.js -->
+    <script src="chart.js"></script>
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="style.css?v=2.1">
+</head>
+<body>
+    <!-- Login Screen Container -->
+    <div class="login-wrapper" id="login-container">
+        <div class="login-box card-glass animate-in">
+            <div class="login-logo">
+                <div class="logo-icon" style="background: none; box-shadow: none; width: 80px; height: 80px;">
+                    <img src="Logo-Kecap-Sedaap.png" alt="Logo Kecap Sedaap" style="width: 100%; height: 100%; object-fit: contain;">
+                </div>
+                <h2>PT. BAS</h2>
+                <span>EJO PORTAL SYSTEM</span>
+            </div>
+            
+            <form id="login-form" class="login-form">
+                <div class="form-field">
+                    <label for="login-username">Username <span class="required">*</span></label>
+                    <input type="text" id="login-username" placeholder="Username (dani/budi/charlie/deddy)" required>
+                </div>
+                
+                <div class="form-field">
+                    <label for="login-password">Password <span class="required">*</span></label>
+                    <div class="password-input-wrapper">
+                        <input type="password" id="login-password" placeholder="Password (dani123/budi123/...)" required>
+                        <button type="button" class="btn-toggle-password" id="btn-toggle-pass" title="Tampilkan Password">
+                            <i data-lucide="eye" id="pass-eye-icon" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="login-error-msg" class="login-error-msg" style="display: none; color: var(--color-rose); font-size: 0.8rem; margin-top: 0.5rem; text-align: left;">
+                    <i data-lucide="alert-circle" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle; margin-right: 4px;"></i>
+                    <span>Username atau password salah!</span>
+                </div>
+                
+                <button type="submit" class="btn btn-primary glow-button full-width" style="margin-top: 1.5rem;">
+                    <i data-lucide="log-in"></i> Masuk Ke Dashboard
+                </button>
+            </form>
+            
+            <div class="login-note" style="margin-top: 1.5rem; border-top: 1px solid var(--card-border); padding-top: 1rem;">
+                <p class="text-secondary text-xs" style="line-height: 1.4;">Akses terbatas untuk personel PT. BAS yang berwenang. Pembuatan akun baru diurus langsung oleh sistem administrator.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Container -->
+    <div class="app-container" style="display: none;">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="logo-icon" style="background: none; box-shadow: none; width: 44px; height: 44px;">
+                    <img src="Logo-Kecap-Sedaap.png" alt="Logo Kecap Sedaap" style="width: 100%; height: 100%; object-fit: contain;">
+                </div>
+                <div class="brand-text">
+                    <h1>PT. BAS</h1>
+                    <span>ENGINEERING EJO</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-tab="overview">
+                    <i data-lucide="layout-dashboard"></i>
+                    <span>Dashboard</span>
+                </button>
+                <button class="nav-btn" data-tab="job-orders">
+                    <i data-lucide="clipboard-list"></i>
+                    <span>Job Orders</span>
+                </button>
+                <button class="nav-btn" data-tab="create-order">
+                    <i data-lucide="plus-circle"></i>
+                    <span>Buat EJO</span>
+                </button>
+                <button class="nav-btn" data-tab="engineers">
+                    <i data-lucide="users"></i>
+                    <span>Tim Engineer</span>
+                </button>
+                <button class="nav-btn" data-tab="history">
+                    <i data-lucide="archive"></i>
+                    <span>History EJO</span>
+                </button>
+                <button class="nav-btn" data-tab="projects">
+                    <i data-lucide="milestone"></i>
+                    <span>Project Monitoring</span>
+                </button>
+                <button class="nav-btn" data-tab="admin" id="nav-admin-btn" style="display: none;">
+                    <i data-lucide="shield-alert"></i>
+                    <span>Admin Panel</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-profile" style="position: relative; display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label class="avatar-upload-wrapper" for="avatar-file-input" title="Ganti Foto Profil">
+                            <img src="" alt="Avatar" class="avatar" id="sidebar-avatar">
+                            <div class="avatar-overlay"><i data-lucide="camera" style="width:16px;height:16px;"></i></div>
+                            <input type="file" id="avatar-file-input" accept="image/*" style="display:none;">
+                        </label>
+                        <div class="user-info">
+                            <h4 id="sidebar-fullname">Nama User</h4>
+                            <span id="sidebar-role" style="font-size:0.7rem; color:var(--text-secondary);">Role</span>
+                        </div>
+                    </div>
+                    <button class="btn-logout" id="btn-logout" title="Keluar dari Akun" style="background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: var(--border-radius-sm); transition: var(--transition-smooth);">
+                        <i data-lucide="log-out" style="width: 18px; height: 18px;"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            
+            <!-- Top Navigation / Header -->
+            <header class="app-header">
+                <div class="header-left">
+                    <h2 id="page-title">Dashboard Overview</h2>
+                    <p class="text-secondary" id="page-subtitle">Monitoring status, kinerja, dan anggaran order lapangan.</p>
+                </div>
+                <div class="header-right">
+                    <div class="time-widget card-glass">
+                        <i data-lucide="clock"></i>
+                        <span id="live-clock">23 Jun 2026, 09:30 WIB</span>
+                    </div>
+                    <button class="notification-btn card-glass cursor-pointer" id="btn-theme-toggle" title="Ganti Tema">
+                        <i data-lucide="moon" id="theme-icon"></i>
+                    </button>
+                    <div class="notification-btn card-glass cursor-pointer" id="notify-trigger">
+                        <i data-lucide="bell"></i>
+                        <span class="badge badge-pulse">2</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Workspace Dynamic Tabs -->
+            <div class="workspace-body">
+                
+                <!-- TAB 1: OVERVIEW -->
+                <section id="tab-overview" class="tab-pane active">
+                    <!-- KPI Scorecards Grid -->
+                    <div class="kpi-grid">
+                        <div class="kpi-card card-glass glow-blue">
+                            <div class="kpi-icon icon-blue">
+                                <i data-lucide="file-text"></i>
+                            </div>
+                            <div class="kpi-data">
+                                <span class="kpi-label">Total EJO</span>
+                                <h3 class="kpi-value" id="kpi-total">--</h3>
+                                <span class="kpi-trend text-blue" id="kpi-total-sub"><i data-lucide="trending-up"></i> +12% bulan ini</span> <!-- ponytail: added id -->
+                            </div>
+                        </div>
+                        <div class="kpi-card card-glass glow-yellow">
+                            <div class="kpi-icon icon-yellow">
+                                <i data-lucide="clock-alert"></i>
+                            </div>
+                            <div class="kpi-data">
+                                <span class="kpi-label">Menunggu Persetujuan</span>
+                                <h3 class="kpi-value" id="kpi-pending">--</h3>
+                                <span class="kpi-trend text-yellow" id="kpi-pending-sub">Butuh Approval</span>
+                            </div>
+                        </div>
+                        <div class="kpi-card card-glass glow-cyan">
+                            <div class="kpi-icon icon-cyan">
+                                <i data-lucide="loader"></i>
+                            </div>
+                            <div class="kpi-data">
+                                <span class="kpi-label">Sedang Dikerjakan</span>
+                                <h3 class="kpi-value" id="kpi-progress">--</h3>
+                                <span class="kpi-trend text-cyan" id="kpi-progress-sub">In Progress</span> <!-- ponytail: added id -->
+                            </div>
+                        </div>
+                        <div class="kpi-card card-glass glow-green">
+                            <div class="kpi-icon icon-green">
+                                <i data-lucide="check-circle2"></i>
+                            </div>
+                            <div class="kpi-data">
+                                <span class="kpi-label">Selesai Bulan Ini</span>
+                                <h3 class="kpi-value" id="kpi-completed">--</h3>
+                                <span class="kpi-trend text-green" id="kpi-completed-sub"><i data-lucide="trending-up"></i> 94.2% Success Rate</span> <!-- ponytail: added id -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Layout: Analytics & Alerts Grid -->
+                    <div class="analytics-layout-grid">
+                        <!-- Chart Area 1: Status & Trend -->
+                        <div class="chart-card card-glass">
+                            <div class="card-header">
+                                <div>
+                                    <h3>Status & Tren Bulanan</h3>
+                                    <p class="text-secondary text-xs">Perbandingan volume Job Order masuk & selesai.</p>
+                                </div>
+                                <div class="card-actions">
+                                    <span class="badge badge-accent">Live Chart</span>
+                                </div>
+                            </div>
+                            <div class="card-body chart-container">
+                                <canvas id="trendChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Chart Area 2: Status Distribution -->
+                        <div class="chart-card card-glass">
+                            <div class="card-header">
+                                <h3>Proporsi Status EJO</h3>
+                                <p class="text-secondary text-xs">Distribusi penanganan order saat ini.</p>
+                            </div>
+                            <div class="card-body chart-container doughnut-wrap">
+                                <canvas id="statusChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Section: Department Load & Recent Activities -->
+                    <div class="analytics-layout-grid grid-main-bottom">
+                        <!-- Department Load Chart -->
+                        <div class="chart-card card-glass">
+                            <div class="card-header">
+                                <h3>EJO per Departemen Pemohon</h3>
+                                <p class="text-secondary text-xs">Distribusi permintaan berdasarkan unit kerja asal.</p>
+                            </div>
+                            <div class="card-body chart-container">
+                                <canvas id="deptChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Recent Job Orders / Alerts -->
+                        <div class="list-card card-glass">
+                            <div class="card-header">
+                                <h3>Order Mendesak & Terbaru</h3>
+                                <p class="text-secondary text-xs">EJO dengan prioritas mendesak (Emergency / High).</p>
+                            </div>
+                            <div class="card-body text-scroll">
+                                <div class="recent-list" id="critical-ejo-list">
+                                    <!-- Dynamic list of critical EJOs -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 2: JOB ORDERS LIST -->
+                <section id="tab-job-orders" class="tab-pane">
+                    <!-- Control Bar (Filter, Search, Sort) -->
+                    <div class="control-bar card-glass">
+                        <div class="search-wrapper">
+                            <i data-lucide="search" class="icon-secondary"></i>
+                            <input type="text" id="search-input" placeholder="Cari Kode EJO, Judul, Mesin atau Engineer...">
+                        </div>
+                        
+                        <div class="filters-wrapper">
+                            <div class="filter-group">
+                                <label for="filter-status">Status</label>
+                                <select id="filter-status">
+                                    <option value="all">Semua Status</option>
+                                    <option value="Requested">Requested (Menunggu)</option>
+                                    <option value="Approved">Approved (Disetujui)</option>
+                                    <option value="In Progress">In Progress (Berjalan)</option>
+                                    <option value="Completed">Completed (Selesai)</option>
+                                    <option value="Cancelled">Cancelled (Batal)</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-group">
+                                <label for="filter-priority">Prioritas</label>
+                                <select id="filter-priority">
+                                    <option value="all">Semua Prioritas</option>
+                                    <option value="Emergency">Emergency</option>
+                                    <option value="High">High</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="Low">Low</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-group">
+                                <label for="filter-dept">Departemen</label>
+                                <select id="filter-dept">
+                                    <option value="all">Semua Dept</option>
+                                    <option value="Production">Production</option>
+                                    <option value="Maintenance">Maintenance</option>
+                                    <option value="Quality Control">QC (Quality Control)</option>
+                                    <option value="HSE">HSE</option>
+                                    <option value="Utility">Utility</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-primary" id="btn-quick-new">
+                            <i data-lucide="plus"></i> EJO Baru
+                        </button>
+                    </div>
+
+                    <!-- Job Orders Results Summary -->
+                    <div class="results-meta">
+                        <span id="results-count" class="text-secondary">Ditemukan 0 Job Order</span>
+                        <div class="view-toggles">
+                            <button class="btn-toggle active" id="view-grid-btn" title="Grid View">
+                                <i data-lucide="layout-grid"></i>
+                            </button>
+                            <button class="btn-toggle" id="view-table-btn" title="Table View">
+                                <i data-lucide="list"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Grid Layout for cards -->
+                    <div class="job-grid-view active" id="job-orders-container">
+                        <!-- Dynamic Job Order Cards -->
+                    </div>
+
+                    <!-- Table Layout (Alternative view) -->
+                    <div class="job-table-view card-glass" id="job-orders-table-wrapper" style="display: none;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID EJO</th>
+                                    <th>Deskripsi Pekerjaan</th>
+                                    <th>Departemen</th>
+                                    <th>Prioritas</th>
+                                    <th>Engineer</th>
+                                    <th>Tanggal Target</th>
+                                    <th>Status</th>
+                                    <th style="text-align: right;">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="job-orders-table-body">
+                                <!-- Dynamic Job Order Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- TAB 3: CREATE ORDER -->
+                <section id="tab-create-order" class="tab-pane">
+                    <div class="form-layout-container">
+                        <div class="form-card card-glass">
+                            <div class="card-header border-bottom">
+                                <h3>Buat Permintaan Engineering Job Order Baru</h3>
+                                <p class="text-secondary text-xs">Isi formulir dengan detail teknis agar tim Engineer dapat langsung melakukan mitigasi.</p>
+                            </div>
+                            
+                            <form id="ejo-form" class="order-form">
+                                <div class="form-grid">
+                                    <div class="form-field full-width">
+                                        <label for="form-title">Judul Pekerjaan / Kerusakan <span class="required">*</span></label>
+                                        <input type="text" id="form-title" placeholder="Contoh: Overhaul Motor Pompa Centrifugal Chiller 01" required>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label for="form-dept">Departemen Pemohon <span class="required">*</span></label>
+                                        <select id="form-dept" required>
+                                            <option value="" disabled selected>Pilih Departemen</option>
+                                            <option value="Production">Production</option>
+                                            <option value="Maintenance">Maintenance</option>
+                                            <option value="Quality Control">QC (Quality Control)</option>
+                                            <option value="HSE">HSE</option>
+                                            <option value="Utility">Utility</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label for="form-category">Kategori Teknik <span class="required">*</span></label>
+                                        <select id="form-category" required>
+                                            <option value="" disabled selected>Pilih Kategori</option>
+                                            <option value="Sipil">Sipil</option>
+                                            <option value="Elektrik">Elektrik</option>
+                                            <option value="Kalibrasi">Kalibrasi</option>
+                                            <option value="Mekanik">Mekanik</option>
+                                            <option value="Otomotif">Otomotif</option>
+                                            <option value="Program">Program</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label for="form-priority">Prioritas Dampak <span class="required">*</span></label>
+                                        <select id="form-priority" required>
+                                            <option value="Low">Low - Rutin / Tidak Mendesak</option>
+                                            <option value="Medium" selected>Medium - Normal Kerja</option>
+                                            <option value="High">High - Unit Kritis Terganggu</option>
+                                            <option value="Emergency">Emergency - Line Stop / Bahaya HSE</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label for="form-target-date">Target Selesai <span class="required">*</span></label>
+                                        <input type="date" id="form-target-date" required>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label for="form-location">Lokasi Unit / Nama Mesin <span class="required">*</span></label>
+                                        <input type="text" id="form-location" placeholder="Contoh: Area utility, Boiler Room Lt 2" required>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label for="form-budget">Perkiraan Biaya (Rp)</label>
+                                        <input type="number" id="form-budget" placeholder="Contoh: 15000000" min="0">
+                                    </div>
+
+                                    <div class="form-field full-width">
+                                        <label for="form-description">Detail Kerusakan / Ruang Lingkup Pekerjaan <span class="required">*</span></label>
+                                        <textarea id="form-description" rows="5" placeholder="Jelaskan secara detail gejala kerusakan, kebutuhan spare part awal, atau spesifikasi modifikasi yang diinginkan..." required></textarea>
+                                    </div>
+
+                                    <div class="form-field">
+                                        <label for="form-engineer">Rekomendasi Engineer Penanggung Jawab</label>
+                                        <select id="form-engineer">
+                                            <option value="Unassigned">Belum Ditentukan (Antrean Admin)</option>
+                                            <option value="Ahmad Dani">Ahmad Dani (Mech / Hyd)</option>
+                                            <option value="Budi Utomo">Budi Utomo (Elec / Automation)</option>
+                                            <option value="Charlie Santoso">Charlie Santoso (Civil / Structural)</option>
+                                            <option value="Deddy Corbuzier">Deddy Corbuzier (Instrumentation)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-field">
+                                         <label for="form-attachment">Upload Foto / Dokumen Pendukung</label>
+                                         <div class="file-upload-mock">
+                                             <i data-lucide="upload-cloud"></i>
+                                             <span>Klik atau seret gambar ke sini</span>
+                                             <input type="file" id="form-attachment" style="display: none;" multiple accept="image/*">
+                                         </div>
+                                         <div id="create-attachment-previews" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;"></div>
+                                     </div>
+                                </div>
+
+                                <div class="form-actions border-top">
+                                    <button type="button" class="btn btn-secondary" id="btn-cancel-create">Batal</button>
+                                    <button type="submit" class="btn btn-primary glow-button">
+                                        <i data-lucide="send"></i> Kirim Job Order
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 4: ENGINEERS TEAM -->
+                <section id="tab-engineers" class="tab-pane">
+                    <div class="engineer-dashboard">
+                        <!-- Engineers List -->
+                        <div class="engineers-grid" id="engineers-container">
+                            <!-- Dynamic Engineer Cards -->
+                        </div>
+                        
+                        <!-- Cost & Budget Allocation Analysis -->
+                        <div style="margin-top: 2.5rem; width: 100%;">
+                            <div class="chart-card card-glass">
+                                <div class="card-header">
+                                    <h3>Estimasi vs Aktual Biaya (Rupiah)</h3>
+                                    <p class="text-secondary text-xs">Evaluasi efisiensi biaya material dan jasa pengerjaan per departemen.</p>
+                                </div>
+                                <div class="card-body chart-container" style="height: 280px;">
+                                    <canvas id="costChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 5: PROJECT MONITORING -->
+                <section id="tab-projects" class="tab-pane">
+                    <!-- Project controls -->
+                    <div class="control-bar card-glass" style="grid-template-columns: 1fr auto; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+                        <div>
+                            <h3 style="font-size: 1.15rem; font-weight:700;">Papan Monitoring Project Pabrik</h3>
+                            <p class="text-secondary text-xs" style="margin-top:2px;">Pantau inisiasi ide baru, persetujuan belanja modal (CapEx), hingga tahap kesiapan eksekusi lapangan.</p>
+                        </div>
+                        <button class="btn btn-primary" id="btn-toggle-new-project">
+                            <i data-lucide="plus-circle"></i> Project Baru
+                        </button>
+                    </div>
+
+                    <!-- New Project Form (Collapsible) -->
+                    <div id="project-form-container" class="card-glass" style="display: none; padding: 1.5rem; margin-bottom: 1.5rem;">
+                        <h4 style="margin-bottom: 1.25rem; border-bottom: 1px solid var(--card-border); padding-bottom: 8px;">Buat Rencana Project Baru</h4>
+                        <form id="project-form">
+                            <div class="form-grid">
+                                <div class="form-field full-width">
+                                    <label for="proj-title">Judul / Nama Project <span class="required">*</span></label>
+                                    <input type="text" id="proj-title" placeholder="Contoh: Otomatisasi Sistem CIP (Clean In Place) Line 2" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="proj-dept">Departemen Pemilik <span class="required">*</span></label>
+                                    <select id="proj-dept" required>
+                                        <option value="Production">Production</option>
+                                        <option value="Maintenance">Maintenance</option>
+                                        <option value="Quality Control">Quality Control</option>
+                                        <option value="HSE">HSE</option>
+                                        <option value="Utility">Utility</option>
+                                    </select>
+                                </div>
+                                <div class="form-field">
+                                    <label for="proj-budget">Anggaran Rencana (CapEx - Rp) <span class="required">*</span></label>
+                                    <input type="number" id="proj-budget" placeholder="Contoh: 120000000" min="0" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="proj-target">Target Penyelesaian <span class="required">*</span></label>
+                                    <input type="date" id="proj-target" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="proj-pic">PIC / Pemimpin Project</label>
+                                    <select id="proj-pic">
+                                        <option value="Ahmad Dani">Ahmad Dani (Mech/Hyd)</option>
+                                        <option value="Budi Utomo">Budi Utomo (Elec/Auto)</option>
+                                        <option value="Charlie Santoso">Charlie Santoso (Civil)</option>
+                                        <option value="Deddy Corbuzier">Deddy Corbuzier (Instr)</option>
+                                    </select>
+                                </div>
+                                <div class="form-field full-width">
+                                    <label for="proj-desc">Deskripsi Gagasan & Hasil yang Diharapkan <span class="required">*</span></label>
+                                    <textarea id="proj-desc" rows="4" placeholder="Tuliskan ide latar belakang masalah, kebutuhan material awal, serta ROI/manfaat untuk produktivitas pabrik..." required></textarea>
+                                </div>
+                            </div>
+                            <div class="form-actions border-top" style="margin-top: 1rem; padding-top: 1rem;">
+                                <button type="button" class="btn btn-secondary" id="btn-cancel-project">Batal</button>
+                                <button type="submit" class="btn btn-primary glow-button">
+                                    <i data-lucide="save"></i> Daftarkan Gagasan Project
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Kanban Columns Grid -->
+                    <div class="project-board">
+                        
+                        <!-- Column 1: Fase 1 -->
+                        <div class="project-column card-glass">
+                            <div class="column-header ch-fase1">
+                                <span class="phase-number">Fase 1</span>
+                                <h4>Inisialisasi Ide</h4>
+                                <p class="text-secondary text-xs">Gagasan dituangkan ke atasan/bos</p>
+                                <span class="col-count" id="count-fase1">0</span>
+                            </div>
+                            <div class="project-cards-container" id="container-fase1">
+                                <!-- Cards injected dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Column 2: Fase 2 -->
+                        <div class="project-column card-glass">
+                            <div class="column-header ch-fase2">
+                                <span class="phase-number">Fase 2</span>
+                                <h4>Ide Disetujui & Pengadaan</h4>
+                                <p class="text-secondary text-xs">Persetujuan & penyediaan barang/jasa</p>
+                                <span class="col-count" id="count-fase2">0</span>
+                            </div>
+                            <div class="project-cards-container" id="container-fase2">
+                                <!-- Cards injected dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Column 3: Fase 3 -->
+                        <div class="project-column card-glass">
+                            <div class="column-header ch-fase3">
+                                <span class="phase-number">Fase 3</span>
+                                <h4>Tinggal Eksekusi</h4>
+                                <p class="text-secondary text-xs">Seluruh barang tersedia & siap pengerjaan</p>
+                                <span class="col-count" id="count-fase3">0</span>
+                            </div>
+                            <div class="project-cards-container" id="container-fase3">
+                                <!-- Cards injected dynamically -->
+                            </div>
+                        </div>
+
+                    </div>
+                </section>
+
+                <!-- TAB: HISTORY EJO (COMPLETED/CANCELLED) -->
+                <section id="tab-history" class="tab-pane">
+                    <div class="control-bar card-glass" style="grid-template-columns: 1fr; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+                        <div>
+                            <h3 style="font-size: 1.15rem; font-weight:700;">Riwayat EJO Selesai</h3>
+                            <p class="text-secondary text-xs" style="margin-top:2px;">Daftar Engineering Job Order yang sudah selesai dikerjakan atau dibatalkan.</p>
+                        </div>
+                    </div>
+                    <div class="job-table-view card-glass">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Judul Pekerjaan</th>
+                                    <th>Departemen</th>
+                                    <th>Engineer</th>
+                                    <th>Status</th>
+                                    <th>Tanggal Selesai</th>
+                                    <th id="history-header-action" style="display: none; text-align: right;">Aksi</th> <!-- ponytail: conditional column header -->
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body">
+                                <!-- Rendered dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- TAB 6: ADMIN PANEL (USER DATABASE MANAGEMENT) -->
+                <section id="tab-admin" class="tab-pane">
+                    <!-- Top control bar -->
+                    <div class="control-bar card-glass" style="grid-template-columns: 1fr auto; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+                        <div>
+                            <h3 style="font-size: 1.15rem; font-weight:700;">Database User & Otoritas</h3>
+                            <p class="text-secondary text-xs" style="margin-top:2px;">Daftarkan, kelola, dan perbarui kredensial login teknisi serta admin pabrik PT. BAS.</p>
+                        </div>
+                        <button class="btn btn-primary" id="btn-toggle-new-user">
+                            <i data-lucide="plus-circle"></i> Daftarkan User
+                        </button>
+                    </div>
+
+                    <!-- Add/Edit User Form Panel (Collapsible) -->
+                    <div id="user-form-container" class="card-glass" style="display: none; padding: 1.5rem; margin-bottom: 1.5rem;">
+                        <h4 id="user-form-title" style="margin-bottom: 1.25rem; border-bottom: 1px solid var(--card-border); padding-bottom: 8px;">Daftarkan User Baru</h4>
+                        <form id="user-admin-form">
+                            <!-- Hidden input to distinguish Add vs Edit -->
+                            <input type="hidden" id="user-form-mode" value="add">
+                            
+                            <div class="form-grid">
+                                <div class="form-field">
+                                    <label for="usr-username">Username <span class="required">*</span></label>
+                                    <input type="text" id="usr-username" placeholder="Contoh: dani (lowercase, unik)" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="usr-password">Password <span class="required">*</span></label>
+                                    <div class="password-input-wrapper">
+                                        <input type="password" id="usr-password" placeholder="Minimal 6 karakter" required>
+                                        <button type="button" class="btn-toggle-password" id="btn-toggle-usr-pass" title="Tampilkan Password">
+                                            <i data-lucide="eye" id="usr-pass-eye-icon" style="width: 16px; height: 16px;"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="form-field">
+                                    <label for="usr-fullname">Nama Lengkap Personel <span class="required">*</span></label>
+                                    <input type="text" id="usr-fullname" placeholder="Contoh: Ahmad Dani" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="usr-role">Jabatan / Level Otoritas <span class="required">*</span></label>
+                                    <select id="usr-role" required>
+                                        <option value="Lead Engineer">Lead Engineer (Akses Administrator)</option>
+                                        <option value="Admin">Admin (Akses Administrator)</option> <!-- ponytail: added Admin role -->
+                                        <option value="Senior Technician">Senior Technician</option>
+                                        <option value="Structural Engineer">Structural Engineer</option>
+                                        <option value="Calibration Engineer">Calibration Engineer</option>
+                                        <option value="Technician">Technician Lapangan</option>
+                                    </select>
+                                </div>
+                                <div class="form-field full-width">
+                                    <label for="usr-avatar">URL Foto Profil / Avatar</label>
+                                    <input type="text" id="usr-avatar" placeholder="https://images.unsplash.com/photo-xxx atau biarkan kosong untuk default">
+                                </div>
+                            </div>
+                            <div class="form-actions border-top" style="margin-top: 1rem; padding-top: 1rem;">
+                                <button type="button" class="btn btn-secondary" id="btn-cancel-user-form">Batal</button>
+                                <button type="submit" class="btn btn-primary glow-button" id="btn-save-user-submit">
+                                    <i data-lucide="save"></i> Simpan User
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- User Table -->
+                    <div class="job-table-view card-glass">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Avatar</th>
+                                    <th>Username</th>
+                                    <th>Nama Lengkap</th>
+                                    <th>Role / Jabatan</th>
+                                    <th>Kredensial</th>
+                                    <th style="text-align: right;">Aksi Tindakan</th>
+                                </tr>
+                            </thead>
+                            <tbody id="user-table-body">
+                                <!-- Loaded dynamically via fetch GET /api/users -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL DETAIL EJO -->
+    <div class="modal-backdrop" id="ejo-modal">
+        <div class="modal-card card-glass animate-in">
+            <div class="modal-header">
+                <div class="ejo-header-badge">
+                    <span id="modal-ejo-id" class="badge-ejo-code">EJO-2026-XXX</span>
+                    <span id="modal-ejo-priority" class="badge">Priority</span>
+                </div>
+                <button class="modal-close" id="modal-close-btn">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="modal-main-info">
+                    <h2 id="modal-ejo-title">Judul Job Order</h2>
+                    <p class="text-secondary" style="margin-top: 0.5rem;"><i data-lucide="map-pin" style="width: 14px; height: 14px; display: inline; vertical-align: middle; margin-right: 4px;"></i> Lokasi: <span id="modal-ejo-location">Boiler Room</span></p>
+                    
+                    <div class="ejo-meta-fields">
+                        <div class="meta-field">
+                            <span class="meta-label">Departemen Pemohon</span>
+                            <span class="meta-value" id="modal-ejo-dept">Production</span>
+                        </div>
+                        <div class="meta-field">
+                            <span class="meta-label">Nama Pemohon</span>
+                            <span class="meta-value" id="modal-ejo-requester">-</span>
+                        </div>
+                        <div class="meta-field">
+                            <span class="meta-label">Kategori Teknik</span>
+                            <span class="meta-value" id="modal-ejo-category">Mechanical</span>
+                        </div>
+                        <div class="meta-field">
+                            <span class="meta-label">Target Selesai</span>
+                            <span class="meta-value" id="modal-ejo-target-date">28 Jun 2026</span>
+                        </div>
+                        <div class="meta-field">
+                            <span class="meta-label">Status Sekarang</span>
+                            <span class="meta-value badge" id="modal-ejo-status">In Progress</span>
+                        </div>
+                    </div>
+
+                    <div class="details-section">
+                        <h4>Deskripsi Masalah / Ruang Lingkup</h4>
+                        <div class="details-desc-box" id="modal-ejo-desc">
+                            Deskripsi pekerjaan secara mendetail akan ditampilkan di sini.
+                        </div>
+                    </div>
+
+                    <!-- Flow/Activity Logs -->
+                    <div class="details-section">
+                        <h4>Update Log Pekerjaan & Progress</h4>
+                        <div class="timeline" id="modal-ejo-logs">
+                            <!-- Dynamic log milestones -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Control sidebar for actions in Modal -->
+                <div class="modal-action-sidebar">
+                    <div class="action-card">
+                        <h4>Penugasan & Keuangan</h4>
+                        
+                        <div class="form-field" style="margin-top: 1rem;">
+                            <label for="modal-assignee">Engineer Lapangan</label>
+                            <select id="modal-assignee">
+                                <option value="Unassigned">Unassigned (Belum ditunjuk)</option>
+                                <option value="Ahmad Dani">Ahmad Dani (Mech/Hyd)</option>
+                                <option value="Budi Utomo">Budi Utomo (Elec/Auto)</option>
+                                <option value="Charlie Santoso">Charlie Santoso (Civil)</option>
+                                <option value="Deddy Corbuzier">Deddy Corbuzier (Instr)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-top: 0.75rem;">
+                            <div class="form-field">
+                                <label for="modal-est-cost">Est. Biaya (Rp)</label>
+                                <input type="number" id="modal-est-cost" class="input-sm">
+                            </div>
+                            <div class="form-field">
+                                <label for="modal-act-cost">Aktual Biaya (Rp)</label>
+                                <input type="number" id="modal-act-cost" class="input-sm">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-card" style="margin-top: 1rem;">
+                        <h4>Laporan & Log Pekerjaan</h4> <!-- ponytail: added template options for completion notes -->
+                        <div class="form-field" style="margin-top: 0.75rem;">
+                            <label for="modal-log-template">Template Laporan</label>
+                            <select id="modal-log-template" style="padding: 6px; font-size: 0.8rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-card); color: var(--text-main); width: 100%; box-sizing: border-box;">
+                                <option value="">-- Pilih Template --</option>
+                                <option value="selesai_normal">Pekerjaan Selesai Normal & Testing OK</option>
+                                <option value="selesai_part">Selesai & Penggantian Spare Part</option>
+                                <option value="selesai_catatan">Selesai dengan Catatan / Observasi</option>
+                                <option value="progress_log">Catatan Progress / Kendala Lapangan</option>
+                            </select>
+                        </div>
+                        <div class="form-field" style="margin-top: 0.75rem;">
+                            <label for="modal-new-log">Catatan Pekerjaan Tambahan</label>
+                            <textarea id="modal-new-log" rows="3" placeholder="Tulis catatan perkembangan atau laporan penyelesaian di sini..." style="width: 100%; padding: 8px; font-size: 0.8rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-card); color: var(--text-main); font-family: inherit; resize: vertical; box-sizing: border-box;"></textarea>
+                        </div>
+                        <div class="form-field" style="margin-top: 0.75rem;">
+                            <label for="modal-attachment">Tambah Lampiran Gambar</label>
+                            <div class="file-upload-mock" id="modal-upload-mock" style="padding: 10px; font-size: 0.8rem; flex-direction: row; gap: 5px;">
+                                <i data-lucide="upload-cloud" style="width: 16px; height: 16px;"></i>
+                                <span id="modal-upload-span">Klik untuk tambah gambar</span>
+                                <input type="file" id="modal-attachment" style="display: none;" multiple accept="image/*">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-card" style="margin-top: 1rem;">
+                        <h4>Perbarui Status EJO</h4>
+                        <div class="status-btn-group">
+                            <button class="btn btn-outline btn-status-change" data-status="Requested">
+                                <i data-lucide="circle-dot"></i> Requested
+                            </button>
+                            <button class="btn btn-outline btn-status-change" data-status="Approved">
+                                <i data-lucide="thumbs-up"></i> Approve Job
+                            </button>
+                            <button class="btn btn-outline btn-status-change" data-status="In Progress">
+                                <i data-lucide="play"></i> Start Work
+                            </button>
+                            <button class="btn btn-outline btn-status-change" data-status="Completed">
+                                <i data-lucide="check"></i> Complete Job
+                            </button>
+                            <button class="btn btn-outline btn-danger btn-status-change" data-status="Cancelled">
+                                <i data-lucide="x-circle"></i> Cancel Job
+                            </button>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary glow-button full-width" id="btn-save-modal" style="margin-top: 1.5rem;">
+                        <i data-lucide="save"></i> Simpan Perubahan
+                    </button>
+                    
+                    <button class="btn btn-danger-outline full-width" id="btn-delete-ejo" style="margin-top: 0.75rem;">
+                        <i data-lucide="trash-2"></i> Hapus EJO
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification panel popover -->
+    <div class="notification-panel card-glass" id="notify-panel" style="display: none;">
+        <div class="notify-header">
+            <h4>Notifikasi Sistem EJO</h4>
+            <button class="btn-text-xs" id="clear-notifications">Hapus Semua</button>
+        </div>
+        <div class="notify-list" id="notify-list-items">
+            <!-- Dynamic Notifications -->
+        </div>
+    </div>
+
+    <!-- TOAST POPUP FOR ALERTS -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <!-- Script -->
+    <script src="app.js?v=2.1"></script>
+</body>
+</html>
