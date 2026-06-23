@@ -352,6 +352,7 @@ async function initData() {
         
         // Always force switchTab to synchronize HTML DOM classes with activeTab state
         switchTab(state.activeTab || 'overview');
+        runExcelSelfTest();
     } catch (err) {
         console.error("Gagal mengambil data dari database server:", err);
         showToast("Koneksi ke database server gagal!", "error");
@@ -2913,5 +2914,20 @@ async function importFromExcel(event) {
         }
     };
     reader.readAsArrayBuffer(file);
+}
+
+// ponytail: self check suite for Excel mappings
+function runExcelSelfTest() {
+    try {
+        console.assert(mapDeptToExcel('Production') === 'PRD', 'Dept translation failed');
+        console.assert(mapExcelToDept('PRD') === 'Production', 'Excel to Dept translation failed');
+        console.assert(mapCategoryToExcel('Sipil') === 'CIV', 'Category translation failed');
+        console.assert(mapExcelToCategory('CIV') === 'Sipil', 'Excel to Category translation failed');
+        console.assert(mapStatusToExcel('Requested') === 'Unprocessed Ticket', 'Status translation failed');
+        console.assert(mapExcelToStatus('Unprocessed Ticket') === 'Requested', 'Excel to Status translation failed');
+        console.log("Excel Self Test: OK");
+    } catch (e) {
+        console.error("Excel Self Test: FAILED", e);
+    }
 }
 
