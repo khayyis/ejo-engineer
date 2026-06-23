@@ -2664,8 +2664,15 @@ function getCompletedDateFromLogs(logs) {
         console.error("Gagal parse logs:", e);
     }
     if (!Array.isArray(parsed)) return '';
-    const compLog = parsed.find(log => log.message.includes('selesai') || log.message.includes('Completed') || log.message.includes('selesai dilakukan'));
-    return compLog ? compLog.date.split(' ')[0] : '';
+    const compLog = parsed.find(log => {
+        // ponytail: handle non-string messages and missing fields safely
+        if (!log || typeof log.message !== 'string') return false;
+        return log.message.includes('selesai') || log.message.includes('Completed') || log.message.includes('selesai dilakukan');
+    });
+    if (compLog && typeof compLog.date === 'string') {
+        return compLog.date.split(' ')[0];
+    }
+    return '';
 }
 
 function exportToExcel() {
@@ -2802,6 +2809,50 @@ function mapExcelToStatus(val) {
     return 'Requested';
 }
 
+// ponytail: robust Excel date parsing with serial conversion and format fallback
+function parseExcelDate(val) {
+    if (val === null || val === undefined) return null;
+    if (val instanceof Date) {
+        if (!isNaN(val.getTime())) {
+            const yyyy = val.getFullYear();
+            const mm = String(val.getMonth() + 1).padStart(2, '0');
+            const dd = String(val.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+    }
+    const str = String(val).trim();
+    if (!str) return null;
+
+    // YYYY-MM-DD or YYYY/MM/DD
+    const matchYMD = str.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+    if (matchYMD) {
+        return `${matchYMD[1]}-${matchYMD[2]}-${matchYMD[3]}`;
+    }
+
+    // Excel serial number
+    const num = Number(str);
+    if (!isNaN(num) && isFinite(num) && num > 0) {
+        const date = new Date((num - 25569) * 86400 * 1000);
+        if (!isNaN(date.getTime())) {
+            const yyyy = date.getFullYear();
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+    }
+
+    // Parse other formats
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+        const dd = String(parsed.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
+    return null;
+}
+
 async function importFromExcel(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -2830,9 +2881,9 @@ async function importFromExcel(event) {
                 const title = row['Subject'] ? String(row['Subject']).trim() : 'Imported EJO';
                 const dept = mapExcelToDept(row['Dep']);
                 const category = mapExcelToCategory(row['Tin']);
-                const rawDate = row['Date'] ? String(row['Date']).trim() : '';
-                const dateMatch = rawDate.match(/^(\d{4}-\d{2}-\d{2})/);
-                const targetDate = dateMatch ? dateMatch[1] : new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0];
+                // ponytail: parse date using robust helper with a 5-day future fallback
+                const parsedDate = parseExcelDate(row['Date']);
+                const targetDate = parsedDate || new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0];
                 const description = row['Description'] ? String(row['Description']).trim() : 'Diimpor dari file Excel.';
                 const requester = row['Requestor'] ? String(row['Requestor']).trim() : (state.currentUser ? state.currentUser.fullname : 'System Import');
                 const status = mapExcelToStatus(row['Status']);
@@ -2888,7 +2939,12 @@ async function importFromExcel(event) {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(ejoData)
                     });
-                    if (!res.ok) console.error("Gagal mengupdate EJO: " + ticketId);
+                    if (!res.ok) {
+                        console.error("Gagal mengupdate EJO: " + ticketId);
+                    } else {
+                        // ponytail: only increment count if response is ok
+                        importCount++;
+                    }
                 } else {
                     ejoData.logs.push({
                         date: timestamp,
@@ -2899,9 +2955,13 @@ async function importFromExcel(event) {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(ejoData)
                     });
-                    if (!res.ok) console.error("Gagal membuat EJO: " + ticketId);
+                    if (!res.ok) {
+                        console.error("Gagal membuat EJO: " + ticketId);
+                    } else {
+                        // ponytail: only increment count if response is ok
+                        importCount++;
+                    }
                 }
-                importCount++;
             }
 
             showToast(`${importCount} Job Orders berhasil diproses!`, "success");
@@ -2917,14 +2977,18 @@ async function importFromExcel(event) {
 }
 
 // ponytail: self check suite for Excel mappings
+// ponytail: self check suite for Excel mappings using custom assert to throw actual errors
 function runExcelSelfTest() {
+    function assert(condition, message) {
+        if (!condition) throw new Error(message);
+    }
     try {
-        console.assert(mapDeptToExcel('Production') === 'PRD', 'Dept translation failed');
-        console.assert(mapExcelToDept('PRD') === 'Production', 'Excel to Dept translation failed');
-        console.assert(mapCategoryToExcel('Sipil') === 'CIV', 'Category translation failed');
-        console.assert(mapExcelToCategory('CIV') === 'Sipil', 'Excel to Category translation failed');
-        console.assert(mapStatusToExcel('Requested') === 'Unprocessed Ticket', 'Status translation failed');
-        console.assert(mapExcelToStatus('Unprocessed Ticket') === 'Requested', 'Excel to Status translation failed');
+        assert(mapDeptToExcel('Production') === 'PRD', 'Dept translation failed');
+        assert(mapExcelToDept('PRD') === 'Production', 'Excel to Dept translation failed');
+        assert(mapCategoryToExcel('Sipil') === 'CIV', 'Category translation failed');
+        assert(mapExcelToCategory('CIV') === 'Sipil', 'Excel to Category translation failed');
+        assert(mapStatusToExcel('Requested') === 'Unprocessed Ticket', 'Status translation failed');
+        assert(mapExcelToStatus('Unprocessed Ticket') === 'Requested', 'Excel to Status translation failed');
         console.log("Excel Self Test: OK");
     } catch (e) {
         console.error("Excel Self Test: FAILED", e);
