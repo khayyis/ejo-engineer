@@ -35,6 +35,28 @@
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ponytail: fix option background and text color issues on Windows browsers */
+select option {
+    background-color: #0f1524;
+    color: #f8fafc;
+}
+
+[data-theme="light"] select option {
+    background-color: #ffffff;
+    color: #1e293b;
+}
+
+/* ponytail: sidebar transition & collapse styles */
+.sidebar {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-right-color 0.3s;
+}
+
+.sidebar.hidden {
+    width: 0 !important;
+    overflow: hidden !important;
+    border-right: none !important;
+}
+
 /* ==========================================
    LIGHT MODE THEME OVERRIDES
    ========================================== */
@@ -261,8 +283,14 @@
 }
 
 [data-theme="light"] .timeline-content {
-    background: rgba(0, 0, 0, 0.03);
-    border-color: rgba(0, 0, 0, 0.06);
+    background: rgba(0, 0, 0, 0.015);
+    border-color: rgba(0, 0, 0, 0.05);
+    border-left-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .timeline-item.active .timeline-content {
+    border-left-color: var(--color-cyan);
+    background: rgba(6, 182, 212, 0.015);
 }
 
 /* Light mode toast */
@@ -303,6 +331,7 @@
 [data-theme="light"] .status-progress { background-color: rgba(8, 145, 178, 0.1); color: var(--color-cyan); border-color: rgba(8, 145, 178, 0.2); }
 [data-theme="light"] .status-completed { background-color: rgba(5, 150, 105, 0.1); color: var(--color-green); border-color: rgba(5, 150, 105, 0.2); }
 [data-theme="light"] .status-cancelled { background-color: rgba(225, 29, 72, 0.08); color: var(--color-rose); border-color: rgba(225, 29, 72, 0.15); }
+[data-theme="light"] .status-pending { background-color: rgba(245, 158, 11, 0.1); color: #d97706; border-color: rgba(245, 158, 11, 0.2); }
 
 /* Light mode login */
 [data-theme="light"] .login-wrapper {
@@ -533,6 +562,17 @@ body {
     padding: 0 1.5rem;
     gap: 10px;
     border-bottom: 1px solid var(--card-border);
+    /* ponytail: make brand logo clickable and premium */
+    cursor: pointer;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+.sidebar-brand:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="light"] .sidebar-brand:hover {
+    background-color: rgba(0, 0, 0, 0.02);
 }
 
 .logo-icon {
@@ -744,6 +784,24 @@ body {
     align-items: center;
     justify-content: center;
     position: relative;
+    color: var(--text-primary);
+    cursor: pointer;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--border-radius-md);
+    transition: var(--transition-smooth);
+}
+
+.notification-btn:hover {
+    color: var(--color-cyan);
+    transform: translateY(-1px);
+    border-color: var(--color-cyan);
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.15);
+}
+
+[data-theme="light"] .notification-btn {
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .notification-btn i {
@@ -834,11 +892,16 @@ body {
     position: relative;
     overflow: hidden;
     transition: var(--transition-smooth);
+    cursor: pointer; /* ponytail: make KPI cards clickable */
 }
 
 .kpi-card:hover {
     transform: translateY(-4px);
     border-color: rgba(255, 255, 255, 0.12);
+}
+
+.kpi-card:active {
+    transform: translateY(-1px); /* ponytail: tactile active click feedback */
 }
 
 .kpi-icon {
@@ -1072,11 +1135,14 @@ body {
 
 .badge-status {
     font-size: 0.68rem;
-    text-transform: uppercase;
+    text-transform: none;
     font-weight: 700;
     letter-spacing: 0.5px;
-    padding: 2px 8px;
+    padding: 4px 10px;
     border-radius: 12px;
+    white-space: normal;
+    line-height: 1.3;
+    display: inline-block;
 }
 
 .status-requested { background-color: rgba(255, 255, 255, 0.08); color: #cbd5e1; border: 1px solid rgba(255, 255, 255, 0.12); }
@@ -1084,15 +1150,39 @@ body {
 .status-progress { background-color: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.2); }
 .status-completed { background-color: rgba(16, 185, 129, 0.15); color: var(--color-green); border: 1px solid rgba(16, 185, 129, 0.2); }
 .status-cancelled { background-color: rgba(244, 63, 94, 0.12); color: var(--color-rose); border: 1px solid rgba(244, 63, 94, 0.15); }
+.status-pending { background-color: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.2); }
 
 /* Control Bar (Filter & Search) */
 .control-bar {
     display: grid;
-    grid-template-columns: 1.5fr 2fr auto;
-    gap: 1.5rem;
+    grid-template-columns: 1fr auto;
+    gap: 1.25rem 1.5rem;
     padding: 1.25rem 1.5rem;
     align-items: center;
     margin-bottom: 1.5rem;
+}
+
+/* ponytail: override inline styles set by javascript for the main filterable tabs to support responsive wrapping */
+#tab-general-ejo .control-bar,
+#tab-drawing .control-bar,
+#tab-projects .control-bar {
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+}
+
+.control-bar .search-wrapper {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.control-bar > *:last-child {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+}
+
+.control-bar > div:empty {
+    display: none;
 }
 
 .search-wrapper {
@@ -1126,8 +1216,12 @@ body {
 }
 
 .filters-wrapper {
-    display: flex;
+    grid-column: 1 / span 2;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 1rem;
+    width: 100%;
 }
 
 .filter-group {
@@ -1135,6 +1229,7 @@ body {
     flex-direction: column;
     gap: 4px;
     flex: 1;
+    min-width: 0;
 }
 
 .filter-group label {
@@ -1271,6 +1366,7 @@ body {
     padding: 2px;
 }
 
+
 .btn-toggle {
     background: none;
     border: none;
@@ -1294,7 +1390,7 @@ body {
     color: var(--color-cyan);
 }
 
-/* Job Orders Cards Grid Layout */
+/* EJO Cards Grid Layout */
 .job-grid-view {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -1306,7 +1402,8 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: 250px;
+    min-height: 250px; /* ponytail: make height dynamic to accommodate kanban action buttons */
+    height: auto;
     transition: var(--transition-smooth);
     position: relative;
 }
@@ -1750,6 +1847,145 @@ body {
     gap: 2rem;
 }
 
+.excel-sheet-modal-card {
+    max-width: 480px;
+    padding: 1.5rem;
+    gap: 1rem;
+}
+
+.excel-sheet-modal-header {
+    padding: 0 0 1rem;
+}
+
+.excel-sheet-modal-title {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.excel-sheet-modal-subtitle {
+    margin: 0.35rem 0 0;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.excel-sheet-modal-body {
+    display: block;
+    padding: 0;
+}
+
+.excel-sheet-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.excel-sheet-picker-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.excel-sheet-picker-head label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.excel-sheet-picker-head span {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.excel-sheet-list {
+    max-height: 320px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.3rem;
+    border: 1px solid var(--card-border);
+    border-radius: var(--border-radius-md);
+    background: rgba(8, 15, 29, 0.55);
+}
+
+.excel-sheet-option {
+    width: 100%;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-primary);
+    padding: 0.85rem 0.95rem;
+    text-align: left;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.excel-sheet-option:hover {
+    border-color: rgba(56, 189, 248, 0.25);
+    background: rgba(56, 189, 248, 0.1);
+    transform: translateY(-1px);
+}
+
+.excel-sheet-option.active {
+    border-color: rgba(56, 189, 248, 0.55);
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.22), rgba(37, 99, 235, 0.22));
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.18);
+}
+
+.excel-sheet-option-title {
+    display: block;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: inherit;
+}
+
+.excel-sheet-option-meta {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.excel-sheet-selected {
+    padding: 0.75rem 0.9rem;
+    border-radius: var(--border-radius-md);
+    border: 1px solid rgba(56, 189, 248, 0.15);
+    background: rgba(56, 189, 248, 0.08);
+    color: var(--text-primary);
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+.excel-sheet-select-native {
+    display: none;
+}
+
+.excel-sheet-modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    width: 100%;
+    margin-top: 0.25rem;
+}
+
+[data-theme="light"] .excel-sheet-list {
+    background: rgba(255, 255, 255, 0.92);
+}
+
+[data-theme="light"] .excel-sheet-option {
+    background: #ffffff;
+}
+
+[data-theme="light"] .excel-sheet-option:hover {
+    background: rgba(56, 189, 248, 0.12);
+}
+
+[data-theme="light"] .excel-sheet-option.active {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.14), rgba(37, 99, 235, 0.12));
+}
+
 .modal-main-info h2 {
     font-size: 1.5rem;
     font-weight: 700;
@@ -1758,20 +1994,42 @@ body {
 
 .ejo-meta-fields {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.85rem;
     margin: 1.5rem 0;
-    padding: 1.25rem;
-    background-color: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: var(--border-radius-lg);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
 }
 
 .meta-field {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
+    padding: 0.9rem 1.1rem;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-sizing: border-box;
+}
+
+[data-theme="light"] .meta-field {
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.meta-field:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-cyan);
+    box-shadow: 0 6px 16px rgba(6, 182, 212, 0.15);
+}
+
+[data-theme="light"] .meta-field:hover {
+    box-shadow: 0 6px 16px rgba(6, 182, 212, 0.08);
 }
 
 .meta-field .badge {
@@ -1780,17 +2038,28 @@ body {
 }
 
 .meta-label {
-    font-size: 0.68rem;
-    color: var(--text-muted);
+    font-size: 0.65rem;
+    color: var(--text-secondary);
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    opacity: 0.85;
+}
+
+.meta-label i {
+    width: 12px;
+    height: 12px;
+    stroke-width: 2.5px;
 }
 
 .meta-value {
     font-size: 0.95rem;
     font-weight: 600;
     color: var(--text-primary);
+    margin-top: 1px;
 }
 
 .details-section {
@@ -1798,25 +2067,64 @@ body {
 }
 
 .details-section h4 {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
     margin-bottom: 12px;
     color: var(--color-cyan);
-    border-left: 3px solid var(--color-cyan);
-    padding-left: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] .details-section h4 {
+    border-bottom-color: rgba(0, 0, 0, 0.06);
 }
 
 .details-desc-box {
     padding: 1.25rem;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: rgba(255, 255, 255, 0.015);
     border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: var(--border-radius-md);
+    border-radius: var(--border-radius-lg);
     font-size: 0.88rem;
     color: var(--text-primary);
     line-height: 1.6;
     white-space: pre-wrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.completion-section-title {
+    color: var(--color-green) !important;
+    border-bottom-color: rgba(16, 185, 129, 0.15) !important;
+}
+
+.completion-report-box {
+    background-color: var(--color-green-glow) !important;
+    border: 1px solid rgba(16, 185, 129, 0.25) !important;
+}
+
+[data-theme="light"] .completion-report-box {
+    background-color: var(--color-green-glow) !important;
+    border-color: rgba(5, 150, 105, 0.2) !important;
+}
+
+/* ponytail: styled revision section */
+.revision-section-title {
+    color: var(--color-rose) !important;
+    border-bottom-color: rgba(244, 63, 94, 0.15) !important;
+}
+
+.revision-report-box {
+    background-color: var(--color-rose-glow) !important;
+    border: 1px solid rgba(244, 63, 94, 0.25) !important;
+}
+
+[data-theme="light"] .revision-report-box {
+    background-color: var(--color-rose-glow) !important;
+    border-color: rgba(225, 29, 72, 0.2) !important;
 }
 
 /* Timeline/Log flow styling */
@@ -1856,7 +2164,7 @@ body {
 
 .timeline-item.active::before {
     background-color: var(--color-cyan);
-    box-shadow: 0 0 10px var(--color-cyan);
+    box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.25);
 }
 
 .timeline-date {
@@ -1870,11 +2178,18 @@ body {
     color: var(--text-primary);
     font-size: 0.82rem;
     font-weight: 500;
-    background: rgba(255, 255, 255, 0.02);
-    padding: 8px 12px;
-    border-radius: var(--border-radius-sm);
+    background: rgba(255, 255, 255, 0.015);
+    padding: 8px 14px;
+    border-radius: var(--border-radius-md);
     border: 1px solid rgba(255, 255, 255, 0.03);
+    border-left: 3px solid rgba(255, 255, 255, 0.08);
     margin-top: 4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.timeline-item.active .timeline-content {
+    border-left-color: var(--color-cyan);
+    background: rgba(6, 182, 212, 0.02);
 }
 
 /* Action sidebar in Modal */
@@ -1937,7 +2252,7 @@ body {
     position: fixed;
     bottom: 2rem;
     right: 2rem;
-    z-index: 999;
+    z-index: 20000; /* ponytail: updated z-index */
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
@@ -2028,6 +2343,41 @@ body {
     gap: 2px;
 }
 
+/* ponytail: clickable notification hover styles */
+.notify-item.clickable {
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.notify-item.clickable:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.notify-item.clickable:active {
+    transform: scale(0.98);
+}
+
+[data-theme="light"] .notify-item.clickable:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+/* ponytail: notif yang sudah dibaca — lebih samar */
+.notify-item.notify-read {
+    opacity: 0.45;
+}
+
+/* ponytail: Repair Part name link hover style */
+.part-name-link {
+    cursor: pointer;
+    font-weight: 600;
+    transition: color 0.2s, text-decoration-color 0.2s;
+}
+
+.part-name-link:hover {
+    color: var(--text-link);
+    text-decoration: underline;
+}
+
 .notify-time {
     font-size: 0.68rem;
     color: var(--text-muted);
@@ -2059,6 +2409,23 @@ body {
     }
     .grid-main-bottom {
         grid-template-columns: 1fr;
+    }
+    /* ponytail: rapikan control bar di tablet agar search, filter, dan tombol tidak saling mepet */
+    .control-bar {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+    .control-bar > * {
+        grid-column: unset !important;
+        grid-row: unset !important;
+        width: 100% !important;
+    }
+    .filters-wrapper {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+        gap: 0.75rem;
     }
 }
 
@@ -2097,6 +2464,51 @@ body {
         border-left: none;
         border-bottom: 3px solid var(--color-cyan);
         background: rgba(6, 182, 212, 0.08);
+    }
+    
+    /* ponytail: EJO dropdown and submenu layout on mobile screens */
+    .sidebar-nav {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        align-items: flex-start !important;
+    }
+    .nav-item-dropdown {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 6px !important;
+        flex-shrink: 0 !important;
+    }
+    #btn-nav-job-orders {
+        width: auto !important;
+        gap: 8px !important;
+        flex-shrink: 0 !important;
+    }
+    .submenu {
+        /* display: none/flex is toggled dynamically by JS. We do not force it to flex here. */
+        flex-direction: row !important;
+        flex-shrink: 0 !important;
+        padding-left: 0 !important;
+        margin-top: 0 !important;
+        gap: 6px !important;
+    }
+    .submenu .nav-btn {
+        padding: 0.5rem 0.85rem !important;
+        font-size: 0.8rem !important;
+        flex-shrink: 0 !important;
+        border-left: none !important;
+        border-bottom: 3px solid transparent !important;
+        border-radius: 0 !important;
+    }
+    .submenu .nav-btn:hover {
+        padding-left: 0.85rem !important;
+        border-bottom: 3px solid rgba(6, 182, 212, 0.3) !important;
+    }
+    .submenu .nav-btn.active {
+        color: var(--color-cyan) !important;
+        background: rgba(6, 182, 212, 0.08) !important;
+        border-left: none !important;
+        border-bottom: 3px solid var(--color-cyan) !important;
+        border-radius: 0 !important;
     }
     
     /* Reposition user profile & logout button to top-right header on mobile */
@@ -2152,6 +2564,43 @@ body {
         flex-direction: column;
         align-items: flex-start;
         gap: 8px;
+    }
+    /* ponytail: Clean stacked layout for urgent EJO list items on mobile */
+    .recent-item {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+        padding: 0.75rem !important;
+    }
+    .recent-item-left {
+        gap: 8px !important;
+        overflow: hidden !important;
+    }
+    .item-title-wrapper {
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+    }
+    .ejo-id-badge {
+        flex-shrink: 0 !important;
+    }
+    .recent-item-title {
+        max-width: 100% !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        font-size: 0.82rem !important;
+        line-height: 1.3 !important;
+    }
+    .recent-item-meta {
+        font-size: 0.7rem !important;
+    }
+    .recent-item-right {
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        gap: 8px !important;
+        padding-top: 6px !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.04) !important;
     }
     .chart-card .card-header .card-actions, .list-card .card-header .card-actions {
         align-self: flex-start;
@@ -2210,18 +2659,37 @@ body {
 
     /* Control & filter bar layouts */
     .control-bar {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
         gap: 1rem;
         padding: 1rem;
     }
+    .control-bar > * {
+        grid-column: unset !important;
+        grid-row: unset !important;
+        width: 100% !important;
+    }
     .filters-wrapper {
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
         gap: 0.75rem;
     }
     .filter-group {
-        min-width: 45%;
+        min-width: 0;
     }
-    #btn-quick-new {
+    /* ponytail: truncate teks deskripsi panjang di control-bar supaya rapi di mobile */
+    .control-bar .text-xs {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    /* ponytail: pakai selector generik dan id aktual biar tombol action penuh di mobile */
+    #gejo-btn-quick-new,
+    #btn-toggle-drawing-form,
+    .control-bar > .btn,
+    .control-bar > button {
         width: 100%;
     }
 
@@ -2255,10 +2723,183 @@ body {
         width: 100%;
     }
 
-    /* Tables */
+    /* Tables — default mobile shrink */
     .data-table th, .data-table td {
         padding: 0.75rem 0.85rem;
         font-size: 0.8rem;
+    }
+
+    /* ponytail: EJO tables (job-orders, general-ejo, history) → card vertikal di mobile.
+       Reuse pola label:value via attr(data-label). Tidak menyentuh #user-table-body
+       (admin punya layout centered sendiri yang lebih spesifik). */
+    #job-orders-table-wrapper .data-table thead,
+    #gejo-table-wrapper .data-table thead,
+    #tab-history .data-table thead {
+        display: none;
+    }
+    #job-orders-table-body tr,
+    #gejo-table-body tr,
+    #history-table-body tr {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 6px;
+        padding: 1rem;
+        margin-bottom: 10px;
+        border: 1px solid var(--card-border);
+        border-radius: var(--border-radius-md);
+        background: rgba(255, 255, 255, 0.02);
+    }
+    #job-orders-table-body td,
+    #gejo-table-body td,
+    #history-table-body td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 4px 0 !important;
+        border-bottom: none !important;
+        text-align: right;
+    }
+    /* ponytail: label kiri pakai data-label, supaya teks panjang nggak kepepet */
+    #job-orders-table-body td[data-label]::before,
+    #gejo-table-body td[data-label]::before,
+    #history-table-body td[data-label]::before {
+        content: attr(data-label);
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: var(--text-muted);
+        text-align: left;
+        flex-shrink: 0;
+    }
+    /* ponytail: kolom Deskripsi & Judul → full width, value tetap rata kanan rapi */
+    #job-orders-table-body td[data-label="Deskripsi"],
+    #gejo-table-body td[data-label="Deskripsi"],
+    #history-table-body td[data-label="Judul Pekerjaan"] {
+        flex-direction: column;
+        align-items: flex-end;
+        border-bottom: 1px solid var(--card-border) !important;
+        padding-bottom: 8px !important;
+        margin-bottom: 2px;
+    }
+    #job-orders-table-body td[data-label="Deskripsi"]::before,
+    #gejo-table-body td[data-label="Deskripsi"]::before,
+    #history-table-body td[data-label="Judul Pekerjaan"]::before {
+        align-self: flex-start;
+        margin-bottom: 4px;
+    }
+    /* ponytail: baris aksi → tombol lebar penuh biar gampang ditekan */
+    #job-orders-table-body td[data-label="Aksi"],
+    #gejo-table-body td[data-label="Aksi"],
+    #history-table-body td[data-label="Aksi"] {
+        padding-top: 10px !important;
+        margin-top: 6px;
+        border-top: 1px solid var(--card-border) !important;
+    }
+    #job-orders-table-body td[data-label="Aksi"] .btn,
+    #gejo-table-body td[data-label="Aksi"] .btn,
+    #history-table-body td[data-label="Aksi"] .btn {
+        flex: 1;
+        justify-content: center;
+    }
+
+    /* ponytail: Admin panel — control bar stacking on mobile */
+    #tab-admin .control-bar {
+        grid-template-columns: 1fr !important;
+        gap: 0.75rem !important;
+        padding: 1rem !important;
+    }
+    #tab-admin .control-bar .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    #tab-admin .control-bar > div:last-child {
+        flex-direction: column !important;
+        width: 100%;
+    }
+    #tab-admin .control-bar > div:last-child .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* ponytail: Admin panel — hide table header, convert rows to cards */
+    #tab-admin .data-table thead {
+        display: none;
+    }
+    #tab-admin .data-table {
+        border-collapse: separate;
+        border-spacing: 0 10px;
+    }
+    /* ponytail: single-column centered card layout */
+    #user-table-body tr {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 1.25rem 1rem;
+        border: 1px solid var(--card-border);
+        border-radius: var(--border-radius-md);
+        background: rgba(255, 255, 255, 0.02);
+        gap: 2px;
+    }
+    #user-table-body td {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 !important;
+        border-bottom: none !important;
+        line-height: 1.4;
+        width: 100%;
+    }
+
+    /* ponytail: centered card cells */
+    #user-table-body td[data-label="Avatar"] {
+        padding-bottom: 4px !important;
+    }
+    #user-table-body td[data-label="Avatar"] .user-table-avatar {
+        width: 52px;
+        height: 52px;
+        border-width: 2px;
+    }
+    #user-table-body td[data-label="Username"] .user-username {
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+    }
+    #user-table-body td[data-label="Role / Jabatan"] .user-role-badge {
+        font-size: 0.65rem;
+        padding: 3px 10px;
+    }
+    #user-table-body td[data-label="Nama Lengkap"] {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    #user-table-body td[data-label="Nama Lengkap"]::before {
+        content: none;
+    }
+    /* ponytail: hide password on mobile cards */
+    #user-table-body td[data-label="Kredensial"] {
+        display: none !important;
+    }
+
+    /* Actions row */
+    #user-table-body td:last-child {
+        padding-top: 10px !important;
+        margin-top: 8px;
+        border-top: 1px solid var(--card-border) !important;
+    }
+    #user-table-body td:last-child .user-actions-cell {
+        width: 100%;
+        justify-content: center;
+        gap: 8px;
+    }
+    #user-table-body td:last-child .btn-user-edit,
+    #user-table-body td:last-child .btn-user-delete {
+        flex: 1;
+        justify-content: center;
+        padding: 0.5rem !important;
+        font-size: 0.78rem;
     }
 
     /* Modals & Popups (Bottom Sheet Drawer for Mobile) */
@@ -2365,9 +3006,10 @@ body {
     #user-table-body td {
         border: none;
         padding: 0.4rem 0;
-        text-align: left !important;
+        text-align: center !important;
         display: flex;
         align-items: center;
+        justify-content: center;
         color: var(--text-primary);
     }
     #user-table-body td:first-child {
@@ -2396,6 +3038,11 @@ body {
         padding-top: 0.75rem;
     }
     #user-table-body td:last-child::before {
+        display: none;
+    }
+    /* ponytail: hide labels for Username and Role on mobile cards */
+    #user-table-body td[data-label="Username"]::before,
+    #user-table-body td[data-label="Role / Jabatan"]::before {
         display: none;
     }
     
@@ -2900,4 +3547,767 @@ body {
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
+}
+
+/* ponytail: Sidebar EJO Submenu & Dropdown styles */
+.nav-item-dropdown {
+    display: flex;
+    flex-direction: column;
+}
+
+.dropdown-chevron.rotated {
+    transform: rotate(180deg);
+}
+
+.submenu {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 20px;
+    margin-top: 4px;
+}
+
+.submenu .nav-btn {
+    padding: 0.5rem 1rem !important;
+    font-size: 0.85rem !important;
+    border-left: none !important;
+    background: none !important;
+    box-shadow: none !important;
+}
+
+.submenu .nav-btn:hover {
+    color: var(--text-primary) !important;
+    background-color: rgba(255, 255, 255, 0.03) !important;
+    padding-left: 1.25rem !important;
+}
+
+.submenu .nav-btn.active {
+    color: var(--color-cyan) !important;
+    background: rgba(6, 182, 212, 0.08) !important;
+    border-left: 2px solid var(--color-cyan) !important;
+    border-radius: var(--border-radius-sm) !important;
+    font-weight: 600 !important;
+}
+
+/* ponytail: Toggle Switch for Visual Settings */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 22px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--text-muted);
+    transition: 0.3s;
+    border-radius: 22px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.switch input:checked + .slider {
+    background-color: var(--color-cyan);
+}
+
+.switch input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+/* ponytail: responsive grid adjustment when hiding status distribution chart */
+.analytics-layout-grid.hide-status-prop {
+    grid-template-columns: 1fr;
+}
+
+.hide-status-prop #card-status-prop {
+    display: none;
+}
+
+/* ponytail: show single phase layout in grid */
+.project-board.single-phase {
+    grid-template-columns: 1fr !important;
+}
+
+/* ponytail: Custom General EJO approval modal styles for premium looks */
+.engineer-select-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 0.85rem;
+    border-radius: var(--border-radius-md);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--card-border);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    margin-bottom: 0.5rem;
+    box-sizing: border-box;
+}
+.engineer-select-row:hover {
+    background: rgba(6, 182, 212, 0.06);
+    border-color: rgba(6, 182, 212, 0.25);
+    transform: translateY(-1px);
+}
+.engineer-select-row.selected {
+    background: rgba(6, 182, 212, 0.1);
+    border-color: var(--color-cyan);
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.1);
+}
+[data-theme="light"] .engineer-select-row {
+    background: rgba(0, 0, 0, 0.01);
+}
+[data-theme="light"] .engineer-select-row:hover {
+    background: rgba(8, 145, 178, 0.04);
+    border-color: rgba(8, 145, 178, 0.2);
+}
+[data-theme="light"] .engineer-select-row.selected {
+    background: rgba(8, 145, 178, 0.08);
+    border-color: var(--color-cyan);
+}
+
+.eng-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.eng-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
+    background: var(--bg-main);
+}
+[data-theme="light"] .eng-avatar {
+    border-color: rgba(0, 0, 0, 0.1);
+}
+.eng-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.eng-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.eng-role-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    width: fit-content;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.role-badge-admin {
+    background: rgba(244, 63, 94, 0.12);
+    color: #f43f5e;
+}
+.role-badge-foreman {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+}
+.role-badge-user {
+    background: rgba(56, 189, 248, 0.12);
+    color: #38bdf8;
+}
+.role-badge-drafter,
+.role-badge-sipil,
+.role-badge-mekanik,
+.role-badge-elektrik,
+.role-badge-program,
+.role-badge-kalibrasi {
+    background: rgba(168, 85, 247, 0.12);
+    color: #a855f7;
+}
+[data-theme="light"] .role-badge-admin { background: rgba(225, 29, 72, 0.1); color: #e11d48; }
+[data-theme="light"] .role-badge-foreman { background: rgba(217, 119, 6, 0.1); color: #d97706; }
+[data-theme="light"] .role-badge-user { background: rgba(37, 99, 235, 0.1); color: #2563eb; }
+[data-theme="light"] .role-badge-drafter,
+[data-theme="light"] .role-badge-sipil,
+[data-theme="light"] .role-badge-mekanik,
+[data-theme="light"] .role-badge-elektrik,
+[data-theme="light"] .role-badge-program,
+[data-theme="light"] .role-badge-kalibrasi {
+    background: rgba(147, 51, 234, 0.1);
+    color: #9333ea;
+}
+
+/* Custom Checkbox within row */
+.custom-checkbox {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.custom-checkbox input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+    cursor: pointer;
+}
+.custom-checkbox .checkmark {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 20px;
+    width: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-border);
+    border-radius: var(--border-radius-sm);
+    transition: var(--transition-smooth);
+}
+[data-theme="light"] .custom-checkbox .checkmark {
+    background: rgba(0, 0, 0, 0.03);
+}
+.custom-checkbox input:checked ~ .checkmark {
+    background: linear-gradient(135deg, var(--color-cyan) 0%, #2563eb 100%);
+    border-color: var(--color-cyan);
+    box-shadow: 0 2px 8px rgba(8, 145, 178, 0.25);
+}
+.custom-checkbox .checkmark::after {
+    content: "";
+    position: absolute;
+    display: none;
+    left: 6.5px;
+    top: 3px;
+    width: 5px;
+    height: 10px;
+    border: solid #ffffff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+.custom-checkbox input:checked ~ .checkmark::after {
+    display: block;
+}
+
+/* Segmented Control */
+.segmented-control {
+    display: flex;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid var(--card-border);
+    border-radius: var(--border-radius-md);
+    padding: 3px;
+    box-sizing: border-box;
+    gap: 4px;
+}
+[data-theme="light"] .segmented-control {
+    background: rgba(0, 0, 0, 0.03);
+}
+.segment-option {
+    flex: 1;
+    cursor: pointer;
+    margin: 0;
+}
+.segment-option input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.segment-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: calc(var(--border-radius-md) - 2px);
+    color: var(--text-secondary);
+    transition: var(--transition-smooth);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+.segment-option input:checked + .segment-btn {
+    background: linear-gradient(135deg, var(--color-cyan) 0%, #2563eb 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(8, 145, 178, 0.2);
+}
+
+/* ponytail: signature approvals grid */
+.signatures-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-top: 0.5rem;
+    width: 100%;
+}
+
+.signature-card {
+    border: 1px solid var(--card-border);
+    border-radius: var(--border-radius-md);
+    padding: 0.85rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-sizing: border-box;
+}
+
+.signature-card.signature-approved {
+    border-color: rgba(16, 185, 129, 0.25);
+    background: rgba(16, 185, 129, 0.02);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.04);
+}
+
+[data-theme="light"] .signature-card.signature-approved {
+    background: rgba(16, 185, 129, 0.015);
+}
+
+.signature-card.signature-pending {
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.005);
+    opacity: 0.7;
+}
+
+[data-theme="light"] .signature-card.signature-pending {
+    border-color: rgba(0, 0, 0, 0.12);
+    background: rgba(0, 0, 0, 0.005);
+}
+
+.signature-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.signature-card.signature-approved:hover {
+    border-color: rgba(16, 185, 129, 0.5);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.12);
+}
+
+.signature-card.signature-pending:hover {
+    border-color: var(--color-cyan);
+    background: rgba(6, 182, 212, 0.02);
+    opacity: 1;
+}
+
+.signature-role {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.signature-image-container {
+    width: 110px;
+    height: 70px;
+    background: #ffffff;
+    border-radius: var(--border-radius-xs);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    margin-bottom: 0.5rem;
+}
+
+.signature-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.signature-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-word;
+    max-width: 100%;
+}
+
+.signature-date {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+}
+
+.signature-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 0.5rem 0;
+    color: var(--text-muted);
+    min-height: 70px;
+}
+
+.signature-pending-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.signature-empty {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-style: italic;
+}
+
+/* ponytail: dragover styling for signature and rejection dropzone */
+#gejo-sig-dropzone.drag-over, #gejo-reject-upload-mock.drag-over {
+    border-color: var(--color-blue) !important;
+    background: rgba(59, 130, 246, 0.05) !important;
+}
+
+@media (max-width: 768px) {
+    .signatures-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+}
+
+/* Dashboard Summary Cards - Spacious & Premium Design */
+.dashboard-summary-card {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: space-between !important;
+    padding: 2rem !important;
+    min-height: 220px !important;
+    gap: 1.5rem !important;
+}
+
+.dashboard-summary-card .summary-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.dashboard-summary-card .kpi-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dashboard-summary-card .kpi-icon i {
+    width: 26px;
+    height: 26px;
+}
+
+.dashboard-summary-card .kpi-trend {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dashboard-summary-card .summary-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 0.5rem;
+}
+
+.dashboard-summary-card .kpi-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.75px;
+}
+
+.dashboard-summary-card .kpi-value {
+    font-size: 2.85rem;
+    font-weight: 850;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.dashboard-summary-card .kpi-value .total-label {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.dashboard-summary-card .summary-card-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: auto;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 1.25rem;
+}
+
+/* ponytail: Styling for General EJO Outstanding Grouping */
+#gejo-kanban-board {
+    align-items: stretch !important;
+}
+
+.gejo-outstanding-group {
+    grid-column: span 2;
+    background: linear-gradient(135deg, rgba(16, 24, 48, 0.45) 0%, rgba(8, 14, 28, 0.55) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 3px solid var(--color-cyan);
+    border-radius: var(--border-radius-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-sizing: border-box;
+    transition: var(--transition-smooth);
+    box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5), 0 0 1px 1px rgba(255, 255, 255, 0.04);
+}
+
+.gejo-outstanding-header {
+    width: 100%;
+    padding: 14px 20px;
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--color-cyan);
+    background: linear-gradient(90deg, rgba(6, 182, 212, 0.01) 0%, rgba(6, 182, 212, 0.08) 50%, rgba(6, 182, 212, 0.01) 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
+}
+
+.outstanding-total-badge {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--color-cyan);
+    border: 1px solid rgba(6, 182, 212, 0.35);
+    border-radius: 99px;
+    padding: 2px 10px;
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    box-shadow: 0 0 8px rgba(6, 182, 212, 0.25);
+    text-shadow: none !important;
+}
+
+.gejo-outstanding-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex-grow: 1;
+    box-sizing: border-box;
+}
+
+/* Override child column styles when inside outstanding group */
+.gejo-outstanding-columns .project-column {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    min-height: 480px;
+    padding: 1.5rem 1.25rem 1.25rem;
+}
+
+/* Vertical line separator between columns */
+.gejo-outstanding-columns #gejo-col-fase1 {
+    border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Styling for Single Column mode */
+.gejo-outstanding-group.single-column {
+    grid-column: span 1 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+.gejo-outstanding-group.single-column .gejo-outstanding-header {
+    display: none !important;
+}
+
+.gejo-outstanding-group.single-column .gejo-outstanding-columns {
+    grid-template-columns: 1fr !important;
+}
+
+.gejo-outstanding-group.single-column .gejo-outstanding-columns .project-column {
+    background-color: rgba(15, 21, 36, 0.4) !important;
+    border: 1px solid var(--card-border) !important;
+    border-radius: var(--border-radius-lg) !important;
+}
+
+/* Refined Phase-Specific Count Badges */
+.ch-fase1 .col-count {
+    background-color: rgba(168, 85, 247, 0.15) !important;
+    color: #c084fc !important;
+    border-color: rgba(168, 85, 247, 0.3) !important;
+    box-shadow: 0 0 8px rgba(168, 85, 247, 0.15);
+}
+
+.ch-fase2 .col-count {
+    background-color: rgba(245, 158, 11, 0.15) !important;
+    color: #fbd561 !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.15);
+}
+
+.ch-fase3 .col-count {
+    background-color: rgba(16, 185, 129, 0.15) !important;
+    color: #34d399 !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.15);
+}
+
+/* Modern dashed "Lihat Lainnya" button styles inside columns */
+.project-cards-container .btn-outline.btn-xs {
+    background: rgba(255, 255, 255, 0.02) !important;
+    border: 1px dashed rgba(255, 255, 255, 0.12) !important;
+    color: var(--text-secondary) !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: var(--border-radius-sm) !important;
+    transition: var(--transition-smooth) !important;
+    font-weight: 600 !important;
+}
+.project-cards-container .btn-outline.btn-xs:hover {
+    background: rgba(6, 182, 212, 0.06) !important;
+    border-color: rgba(6, 182, 212, 0.3) !important;
+    color: var(--color-cyan) !important;
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.1);
+}
+
+/* Responsive adjustment for outstanding group */
+@media (max-width: 1024px) {
+    .gejo-outstanding-group {
+        grid-column: span 1 !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+    .gejo-outstanding-header {
+        border-radius: var(--border-radius-lg);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        margin-bottom: 0.75rem;
+    }
+    .gejo-outstanding-columns {
+        grid-template-columns: 1fr !important;
+        gap: 1.5rem;
+    }
+    .gejo-outstanding-columns .project-column {
+        background-color: rgba(15, 21, 36, 0.4) !important;
+        border: 1px solid var(--card-border) !important;
+        border-radius: var(--border-radius-lg) !important;
+        min-height: auto;
+    }
+    .gejo-outstanding-columns #gejo-col-fase1 {
+        border-right: none !important;
+    }
+    [data-theme="light"] .gejo-outstanding-header {
+        border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    }
+    [data-theme="light"] .gejo-outstanding-columns .project-column {
+        background-color: rgba(255, 255, 255, 0.75) !important;
+        border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    }
+}
+
+/* ponytail: Light Mode Theme Styling overrides for Outstanding group */
+[data-theme="light"] .gejo-outstanding-group {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(245, 247, 250, 0.95) 100%) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05), 0 0 1px 0 rgba(0, 0, 0, 0.04) !important;
+    border-top: 3px solid var(--color-cyan) !important;
+}
+
+[data-theme="light"] .gejo-outstanding-header {
+    background: linear-gradient(90deg, rgba(8, 145, 178, 0.01) 0%, rgba(8, 145, 178, 0.06) 50%, rgba(8, 145, 178, 0.01) 100%) !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+    color: var(--color-cyan) !important;
+    text-shadow: none !important;
+}
+
+[data-theme="light"] .gejo-outstanding-columns #gejo-col-fase1 {
+    border-right: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="light"] .gejo-outstanding-group.single-column .gejo-outstanding-columns .project-column {
+    background-color: rgba(255, 255, 255, 0.75) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme="light"] .ch-fase1 .col-count {
+    background-color: rgba(147, 51, 234, 0.1) !important;
+    color: #9333ea !important;
+    border-color: rgba(147, 51, 234, 0.2) !important;
+    box-shadow: none !important;
+}
+
+[data-theme="light"] .ch-fase2 .col-count {
+    background-color: rgba(217, 119, 6, 0.1) !important;
+    color: #d97706 !important;
+    border-color: rgba(217, 119, 6, 0.2) !important;
+    box-shadow: none !important;
+}
+
+[data-theme="light"] .ch-fase3 .col-count {
+    background-color: rgba(5, 150, 105, 0.1) !important;
+    color: #059669 !important;
+    border-color: rgba(5, 150, 105, 0.2) !important;
+    box-shadow: none !important;
+}
+
+[data-theme="light"] .project-cards-container .btn-outline.btn-xs {
+    background: rgba(0, 0, 0, 0.01) !important;
+    border: 1px dashed rgba(0, 0, 0, 0.12) !important;
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .project-cards-container .btn-outline.btn-xs:hover {
+    background: rgba(8, 145, 178, 0.04) !important;
+    border-color: rgba(8, 145, 178, 0.25) !important;
+    color: var(--color-cyan) !important;
+    box-shadow: 0 4px 12px rgba(8, 145, 178, 0.06);
+}
+
+[data-theme="light"] .outstanding-total-badge {
+    background-color: rgba(8, 145, 178, 0.1) !important;
+    color: #0891b2 !important;
+    border-color: rgba(8, 145, 178, 0.2) !important;
+    box-shadow: none !important;
 }
