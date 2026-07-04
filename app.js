@@ -464,17 +464,38 @@ async function cancelDrawing(drawingId) {
 
 // Initialization
 // ==========================================
-// ponytail: Theme toggle — default light, localStorage override
+// ponytail: safe localStorage & sessionStorage wrappers to prevent crashes in private browsing or sandboxed environments
+const safeStorage = {
+    getItem(key) {
+        try { return localStorage.getItem(key); } catch (e) { return null; }
+    },
+    setItem(key, val) {
+        try { localStorage.setItem(key, val); } catch (e) {}
+    }
+};
+const safeSessionStorage = {
+    getItem(key) {
+        try { return sessionStorage.getItem(key); } catch (e) { return null; }
+    },
+    setItem(key, val) {
+        try { sessionStorage.setItem(key, val); } catch (e) {}
+    },
+    removeItem(key) {
+        try { sessionStorage.removeItem(key); } catch (e) {}
+    }
+};
+
+// ponytail: Theme toggle — default light, safeStorage override
 (function () {
-    const saved = localStorage.getItem('PTBAS_THEME') || 'light';
+    const saved = safeStorage.getItem('PTBAS_THEME') || 'light';
     document.documentElement.setAttribute('data-theme', saved);
 })();
 
 // ponytail: Generate or retrieve persistent unique device ID for single-device login restriction
-let deviceId = localStorage.getItem("PTBAS_DEVICE_ID");
+let deviceId = safeStorage.getItem("PTBAS_DEVICE_ID");
 if (!deviceId) {
     deviceId = 'device-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now().toString(36);
-    localStorage.setItem("PTBAS_DEVICE_ID", deviceId);
+    safeStorage.setItem("PTBAS_DEVICE_ID", deviceId);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -493,7 +514,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Check if maintenance mode is active and user is not Server
             if (settings.maintenance_mode === "1") {
-                const user = sessionStorage.getItem("PTBAS_USER");
+                const user = safeSessionStorage.getItem("PTBAS_USER");
                 const currentUser = user ? JSON.parse(user) : null;
                 const isServer = currentUser && (
                     currentUser.role === 'Server' ||
@@ -503,7 +524,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!currentUser || !isServer) {
                     // Force log out if logged in
                     if (currentUser) {
-                        sessionStorage.removeItem("PTBAS_USER");
+                        safeSessionStorage.removeItem("PTBAS_USER");
                         state.currentUser = null;
 
                         // Stop any polling
@@ -542,7 +563,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnTheme.addEventListener('click', () => {
             const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
             document.documentElement.setAttribute('data-theme', next);
-            localStorage.setItem('PTBAS_THEME', next);
+            safeStorage.setItem('PTBAS_THEME', next);
             updateThemeIcon();
         });
     }
@@ -599,9 +620,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // ponytail: helper to log out user and clean up active session and state
 async function logoutUser() {
     const user = state.currentUser;
-    const deviceId = localStorage.getItem("PTBAS_DEVICE_ID");
-
-    sessionStorage.removeItem("PTBAS_USER");
+    safeSessionStorage.removeItem("PTBAS_USER");
     state.currentUser = null;
     state.activeTab = 'overview';
 
@@ -661,7 +680,6 @@ async function logoutUser() {
 // ponytail: send periodic heartbeat to server to maintain device session and check if superseded
 async function sendHeartbeat() {
     if (!state.currentUser) return;
-    const deviceId = localStorage.getItem("PTBAS_DEVICE_ID");
     try {
         const res = await fetch("/api/heartbeat", {
             method: "POST",
@@ -680,7 +698,7 @@ async function sendHeartbeat() {
 }
 
 function checkAuth() {
-    const user = sessionStorage.getItem("PTBAS_USER");
+    const user = safeSessionStorage.getItem("PTBAS_USER");
     const loginContainer = document.getElementById("login-container");
     const appContainer = document.querySelector(".app-container");
 
@@ -690,9 +708,9 @@ function checkAuth() {
         if (appContainer) appContainer.style.display = 'flex';
 
         // Populate profile sidebar
-        document.getElementById("sidebar-avatar").src = state.currentUser.avatar;
-        document.getElementById("sidebar-fullname").textContent = state.currentUser.fullname;
-        document.getElementById("sidebar-role").textContent = state.currentUser.role;
+        document.getElementById("sidebar-avatar").src = state.currentUser.avatar || "avatar-default.png";
+        document.getElementById("sidebar-fullname").textContent = state.currentUser.fullname || "";
+        document.getElementById("sidebar-role").textContent = state.currentUser.role || "";
 
         // ponytail: Fetch latest user details from server to sync role/permissions dynamically
         fetch("/api/users")
@@ -723,7 +741,7 @@ function checkAuth() {
                         }
 
                         if (hasChanges) {
-                            sessionStorage.setItem("PTBAS_USER", JSON.stringify(state.currentUser));
+                            safeSessionStorage.setItem("PTBAS_USER", JSON.stringify(state.currentUser));
 
                             // Update UI elements instantly
                             document.getElementById("sidebar-avatar").src = state.currentUser.avatar || "avatar-default.png";
@@ -818,9 +836,18 @@ function checkAuth() {
 async function initData() {
     if (!state.currentUser) return; // Block API calls if not logged in
     try {
-        // ponytail: fetch global display and layout settings from SQLite
-        const resSettings = await fetch("/api/settings");
-        state.settings = await resSettings.json();
+        // ponytail: fetch settings safely
+        try {
+            const resSettings = await fetch("/api/settings");
+            if (resSettings.ok) {
+                state.settings = await resSettings.json();
+            } else {
+                state.settings = { show_status_prop: "0", maintenance_mode: "0" };
+            }
+        } catch (err) {
+            state.settings = { show_status_prop: "0", maintenance_mode: "0" };
+            console.warn("Gagal memuat settings:", err);
+        }
         applyDashboardSettings();
         applyMaintenanceSettings();
 
@@ -832,7 +859,7 @@ async function initData() {
                 (state.currentUser.role && state.currentUser.role.toLowerCase() === 'server')
             );
             if (state.currentUser && !isServer) {
-                sessionStorage.removeItem("PTBAS_USER");
+                safeSessionStorage.removeItem("PTBAS_USER");
                 state.currentUser = null;
 
                 if (window._notifPoll) { clearInterval(window._notifPoll); window._notifPoll = null; }
@@ -858,9 +885,18 @@ async function initData() {
         // ponytail: EJO reguler dinonaktifkan, set state.ejos = []
         state.ejos = [];
 
-        // ponytail: load general EJOs (DB terpisah)
-        const resGejos = await fetch("/api/general-ejos");
-        state.generalEjos = await resGejos.json();
+        // ponytail: load general EJOs (DB terpisah) safely
+        try {
+            const resGejos = await fetch("/api/general-ejos");
+            if (resGejos.ok) {
+                state.generalEjos = await resGejos.json();
+            } else {
+                state.generalEjos = [];
+            }
+        } catch (err) {
+            state.generalEjos = [];
+            console.warn("Gagal memuat general-ejos:", err);
+        }
 
         // ponytail: jangan biarkan endpoint drawing yang belum aktif merusak seluruh initData
         try {
@@ -875,16 +911,42 @@ async function initData() {
             console.warn("Gagal memuat drawings:", err);
         }
 
-        const resProj = await fetch("/api/projects");
-        state.projects = await resProj.json();
+        // ponytail: load projects safely
+        try {
+            const resProj = await fetch("/api/projects");
+            if (resProj.ok) {
+                state.projects = await resProj.json();
+            } else {
+                state.projects = [];
+            }
+        } catch (err) {
+            state.projects = [];
+            console.warn("Gagal memuat projects:", err);
+        }
 
-        // ponytail: Load repair parts from server
-        const resParts = await fetch("/api/repair-parts");
-        state.repairParts = await resParts.json();
+        // ponytail: Load repair parts from server safely
+        try {
+            const resParts = await fetch("/api/repair-parts");
+            if (resParts.ok) {
+                state.repairParts = await resParts.json();
+            } else {
+                state.repairParts = [];
+            }
+        } catch (err) {
+            state.repairParts = [];
+            console.warn("Gagal memuat repair-parts:", err);
+        }
 
-        // ponytail: Fetch dynamic users from SQLite database
-        const resUsers = await fetch("/api/users");
-        const allUsers = await resUsers.json();
+        // ponytail: Fetch dynamic users from SQLite database safely
+        let allUsers = [];
+        try {
+            const resUsers = await fetch("/api/users");
+            if (resUsers.ok) {
+                allUsers = await resUsers.json();
+            }
+        } catch (err) {
+            console.warn("Gagal memuat users:", err);
+        }
         // ponytail: hide Server user from all frontend roles and assignees
         state.users = allUsers.filter(u => u.role !== 'Server' && u.username !== 'server');
 
@@ -1953,7 +2015,7 @@ function initEventListeners() {
 
                 if (res.status === 200) {
                     const userData = await res.json();
-                    sessionStorage.setItem("PTBAS_USER", JSON.stringify(userData));
+                    safeSessionStorage.setItem("PTBAS_USER", JSON.stringify(userData));
 
                     // Reset login form inputs
                     loginForm.reset();
@@ -2284,7 +2346,7 @@ function initEventListeners() {
                 state.currentUser.avatar = relativeAvatarUrl;
                 state.currentUser.signature = signatureUrl;
 
-                sessionStorage.setItem('PTBAS_USER', JSON.stringify(state.currentUser));
+                safeSessionStorage.setItem('PTBAS_USER', JSON.stringify(state.currentUser));
 
                 // Update sidebar details
                 document.getElementById("sidebar-avatar").src = relativeAvatarUrl || "avatar-default.png";
@@ -10452,8 +10514,8 @@ function filterUserRoleOptions() {
     const select = document.getElementById("usr-role");
     if (!select) return;
     
-    // ponytail: fallback to sessionStorage if state.currentUser is not yet loaded
-    const currentUser = state.currentUser || (sessionStorage.getItem("PTBAS_USER") ? JSON.parse(sessionStorage.getItem("PTBAS_USER")) : null);
+    // ponytail: fallback to safeSessionStorage if state.currentUser is not yet loaded
+    const currentUser = state.currentUser || (safeSessionStorage.getItem("PTBAS_USER") ? JSON.parse(safeSessionStorage.getItem("PTBAS_USER")) : null);
     if (!currentUser) return;
     
     const role = currentUser.role || "";
