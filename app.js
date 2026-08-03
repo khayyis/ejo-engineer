@@ -16738,8 +16738,8 @@ function renderFlowchartEditor(mode) {
                 ];
             } else {
                 steps = [
-                    { step: 1, key: "staff_epr", label: "STAFF (EPR)", role: "user_PRD", dept: "EPR", require_signature: 1 },
-                    { step: 2, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                    { step: 1, key: "staff_requestor", label: "STAFF (DEPT_REQUESTOR)", role: "user_PRD", dept: "DEPT_REQUESTOR", require_signature: 1 },
+                    { step: 2, key: "spv_requestor", label: "SPV (DEPT_REQUESTOR)", role: "Supervisor PRD", dept: "DEPT_REQUESTOR", require_signature: 1 },
                     { step: 3, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
                     { step: 4, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
                     { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
@@ -16754,7 +16754,15 @@ function renderFlowchartEditor(mode) {
     const viewMode = state.flowchartViewMode || 'visual';
 
     const rolesList = ['user_PRD', 'Supervisor PRD', 'Foreman Eng', 'Supervisor Eng', 'Drafter', 'Manager PRD', 'Manager EPR', 'Admin Eng', 'Sipil', 'Mekanik', 'Elektrik', 'Kalibrasi', 'Otomotif', 'Server'];
-    const deptsList = ['ENG', 'PRD', 'EPR', 'GA', 'QC', 'WRH'];
+    const deptsList = [
+        { value: 'DEPT_REQUESTOR', label: 'DEPT_REQUESTOR (Dept Pemohon)' },
+        { value: 'ENG', label: 'ENG' },
+        { value: 'PRD', label: 'PRD' },
+        { value: 'EPR', label: 'EPR' },
+        { value: 'GA', label: 'GA' },
+        { value: 'QC', label: 'QC' },
+        { value: 'WRH', label: 'WRH' }
+    ];
 
     let html = `
         <div class="card-glass" style="padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-left: 4px solid var(--color-cyan); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
@@ -16812,7 +16820,7 @@ function renderFlowchartEditor(mode) {
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Dept</label>
                             <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
-                                ${deptsList.map(d => `<option value="${d}" ${step.dept === d ? 'selected' : ''}>${d}</option>`).join('')}
+                                ${deptsList.map(d => `<option value="${d.value}" ${step.dept === d.value ? 'selected' : ''}>${d.label}</option>`).join('')}
                             </select>
                         </div>
 
@@ -16894,7 +16902,7 @@ function renderFlowchartEditor(mode) {
                             <div style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 800; letter-spacing: 0.5px;">DEPARTEMEN:</span>
                                 <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.88rem; font-weight: 700; height: 36px; min-width: 140px;">
-                                    ${deptsList.map(d => `<option value="${d}" ${step.dept === d ? 'selected' : ''}>${d}</option>`).join('')}
+                                    ${deptsList.map(d => `<option value="${d.value}" ${step.dept === d.value ? 'selected' : ''}>${d.label}</option>`).join('')}
                                 </select>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; background: rgba(6, 182, 212, 0.08); padding: 8px 12px; border-radius: 8px; border: 1px dashed rgba(6, 182, 212, 0.25);">
@@ -17064,6 +17072,62 @@ function insertFlowchartStepAt(insertIdx, settingKey) {
 
     const mode = settingKey === 'approval_flowchart_gejo' ? 'flow-gejo' : (settingKey === 'approval_flowchart_drawing' ? 'flow-drawing' : 'flow-project');
     renderFlowchartEditor(mode);
+}
+
+function resolveFlowchartStepForTicket(step, requestorDept) {
+    if (!step) return step;
+    const resolved = JSON.parse(JSON.stringify(step));
+    const effectiveDept = (resolved.dept === 'DEPT_REQUESTOR' || !resolved.dept) ? (requestorDept || 'PRD') : resolved.dept;
+    resolved.effectiveDept = effectiveDept;
+
+    if (resolved.label) {
+        resolved.label = resolved.label
+            .replace(/DEPT_REQUESTOR/gi, effectiveDept)
+            .replace(/\{DEPT\}/gi, effectiveDept)
+            .replace(/\{DEPT_REQUESTOR\}/gi, effectiveDept);
+    }
+    return resolved;
+}
+
+function getFlowchartStepsForModule(settingKey, requestorDept) {
+    let rawSteps = [];
+    if (state.settings && state.settings[settingKey]) {
+        try {
+            rawSteps = typeof state.settings[settingKey] === 'string' ? JSON.parse(state.settings[settingKey]) : state.settings[settingKey];
+        } catch (e) {
+            console.error("Error parsing flowchart steps:", e);
+        }
+    }
+    if (!Array.isArray(rawSteps) || rawSteps.length === 0) {
+        if (settingKey === "approval_flowchart_drawing") {
+            rawSteps = [
+                { step: 1, key: "drafter", label: "DRAFTER (ENG)", role: "Drafter", dept: "ENG", require_signature: 1 },
+                { step: 2, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
+                { step: 3, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                { step: 4, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 }
+            ];
+        } else if (settingKey === "approval_flowchart_project") {
+            rawSteps = [
+                { step: 1, key: "spv_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                { step: 2, key: "spv_prd", label: "SUPERVISOR PRD", role: "Supervisor PRD", dept: "PRD", require_signature: 1 },
+                { step: 3, key: "spv_epr", label: "SUPERVISOR EPR", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                { step: 4, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
+                { step: 5, key: "manager_prd", label: "MANAGER PRD", role: "Manager PRD", dept: "PRD", require_signature: 1 },
+                { step: 6, key: "manager_epr", label: "MANAGER EPR", role: "Manager EPR", dept: "EPR", require_signature: 1 }
+            ];
+        } else {
+            rawSteps = [
+                { step: 1, key: "staff_requestor", label: "STAFF (DEPT_REQUESTOR)", role: "user_PRD", dept: "DEPT_REQUESTOR", require_signature: 1 },
+                { step: 2, key: "spv_requestor", label: "SPV (DEPT_REQUESTOR)", role: "Supervisor PRD", dept: "DEPT_REQUESTOR", require_signature: 1 },
+                { step: 3, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
+                { step: 4, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
+                { step: 6, key: "factory_manager", label: "FACTORY MANAGER", role: "Manager EPR", dept: "ENG", require_signature: 1 }
+            ];
+        }
+    }
+    return rawSteps.map(s => resolveFlowchartStepForTicket(s, requestorDept));
 }
 
 function updateFlowchartStepField(idx, field, value) {
