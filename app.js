@@ -7009,10 +7009,22 @@ function openEJODetails(id) {
         document.getElementById("modal-new-log").disabled = !canChangeStatus;
     }
 
-    // ponytail: hide delete button for Admin role per user request
+    // ponytail: setup delete button for General EJO (Server/Admin/Foreman/Requester) and other EJOs
     const deleteBtn = document.getElementById("btn-delete-ejo");
     if (deleteBtn) {
-        deleteBtn.style.display = (isGeneral || isAdmin) ? 'none' : ((isLead && !isRestrictedRole) ? 'block' : 'none');
+        if (isGeneral) {
+            const userRole = state.currentUser ? state.currentUser.role : '';
+            const username = state.currentUser ? state.currentUser.username : '';
+            const isServerOrAdmin = userRole === 'Server' || userRole === 'Admin Eng' || userRole === 'Foreman Eng' || username.toLowerCase() === 'server' || username.toLowerCase() === 'admin' || isForemanAdminRole(userRole);
+            const isRequester = checkIsRequester(ejo.requester);
+            const isSchedulePhase = ejo.status === 'Requested' || ejo.status === 'Approved' || (ejo.status || '').startsWith('Checking') || ejo.status === 'Waiting Dept Approval';
+            
+            const canDeleteGeneral = isServerOrAdmin || (isRequester && isSchedulePhase);
+            deleteBtn.style.display = canDeleteGeneral ? 'block' : 'none';
+            deleteBtn.onclick = () => deleteGeneralEjo(ejo.id);
+        } else {
+            deleteBtn.style.display = (isAdmin) ? 'none' : ((isLead && !isRestrictedRole) ? 'block' : 'none');
+        }
     }
 
     // Status button group restrictions
@@ -13035,12 +13047,15 @@ function getGeneralEjoCardActions(e) {
     const isLead = state.currentUser && (isLeadRole(state.currentUser.role));
     const isForemanAdmin = state.currentUser && isForemanAdminRole(state.currentUser.role);
     const isAssigned = state.currentUser && e.engineer && e.engineer.split(',').map(name => name.trim()).includes(state.currentUser.fullname);
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const username = state.currentUser ? state.currentUser.username : '';
+    const isServerOrAdmin = userRole === 'Server' || userRole === 'Admin Eng' || username.toLowerCase() === 'server' || username.toLowerCase() === 'admin';
 
     const isRequester = checkIsRequester(e.requester);
     const detailOnlyButton = `<button class="btn btn-outline btn-xs" onclick="openEJODetails('${e.id}')">Detail</button>`;
 
     if (e.status === 'Requested') {
-        if (isRequester) {
+        if (isRequester || isServerOrAdmin) {
             return `
                 <button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Batal / Hapus</button>
                 <button class="btn btn-outline btn-xs" onclick="editGeneralEjoByUser('${e.id}')">Edit</button>
@@ -13052,7 +13067,7 @@ function getGeneralEjoCardActions(e) {
             <button class="btn btn-primary btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Checking')">Setujui &rarr;</button>
         `;
     } else if (e.status === 'Approved' || e.status.startsWith('Checking')) {
-        if (isRequester) {
+        if (isRequester || isServerOrAdmin) {
             return `
                 <button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Batal / Hapus</button>
                 <button class="btn btn-outline btn-xs" onclick="editGeneralEjoByUser('${e.id}')">Edit</button>
@@ -13068,31 +13083,35 @@ function getGeneralEjoCardActions(e) {
         return detailOnlyButton;
     } else if (e.status.startsWith('In Progress')) {
         const isDrafter = state.currentUser && isDrafterRole(state.currentUser.role);
+        let btnStr = '';
+        if (isServerOrAdmin) {
+            btnStr += `<button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Hapus</button> `;
+        }
         if (isDrafter && isAssigned) {
-            return `
-                <button class="btn btn-primary btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Pending User Approval')">Selesaikan &rarr;</button>
-            `;
+            btnStr += `<button class="btn btn-primary btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Pending User Approval')">Selesaikan &rarr;</button>`;
+            return btnStr;
         }
         if (isLead) {
-            return `
-                <button class="btn btn-outline btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Requested')">&larr; Balikkan</button>
-            `;
+            btnStr += `<button class="btn btn-outline btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Requested')">&larr; Balikkan</button>`;
+            return btnStr;
         }
-        return `<span class="text-muted text-xs" style="font-style: italic;">Hanya Engineer yang ditunjuk yang dapat memproses</span>`;
+        return btnStr || `<span class="text-muted text-xs" style="font-style: italic;">Hanya Engineer yang ditunjuk yang dapat memproses</span>`;
     } else if (e.status === 'Pending User Approval') {
         const isRequester = checkIsRequester(e.requester);
-        if (isRequester) {
+        if (isRequester || isServerOrAdmin) {
             return `
                 <button class="btn btn-danger-outline btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'In Progress')">Tolak Approval</button>
                 <button class="btn btn-primary btn-xs glow-button" onclick="moveGeneralEjoStatus('${e.id}', 'Pending Foreman Approval')">Approve Selesai (User) &rarr;</button>
+                ${isServerOrAdmin ? `<button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Hapus</button>` : ''}
             `;
         }
         return `<span class="text-muted text-xs" style="font-style: italic; color: #fbbf24;">Menunggu approval User (Requester)</span>`;
     } else if (e.status === 'Pending Foreman Approval') {
-        if (isForemanAdmin) {
+        if (isForemanAdmin || isServerOrAdmin) {
             return `
                 <button class="btn btn-danger-outline btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'In Progress')">Tolak Approval</button>
                 <button class="btn btn-primary btn-xs glow-button" onclick="moveGeneralEjoStatus('${e.id}', 'Completed')">Approve Selesai (Foreman/Admin) &rarr;</button>
+                ${isServerOrAdmin ? `<button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Hapus</button>` : ''}
             `;
         }
         return detailOnlyButton;
@@ -13105,8 +13124,8 @@ function getGeneralEjoCardActions(e) {
                 buttons += `<button class="btn btn-warning-outline btn-xs" style="margin-right:4px;" onclick="requestEJORevision('${e.id}')">Ajukan Revisi</button>`;
             }
         }
-        if (isRequester || isLead) {
-            buttons += `<button class="btn btn-primary btn-xs glow-button" onclick="archiveGeneralEJO('${e.id}')">Konfirmasi Selesai & Arsipkan</button>`;
+        if (isRequester || isLead || isServerOrAdmin) {
+            buttons += `<button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Batal / Hapus</button>`;
         }
         return buttons;
     } else if (e.status === 'Pending Revision') {
@@ -14142,12 +14161,13 @@ async function deleteGeneralEjo(ejoId) {
     const ejo = getVisibleGeneralEjos().find(item => item.id === ejoId);
     if (!ejo) return;
 
-    const isLead = state.currentUser && (isLeadRole(state.currentUser.role));
-    const isRestrictedRole = state.currentUser && ['Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager'].includes(state.currentUser.role);
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const username = state.currentUser ? state.currentUser.username : '';
+    const isServerOrAdmin = userRole === 'Server' || userRole === 'Admin Eng' || userRole === 'Foreman Eng' || username.toLowerCase() === 'server' || username.toLowerCase() === 'admin' || isForemanAdminRole(userRole);
     const isRequester = checkIsRequester(ejo.requester);
     const isSchedulePhase = ejo.status === 'Requested' || ejo.status === 'Approved' || (ejo.status || '').startsWith('Checking') || ejo.status === 'Waiting Dept Approval';
 
-    let canDelete = (isLead && !isRestrictedRole) || (isRequester && isSchedulePhase);
+    let canDelete = isServerOrAdmin || (isRequester && isSchedulePhase);
     if (!canDelete) {
         showToast("Anda tidak memiliki wewenang untuk tindakan ini!", "error");
         return;
