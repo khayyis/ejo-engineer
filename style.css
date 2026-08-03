@@ -5271,62 +5271,68 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
     z-index: 2;
     display: flex;
     align-items: center;
-    gap: 50px;
+    gap: 65px;
     min-width: max-content;
-    padding: 25px 15px;
+    padding: 35px 20px;
 }
 
 .n8n-node-card {
     position: relative;
-    width: 230px;
+    width: 290px;
     background: #1e222b;
-    border: 1.5px solid rgba(255, 255, 255, 0.12);
-    border-radius: 14px;
-    padding: 1.1rem;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    border: 2px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    padding: 1.35rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
 }
 
 [data-theme="light"] .n8n-node-card {
     background: #ffffff;
-    border-color: rgba(0, 0, 0, 0.12);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.15);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
 }
 
 .n8n-node-card:hover {
     border-color: var(--color-cyan);
-    transform: translateY(-3px);
-    box-shadow: 0 12px 28px rgba(6, 182, 212, 0.25);
+    transform: translateY(-4px);
+    box-shadow: 0 14px 32px rgba(6, 182, 212, 0.3);
 }
 
 .n8n-start-node {
-    border-color: rgba(34, 197, 94, 0.4);
-    background: linear-gradient(145deg, #132419 0%, #1e222b 100%);
+    width: 260px;
+    border-color: rgba(34, 197, 94, 0.5);
+    background: linear-gradient(145deg, #132b1e 0%, #1e222b 100%);
 }
 
 .n8n-end-node {
-    border-color: rgba(6, 182, 212, 0.4);
-    background: linear-gradient(145deg, #10252d 0%, #1e222b 100%);
+    width: 260px;
+    border-color: rgba(6, 182, 212, 0.5);
+    background: linear-gradient(145deg, #102d38 0%, #1e222b 100%);
 }
 
 .n8n-port {
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: var(--color-cyan);
-    border: 2px solid #121519;
-    box-shadow: 0 0 8px var(--color-cyan);
+    border: 3px solid #121519;
+    box-shadow: 0 0 10px var(--color-cyan);
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
     z-index: 3;
 }
 
-.n8n-port-left { left: -6px; }
-.n8n-port-right { right: -6px; }
+[data-theme="light"] .n8n-port {
+    border-color: #ffffff;
+}
+
+.n8n-port-left { left: -8px; }
+.n8n-port-right { right: -8px; }
 
 /* ponytail: Toggle Switch for Visual Settings */
 .switch {

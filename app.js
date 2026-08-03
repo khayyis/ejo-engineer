@@ -16844,12 +16844,12 @@ function renderFlowchartEditor(mode) {
                         <!-- Start Node -->
                         <div class="n8n-node-card n8n-start-node" id="n8n-node-start">
                             <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 0.65rem; font-weight: 800; background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">TRIGGER</span>
-                                <i data-lucide="zap" style="color: #22c55e; width: 16px; height: 16px;"></i>
+                                <span style="font-size: 0.75rem; font-weight: 800; background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1.5px solid rgba(34, 197, 94, 0.4); padding: 3px 8px; border-radius: 6px; text-transform: uppercase;">TRIGGER</span>
+                                <i data-lucide="zap" style="color: #22c55e; width: 22px; height: 22px;"></i>
                             </div>
                             <div>
-                                <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Inisiator EJO</h4>
-                                <p style="font-size: 0.72rem; color: var(--text-muted);">EJO Ticket Created</p>
+                                <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">Inisiator EJO</h4>
+                                <p style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">EJO Ticket Created</p>
                             </div>
                             <div class="n8n-port n8n-port-right" id="port-start"></div>
                         </div>
@@ -16863,39 +16863,40 @@ function renderFlowchartEditor(mode) {
                     <div class="n8n-port n8n-port-left" id="port-in-${idx}"></div>
                     
                     <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-size: 0.65rem; font-weight: 800; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); padding: 2px 8px; border-radius: 4px;">STEP ${idx + 1}</span>
-                        <div style="display: flex; align-items: center; gap: 4px;">
-                            <button type="button" onclick="moveFlowchartStep(${idx}, -1, '${settingKey}')" ${idx === 0 ? 'disabled style="opacity: 0.3; border: none; background: none; color: var(--text-muted); cursor: not-allowed;"' : 'style="border: none; background: none; color: var(--text-secondary); cursor: pointer;"'} title="Geser Kiri">
-                                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+                        <span style="font-size: 0.78rem; font-weight: 800; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1.5px solid rgba(6, 182, 212, 0.35); padding: 3px 10px; border-radius: 6px;">STEP ${idx + 1}</span>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <button type="button" onclick="moveFlowchartStep(${idx}, -1, '${settingKey}')" ${idx === 0 ? 'disabled style="opacity: 0.3; border: none; background: none; color: var(--text-muted); cursor: not-allowed;"' : 'style="border: 1px solid var(--card-border); background: var(--bg-surface); border-radius: 6px; padding: 4px 6px; color: var(--text-primary); cursor: pointer;"'} title="Geser Kiri">
+                                <i data-lucide="chevron-left" style="width: 16px; height: 16px;"></i>
                             </button>
-                            <button type="button" onclick="moveFlowchartStep(${idx}, 1, '${settingKey}')" ${idx === state.activeFlowchartSteps.length - 1 ? 'disabled style="opacity: 0.3; border: none; background: none; color: var(--text-muted); cursor: not-allowed;"' : 'style="border: none; background: none; color: var(--text-secondary); cursor: pointer;"'} title="Geser Kanan">
-                                <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                            <button type="button" onclick="moveFlowchartStep(${idx}, 1, '${settingKey}')" ${idx === state.activeFlowchartSteps.length - 1 ? 'disabled style="opacity: 0.3; border: none; background: none; color: var(--text-muted); cursor: not-allowed;"' : 'style="border: 1px solid var(--card-border); background: var(--bg-surface); border-radius: 6px; padding: 4px 6px; color: var(--text-primary); cursor: pointer;"'} title="Geser Kanan">
+                                <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
                             </button>
-                            <button type="button" onclick="deleteFlowchartStep(${idx}, '${settingKey}')" style="border: none; background: none; color: #ef4444; cursor: pointer;" title="Hapus Step">
-                                <i data-lucide="trash-2" style="width: 13px; height: 13px;"></i>
+                            <button type="button" onclick="deleteFlowchartStep(${idx}, '${settingKey}')" style="border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.1); border-radius: 6px; padding: 4px 6px; color: #ef4444; cursor: pointer;" title="Hapus Step">
+                                <i data-lucide="trash-2" style="width: 15px; height: 15px;"></i>
                             </button>
                         </div>
                     </div>
 
                     <div>
-                        <input type="text" value="${step.label || ''}" onchange="updateFlowchartStepField(${idx}, 'label', this.value)" placeholder="Nama Tahapan" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-weight: 700; font-size: 0.85rem; width: 100%; margin-bottom: 8px;">
+                        <label style="font-size: 0.72rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; display: block; margin-bottom: 4px;">LABEL TAHAPAN</label>
+                        <input type="text" value="${step.label || ''}" onchange="updateFlowchartStepField(${idx}, 'label', this.value)" placeholder="Nama Tahapan" style="padding: 8px 12px; border-radius: 8px; border: 1.5px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-weight: 800; font-size: 1rem; width: 100%; margin-bottom: 12px; height: 40px;">
                         
-                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
                             <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 700;">ROLE:</span>
-                                <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 2px 6px; border-radius: 6px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.75rem;">
+                                <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 800; letter-spacing: 0.5px;">TARGET ROLE:</span>
+                                <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.88rem; font-weight: 700; height: 36px; min-width: 140px;">
                                     ${rolesList.map(r => `<option value="${r}" ${step.role === r ? 'selected' : ''}>${r}</option>`).join('')}
                                 </select>
                             </div>
                             <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 700;">DEPT:</span>
-                                <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 2px 6px; border-radius: 6px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.75rem;">
+                                <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 800; letter-spacing: 0.5px;">DEPARTEMEN:</span>
+                                <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.88rem; font-weight: 700; height: 36px; min-width: 140px;">
                                     ${deptsList.map(d => `<option value="${d}" ${step.dept === d ? 'selected' : ''}>${d}</option>`).join('')}
                                 </select>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
-                                <input type="checkbox" id="n8n-chk-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 14px; height: 14px; accent-color: var(--color-cyan); cursor: pointer;">
-                                <label for="n8n-chk-sig-${idx}" style="font-size: 0.72rem; font-weight: 600; color: var(--text-primary); cursor: pointer;">Wajib TTD</label>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; background: rgba(6, 182, 212, 0.08); padding: 8px 12px; border-radius: 8px; border: 1px dashed rgba(6, 182, 212, 0.25);">
+                                <input type="checkbox" id="n8n-chk-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 18px; height: 18px; accent-color: var(--color-cyan); cursor: pointer;">
+                                <label for="n8n-chk-sig-${idx}" style="font-size: 0.88rem; font-weight: 700; color: var(--text-primary); cursor: pointer;">Wajib TTD Stempel</label>
                             </div>
                         </div>
                     </div>
@@ -16910,12 +16911,12 @@ function renderFlowchartEditor(mode) {
                         <div class="n8n-node-card n8n-end-node" id="n8n-node-end">
                             <div class="n8n-port n8n-port-left" id="port-end"></div>
                             <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 0.65rem; font-weight: 800; background: rgba(6, 182, 212, 0.2); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">COMPLETE</span>
-                                <i data-lucide="check-circle-2" style="color: var(--color-cyan); width: 16px; height: 16px;"></i>
+                                <span style="font-size: 0.75rem; font-weight: 800; background: rgba(6, 182, 212, 0.2); color: var(--color-cyan); border: 1.5px solid rgba(6, 182, 212, 0.4); padding: 3px 8px; border-radius: 6px; text-transform: uppercase;">COMPLETE</span>
+                                <i data-lucide="check-circle-2" style="color: var(--color-cyan); width: 22px; height: 22px;"></i>
                             </div>
                             <div>
-                                <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Persetujuan Final</h4>
-                                <p style="font-size: 0.72rem; color: var(--text-muted);">Stempel PDF Ready</p>
+                                <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">Persetujuan Final</h4>
+                                <p style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Stempel PDF Ready</p>
                             </div>
                         </div>
                     </div>
