@@ -195,7 +195,7 @@ const defaultProjects = [
         targetDate: "2026-07-10",
         pic: "Deddy Corbuzier",
         desc: "Penggantian limit switch lama dengan photoelectric proximity sensor berkecepatan tinggi merk Autonics. Semua barang telah siap di gudang.",
-        phase: 3 // Fase 3: Tinggal Eksekusi (Barang tersedia)
+        phase: 3 // Fase 3: Eksekusi (Barang tersedia)
     }
 ];
 
@@ -222,23 +222,30 @@ let state = {
     activeGeneralEjoPhase: null, // ponytail: tracks currently filtered general EJO phase (1, 2, 3 or null for all)
     activeDrawingPhase: null, // ponytail: tracks currently filtered drawing phase (1, 2, 3 or null for all)
     viewMode: 'grid', // grid or table
+    drawingViewMode: 'grid', // ponytail: grid or table for drawings
     selectedEJO: null,
     editingGejoId: null,
     editingDrawingId: null,
     notifications: [], // ponytail: dari server, per-user
     charts: {}, // Store instances of ChartJS objects to destroy/update them
     trendPeriod: 'year', // ponytail: time range filter for trend chart (week, month, year)
-    settings: {} // ponytail: global visual and display configurations from server
+    partlistTrendPeriod: 'year', // ponytail: time range filter for EJO Repair Part Cost Saving trend chart (month, year)
+    activeKpiEditType: 'gejo', // ponytail: tracks active KPI type being edited (gejo or drawing)
+    activeKpiEditCategory: 'target', // ponytail: tracks active KPI category being edited (target or realisasi)
+    settings: {}, // ponytail: global visual and display configurations from server
+    wspMaterials: [], // ponytail: loaded WSP Master Material items for autodetection
+    wspMap: new Map() // ponytail: O(1) lookup map for fast WSP material search
 };
 
 // ponytail: helper to check if a user role has Lead/Admin/Manager/Supervisor/Server authority based on hierarchy
 const ROLE_LEVELS = {
     'Server': 100,
-    'Manager': 80,
+    'Manager Eng': 80,
     'Plant Manager': 80,
-    'Supervisor': 60,
-    'Foreman': 40,
-    'Admin': 40,
+    'Factory Manager': 80,
+    'Supervisor Eng': 60,
+    'Foreman Eng': 40,
+    'Admin Eng': 40,
     'Drafter': 20,
     'Sipil': 20,
     'Mekanik': 20,
@@ -246,7 +253,15 @@ const ROLE_LEVELS = {
     'Program': 20,
     'Kalibrasi': 20,
     'Otomotif': 20,
-    'User': 10
+    'Manager': 80,
+    'Supervisor': 60,
+    'User': 10,
+    'user_PRD': 10,
+    'user_ENG': 10,
+    'user_EPR': 10,
+    'user_GA': 10,
+    'user_QC': 10,
+    'user_WRH': 10
 };
 
 const DRAFTER_ROLES = ['Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Otomotif'];
@@ -266,25 +281,102 @@ function normalizeDepartmentCode(dept) {
     const upper = clean.toUpperCase();
     const mapping = {
         'PRD': 'PRD',
+        'PRD (PRODUCTION)': 'PRD',
         'PRODUCTION': 'PRD',
         'ENG': 'ENG',
+        'ENG (ENGINEERING)': 'ENG',
         'ENGINEERING': 'ENG',
         'UTILITY': 'ENG',
         'EPR': 'EPR',
+        'EPR (ENGINEERING PRODUKSI)': 'EPR',
+        'EPR (ENGINEERING PRODUCTION)': 'EPR',
         'ENGINEERING PRODUKSI': 'EPR',
         'ENGINEERING PRODUCTION': 'EPR',
         'GA': 'GA',
+        'GA (GENERAL AFFAIR)': 'GA',
         'GENERAL AFFAIR': 'GA',
         'GENERAL AFFAIRS': 'GA',
         'QC': 'QC',
+        'QC (QUALITY CONTROL)': 'QC',
         'QUALITY CONTROL': 'QC',
         'WRH': 'WRH',
+        'WRH (WAREHOUSE)': 'WRH',
         'WAREHOUSE': 'WRH',
         'MAINTENANCE': 'WRH',
         'EKSPEDISI': 'WRH',
         'HSE': 'HSE'
     };
-    return mapping[upper] || clean;
+    if (mapping[upper]) return mapping[upper];
+
+    // Substring / Role prefix detection (check EPR before PRD)
+    if (upper.includes('EPR')) return 'EPR';
+    if (upper.includes('PRD') || upper.includes('PRODUCTION')) return 'PRD';
+    if (upper.includes('ENG') || upper.includes('ENGINEERING') || upper.includes('UTILITY')) return 'ENG';
+    if (upper.includes('GA') || upper.includes('GENERAL AFFAIR')) return 'GA';
+    if (upper.includes('QC') || upper.includes('QUALITY CONTROL')) return 'QC';
+    if (upper.includes('WRH') || upper.includes('WAREHOUSE') || upper.includes('MAINTENANCE')) return 'WRH';
+    if (upper.includes('HSE')) return 'HSE';
+
+    return clean;
+}
+
+function getUserDepartmentCode() {
+    if (!state.currentUser) return '';
+    let deptCode = normalizeDepartmentCode(state.currentUser.dept);
+    const validDepts = ['PRD', 'ENG', 'EPR', 'GA', 'QC', 'WRH', 'HSE'];
+    if (!deptCode || !validDepts.includes(deptCode)) {
+        const fromRole = normalizeDepartmentCode(state.currentUser.role);
+        if (fromRole && validDepts.includes(fromRole)) {
+            deptCode = fromRole;
+        } else {
+            const fromUsername = normalizeDepartmentCode(state.currentUser.username);
+            if (fromUsername && validDepts.includes(fromUsername)) {
+                deptCode = fromUsername;
+            }
+        }
+    }
+    return validDepts.includes(deptCode) ? deptCode : (deptCode || '');
+}
+
+// ponytail: helper to determine drawing phase (1=Schedule, 2=On Progress, 3=Done, 4=Archive)
+function getDrawingPhase(d) {
+    if (!d) return 1;
+    const status = d.status || 'Pending Foreman Approval';
+    const hasFile = !!d.file_path;
+    if (status === 'Archived' || status === 'Cancelled' || status === 'Rejected') {
+        return 4;
+    } else if (status === 'Completed') {
+        return 3;
+    } else if (status === 'On Progress' || status === 'Pending Supervisor Approval' || status === 'Pending Manager Approval' || status === 'Pending Factory Manager Approval' || status === 'Pending Requester Approval') {
+        return 2;
+    } else if (status === 'Checking') {
+        return 1;
+    } else if (status === 'Pending Foreman Approval' || status === 'Pending Dept Approval') {
+        return hasFile ? 2 : 1;
+    }
+    return 1;
+}
+
+function applyUserDepartmentToFormSelect(selectId) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl || !state.currentUser) return;
+
+    const userDeptCode = getUserDepartmentCode();
+    if (userDeptCode) {
+        selectEl.value = userDeptCode;
+    }
+
+    const isGlobalLead = isGlobalLeadUser();
+    selectEl.disabled = !isGlobalLead && !!userDeptCode;
+
+    const fieldContainer = selectEl.closest('.form-field');
+    if (fieldContainer) {
+        if (!isGlobalLead && !!userDeptCode) {
+            fieldContainer.style.display = 'none';
+        } else {
+            fieldContainer.style.display = '';
+        }
+    }
 }
 
 function getDepartmentDisplayLabel(dept) {
@@ -298,7 +390,12 @@ function departmentMatchesFilter(dept, filterVal) {
 }
 
 function getRoleLevel(role) {
-    return ROLE_LEVELS[role] || 0;
+    if (!role) return 0;
+    if (ROLE_LEVELS[role] !== undefined) return ROLE_LEVELS[role];
+    if (role.startsWith('Manager ')) return 80;
+    if (role.startsWith('Supervisor ')) return 60;
+    if (role.startsWith('user_') || role.startsWith('Staff ') || role.startsWith('User ')) return 10;
+    return 0;
 }
 
 function isLeadRole(role) {
@@ -306,27 +403,300 @@ function isLeadRole(role) {
 }
 
 function isForemanAdminRole(role) {
-    return role === 'Foreman' || role === 'Admin' || role === 'Server';
+    return role === 'Foreman Eng' || role === 'Foreman' || role === 'Admin Eng' || role === 'Server';
 }
 
 function isDrafterRole(role) {
     return DRAFTER_ROLES.includes(role);
 }
 
-// ponytail: helper to apply sidebar layout & display rules based on user role
+// ponytail: helper to check if role is a standard user or a department-specific staff
+function isOrdinaryUser(role) {
+    return role === 'User' || (role || '').startsWith('Staff ') || (role || '').startsWith('User ') || (role || '').startsWith('user_');
+}
+
+// ponytail: helper to check if a user is authorized as department supervisor/manager for a specific EJO department (supports user dept, role name e.g. Supervisor EPR, and drawing requester's department)
+function isDepartmentApprover(user, ejoDept, drawingObj) {
+    if (!user) return false;
+    const role = user.role || '';
+    const isServer = role === 'Server' || user.username === 'server' || role === 'Admin Eng';
+    if (isServer) return true;
+
+    const roleLower = role.toLowerCase();
+    const isApproverRole = roleLower.includes('supervisor') || roleLower.includes('spv') || roleLower.includes('manager') || roleLower.includes('plant manager');
+    if (!isApproverRole) return false;
+
+    // Extract user department code
+    let userDeptCode = normalizeDepartmentCode(user.dept);
+    if (!userDeptCode && role) {
+        const parts = role.toUpperCase().split(/[\s_]+/);
+        const codePart = parts.find(p => p !== 'SUPERVISOR' && p !== 'SPV' && p !== 'MANAGER' && p !== 'PLANT' && p.length >= 2);
+        if (codePart) userDeptCode = normalizeDepartmentCode(codePart);
+    }
+
+    // Extract target drawing department code
+    let targetDeptCode = normalizeDepartmentCode(typeof ejoDept === 'string' ? ejoDept : (drawingObj ? drawingObj.dept : ''));
+
+    // Check if drawingObj requester department matches
+    let reqDeptCode = '';
+    if (drawingObj && state.users) {
+        const reqUser = state.users.find(u => checkIsRequester(u.username) || checkIsRequester(u.fullname) || u.username === drawingObj.requester || u.fullname === drawingObj.requester || u.username === drawingObj.uploader || u.fullname === drawingObj.uploader);
+        if (reqUser) {
+            reqDeptCode = normalizeDepartmentCode(reqUser.dept);
+            if (!reqDeptCode && reqUser.role) {
+                const parts = reqUser.role.toUpperCase().split(/[\s_]+/);
+                const codePart = parts.find(p => p !== 'USER' && p !== 'STAFF' && p.length >= 2);
+                if (codePart) reqDeptCode = normalizeDepartmentCode(codePart);
+            }
+        }
+    }
+
+    // Match conditions
+    if (userDeptCode && targetDeptCode && userDeptCode === targetDeptCode) return true;
+    if (userDeptCode && reqDeptCode && userDeptCode === reqDeptCode) return true;
+    if (targetDeptCode && role.toUpperCase().includes(targetDeptCode)) return true;
+    if (reqDeptCode && role.toUpperCase().includes(reqDeptCode)) return true;
+
+    return false;
+}
+
+function canManageSparePartAllocation(role) {
+    return role === 'Drafter' || isLeadRole(role);
+}
+
+// ponytail: helper to check if a user is a non-Engineering Supervisor or Manager
+function isNonEngSpvOrManager(userOrRole, deptInput) {
+    let user = null;
+    let role = '';
+    let dept = '';
+    if (userOrRole && typeof userOrRole === 'object') {
+        user = userOrRole;
+        role = user.role || '';
+        dept = user.dept || '';
+    } else {
+        user = state.currentUser;
+        role = userOrRole || (user ? user.role : '');
+        dept = deptInput || (user ? user.dept : '');
+    }
+
+    if (!role) return false;
+    if (role === 'Server' || (user && user.username === 'server')) return false;
+
+    const engAdminRoles = ['Supervisor Eng', 'Manager Eng', 'Plant Manager', 'Factory Manager', 'Foreman Eng', 'Admin Eng'];
+    if (engAdminRoles.includes(role)) return false;
+
+    const normalizedDept = typeof normalizeDepartmentCode === 'function' ? normalizeDepartmentCode(dept) : String(dept || '').toUpperCase();
+    const isEngDept = normalizedDept === 'ENG' || / eng$/i.test(role) || / eng /i.test(role);
+    if (isEngDept) return false;
+
+    const isSpvOrManager = role === 'Supervisor' || role === 'Manager' || 
+                           role.startsWith('Supervisor ') || role.startsWith('Manager ') ||
+                           role.startsWith('SPV ') || role === 'SPV' || role === 'spv_user' ||
+                           role === 'manager_user' || role === 'spv_dept' || role === 'manager_dept' ||
+                           /spv|supervisor|manager/i.test(role);
+
+    return isSpvOrManager;
+}
+
+// ponytail: helper to check if a user is limited to 2 active General EJO / Drawing EJO (User role & non-ENG SPV/Manager)
+function isUserLimited(userOrRole, deptInput) {
+    let user = null;
+    let role = '';
+    let dept = '';
+    if (userOrRole && typeof userOrRole === 'object') {
+        user = userOrRole;
+        role = user.role || '';
+        dept = user.dept || '';
+    } else {
+        user = state.currentUser;
+        role = userOrRole || (user ? user.role : '');
+        dept = deptInput || (user ? user.dept : '');
+    }
+
+    if (!role) return false;
+    return isOrdinaryUser(role) || isNonEngSpvOrManager(user, dept);
+}
+
+// ponytail: helper to check if a user is authorized to access/view Admin Panel (hiding from Plant Manager & Factory Manager, non-ENG SPV & Manager)
+function canAccessAdminPanel(userOrRole, deptInput) {
+    let role = '';
+    let dept = '';
+    if (userOrRole && typeof userOrRole === 'object') {
+        role = userOrRole.role || '';
+        dept = userOrRole.dept || '';
+    } else {
+        role = userOrRole || '';
+        dept = deptInput || (state.currentUser ? state.currentUser.dept : '');
+    }
+
+    if (!role) return false;
+    if (role === 'Plant Manager' || role === 'Factory Manager') return false;
+    if (role === 'Server' || (state.currentUser && state.currentUser.username === 'server')) return true;
+
+    const engAdminRoles = ['Supervisor Eng', 'Manager Eng', 'Foreman Eng', 'Admin Eng'];
+    if (engAdminRoles.includes(role)) return true;
+
+    const normalizedDept = typeof normalizeDepartmentCode === 'function' ? normalizeDepartmentCode(dept) : String(dept || '').toUpperCase();
+    const isEngDept = normalizedDept === 'ENG' || / eng$/i.test(role) || / eng /i.test(role);
+
+    const isSpvOrManager = role === 'Supervisor' || role === 'Manager' || 
+                           role.startsWith('Supervisor ') || role.startsWith('Manager ') ||
+                           role.startsWith('SPV ') || role === 'SPV' || role === 'spv_user' ||
+                           role === 'manager_user' || role === 'spv_dept' || role === 'manager_dept' ||
+                           /spv|supervisor|manager/i.test(role);
+
+    if (isSpvOrManager) {
+        return isEngDept;
+    }
+
+    return false;
+}
+
+// ponytail: helper to check if account is Server account
+function isServerAccount(user) {
+    if (!user) return false;
+    const role = user.role || '';
+    const username = (user.username || '').toLowerCase();
+    return role === 'Server' || username === 'server';
+}
+
+function canAccessServerAccessTab(user) {
+    return isServerAccount(user);
+}
+
+
+// ponytail: helper to count active EJOs assigned to a user (standard EJOs + general EJOs)
+function getActiveEjoCountForUser(fullname) {
+    const userLower = (fullname || '').trim().toLowerCase();
+    if (!userLower) return 0;
+    
+    const activeEjos = (state.ejos || []).filter(e => {
+        if (e.status === 'Completed' || e.status === 'Cancelled') return false;
+        const engineers = (e.engineer || '').split(',').map(name => name.trim().toLowerCase());
+        return engineers.includes(userLower);
+    }).length;
+    
+    const activeGeneralEjos = (state.generalEjos || []).filter(e => {
+        if (e.status === 'Completed' || e.status === 'Cancelled' || e.status === 'Archived' || e.is_archived === 1 || e.is_archived === '1') return false;
+        const engineers = (e.engineer || '').split(',').map(name => name.trim().toLowerCase());
+        return engineers.includes(userLower);
+    }).length;
+    
+    return activeEjos + activeGeneralEjos;
+}
+
+// ponytail: Extract configured access permissions for user from DB access_permissions JSON field
+function getUserPermissions(user) {
+    if (!user) {
+        return { overview: true, gejo: true, drawing: true, project: true, partlist: true, history: true, admin: false };
+    }
+
+    if (isServerAccount(user) || (user.username && user.username.toLowerCase() === 'server')) {
+        return { overview: true, gejo: true, drawing: true, project: true, partlist: true, history: true, admin: true };
+    }
+
+    let perms = {};
+    try {
+        if (typeof user.access_permissions === 'string' && user.access_permissions) {
+            perms = JSON.parse(user.access_permissions);
+        } else if (typeof user.access_permissions === 'object' && user.access_permissions !== null) {
+            perms = user.access_permissions;
+        }
+    } catch (e) {
+        perms = {};
+    }
+
+    const keys = Object.keys(perms);
+    if (keys.length > 0) {
+        return {
+            overview: perms.overview !== false,
+            gejo: perms.gejo !== false,
+            drawing: perms.drawing !== false,
+            project: perms.project !== false,
+            partlist: perms.partlist !== false,
+            history: perms.history !== false,
+            admin: perms.admin === true || canAccessAdminPanel(user)
+        };
+    }
+
+    // Default fallback if access_permissions JSON is null/empty in DB
+    const role = user.role || '';
+    if (role === 'Drafter') {
+        return { overview: false, gejo: false, drawing: true, project: false, partlist: true, history: true, admin: false };
+    }
+    const isTechNonDrafter = isDrafterRole(role) && role !== 'Drafter';
+    if (isTechNonDrafter) {
+        return { overview: true, gejo: true, drawing: false, project: false, partlist: false, history: true, admin: false };
+    }
+    const isStaffUser = role === 'User' || (role || '').includes('Staff') || isOrdinaryUser(role);
+    if (isStaffUser) {
+        return { overview: false, gejo: true, drawing: true, project: false, partlist: false, history: true, admin: false };
+    }
+
+    return {
+        overview: true,
+        gejo: true,
+        drawing: true,
+        project: !isOrdinaryUser(role) && !isNonEngSpvOrManager(user),
+        partlist: true,
+        history: true,
+        admin: canAccessAdminPanel(user)
+    };
+}
+
+// ponytail: helper to apply sidebar layout & display rules based on user permissions matrix
 function applySidebarRoleRestrictions() {
     if (!state.currentUser) return;
 
+    const uPerms = getUserPermissions(state.currentUser);
     const role = state.currentUser.role;
-    const isTechNonDrafter = isDrafterRole(role) && role !== 'Drafter';
+    const isStaffUser = role === 'User' || (role || '').includes('Staff') || isOrdinaryUser(role);
+    const isDeptSpvOrManager = isNonEngSpvOrManager(state.currentUser);
 
-    // 1. Hide overview button for Drafter roles
-    const overviewBtn = document.querySelector('.nav-btn[data-tab="overview"]');
-    if (overviewBtn) {
-        overviewBtn.style.display = isDrafterRole(role) ? 'none' : 'flex';
+    // 1. Partlist charts grid visibility
+    const partlistChartsGrid = document.getElementById("partlist-charts-grid");
+    if (partlistChartsGrid) {
+        const HIDDEN_ROLES = ['Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Otomotif', 'User', 'user_PRD', 'user_ENG', 'user_EPR', 'user_GA', 'user_QC', 'user_WRH', 'User PRD', 'User ENG', 'User EPR', 'User GA', 'User QC', 'User WRH', 'Staff PRD', 'Staff ENG', 'Staff EPR', 'Staff GA', 'Staff QC', 'Staff WRH'];
+        if (HIDDEN_ROLES.includes(role)) {
+            partlistChartsGrid.style.display = 'none';
+        } else {
+            partlistChartsGrid.style.display = 'grid';
+        }
     }
 
-    // 2. Hide/show EJO limit & actions container based on role
+    const sparePartToggleBtn = document.getElementById("btn-toggle-new-sparepart");
+    const sparePartFormContainer = document.getElementById("sparepart-form-container");
+    const canManageSparePart = canManageSparePartAllocation(role);
+    if (sparePartToggleBtn) {
+        sparePartToggleBtn.style.display = canManageSparePart ? 'inline-flex' : 'none';
+    }
+    if (sparePartFormContainer && !canManageSparePart) {
+        sparePartFormContainer.style.display = 'none';
+    }
+
+    // 2. Overview Button: Visible strictly if uPerms.overview is true
+    const overviewBtn = document.querySelector('.nav-btn[data-tab="overview"]');
+    if (overviewBtn) {
+        const showOverview = uPerms.overview === true;
+        overviewBtn.style.display = showOverview ? 'flex' : 'none';
+        if (!showOverview) {
+            overviewBtn.style.setProperty('display', 'none', 'important');
+        } else {
+            overviewBtn.style.removeProperty('display');
+        }
+    }
+
+    // 3. Import Drawing Button
+    const importDrawingBtn = document.getElementById("btn-toggle-import-drawing");
+    if (importDrawingBtn) {
+        if (isDrafterRole(role) || isOrdinaryUser(role) || isDeptSpvOrManager) {
+            importDrawingBtn.style.setProperty('display', 'none', 'important');
+        } else {
+            importDrawingBtn.style.display = 'inline-flex';
+        }
+    }
+
+    // 4. EJO Limit Container
     const limitContainerEl = document.getElementById("gejo-limit-container");
     const controlBarEl = document.querySelector("#tab-general-ejo .control-bar");
     if (isDrafterRole(role)) {
@@ -341,124 +711,146 @@ function applySidebarRoleRestrictions() {
         }
     }
 
-    // 3. Hide/show admin panel button based on role
+    // 5. Admin Panel Button
     const adminBtn = document.getElementById("nav-admin-btn");
     if (adminBtn) {
-        adminBtn.style.display = isLeadRole(role) ? 'flex' : 'none';
+        if (uPerms.admin) {
+            adminBtn.style.display = 'flex';
+            adminBtn.style.removeProperty('display');
+        } else {
+            adminBtn.style.display = 'none';
+            adminBtn.style.setProperty('display', 'none', 'important');
+        }
     }
 
-    // 4. Handle EJO dropdown hierarchy and submenu based on roles
-    const ejoChevronBtn = document.querySelector("#btn-nav-job-orders .dropdown-chevron-btn");
-    const ejoSubmenu = document.getElementById("job-orders-submenu");
+    // 6. Server Access Management Button
+    const serverAccessWrapper = document.getElementById("nav-server-access-wrapper");
+    const serverAccessBtn = document.getElementById("btn-nav-server-access") || document.getElementById("nav-server-access-btn");
+    const targetServerEl = serverAccessWrapper || serverAccessBtn;
+    if (targetServerEl) {
+        if (canAccessServerAccessTab(state.currentUser)) {
+            targetServerEl.style.display = 'block';
+            targetServerEl.style.removeProperty('display');
+        } else {
+            targetServerEl.style.display = 'none';
+            targetServerEl.style.setProperty('display', 'none', 'important');
+        }
+    }
+
+    // 7. Navigation Tabs Controlled by uPerms:
     const btnNavGeneralEjo = document.getElementById("btn-nav-general-ejo");
-    const generalEjoSubmenu = document.getElementById("general-ejo-submenu");
-    const drawingDropdown = document.getElementById("drawing-dropdown-container");
     const btnNavDrawing = document.getElementById("btn-nav-drawing");
-    const drawingSubmenu = document.getElementById("drawing-submenu");
-    const repairPartsBtn = document.querySelector('#job-orders-submenu .nav-btn[data-tab="repair-parts"]');
-    const projectsDropdown = document.getElementById("projects-dropdown-container");
+    const btnNavProjects = document.getElementById("btn-nav-projects");
+    const repairPartsBtn = document.querySelector('.sidebar-nav .nav-btn[data-tab="partlist"]');
+    const historyBtn = document.getElementById("btn-nav-history") || document.querySelector('.sidebar-nav .nav-btn[data-tab="history"]');
 
-    if (role === 'Drafter') {
-        // ponytail: drafter role only sees the drawing submenu under EJO, and EJO chevron button is visible to allow toggling it
-        if (ejoChevronBtn) ejoChevronBtn.style.display = 'inline-flex';
+    const wrapperGeneralEjo = btnNavGeneralEjo ? btnNavGeneralEjo.closest('.nav-item-wrapper') : null;
+    const wrapperDrawing = btnNavDrawing ? btnNavDrawing.closest('.nav-item-wrapper') : null;
+    const wrapperProjects = btnNavProjects ? btnNavProjects.closest('.nav-item-wrapper') : null;
+    const wrapperHistory = historyBtn ? historyBtn.closest('.nav-item-wrapper') : null;
 
-        if (btnNavGeneralEjo) btnNavGeneralEjo.style.display = 'none';
-        if (generalEjoSubmenu) generalEjoSubmenu.style.display = 'none';
-
-        if (drawingDropdown) drawingDropdown.style.display = 'flex';
-        if (btnNavDrawing) btnNavDrawing.style.display = 'none'; // hide the intermediate "Drawing" button
-        if (drawingSubmenu) {
-            drawingSubmenu.style.display = 'flex'; // directly display drawing sub-phases
-            drawingSubmenu.style.paddingLeft = '0px'; // align nicely under EJO
-            drawingSubmenu.style.marginTop = '0px';
+    function setNavVisibility(btn, wrapper, visible) {
+        if (btn) {
+            if (visible) {
+                btn.style.display = 'flex';
+                btn.style.setProperty('display', 'flex', 'important');
+            } else {
+                btn.style.display = 'none';
+                btn.style.setProperty('display', 'none', 'important');
+            }
         }
-
-        if (repairPartsBtn) repairPartsBtn.style.display = 'none';
-        if (projectsDropdown) projectsDropdown.style.display = 'none';
-    } else if (isTechNonDrafter) {
-        // Show EJO chevron (allowing it to toggle)
-        if (ejoChevronBtn) ejoChevronBtn.style.display = 'inline-flex';
-
-        // Hide General EJO parent button and force General EJO submenu to be visible directly inside the EJO dropdown container
-        if (btnNavGeneralEjo) btnNavGeneralEjo.style.display = 'none';
-        if (generalEjoSubmenu) {
-            generalEjoSubmenu.style.display = 'flex';
-            generalEjoSubmenu.style.paddingLeft = '0px'; // align submenu buttons nicely under EJO
-            generalEjoSubmenu.style.marginTop = '0px';
+        if (wrapper) {
+            if (visible) {
+                wrapper.style.display = 'block';
+                wrapper.style.setProperty('display', 'block', 'important');
+            } else {
+                wrapper.style.display = 'none';
+                wrapper.style.setProperty('display', 'none', 'important');
+            }
         }
-
-        // Hide drawing, repair parts, and projects
-        if (drawingDropdown) drawingDropdown.style.display = 'none';
-        if (repairPartsBtn) repairPartsBtn.style.display = 'none';
-        if (projectsDropdown) projectsDropdown.style.display = 'none';
-    } else {
-        // Restore standard behavior/layout
-        if (ejoChevronBtn) ejoChevronBtn.style.display = 'inline-flex';
-
-        if (btnNavGeneralEjo) btnNavGeneralEjo.style.display = 'flex';
-        if (generalEjoSubmenu) {
-            generalEjoSubmenu.style.paddingLeft = '20px';
-            generalEjoSubmenu.style.marginTop = '4px';
-        }
-
-        if (drawingDropdown) drawingDropdown.style.display = 'flex';
-        if (btnNavDrawing) btnNavDrawing.style.display = 'flex';
-        if (drawingSubmenu) {
-            drawingSubmenu.style.paddingLeft = '20px';
-            drawingSubmenu.style.marginTop = '4px';
-        }
-        if (repairPartsBtn) repairPartsBtn.style.display = 'flex';
-        if (projectsDropdown) projectsDropdown.style.display = 'flex';
     }
+
+    setNavVisibility(btnNavGeneralEjo, wrapperGeneralEjo, uPerms.gejo);
+    setNavVisibility(btnNavDrawing, wrapperDrawing, uPerms.drawing);
+    setNavVisibility(btnNavProjects, wrapperProjects, uPerms.project);
+    setNavVisibility(repairPartsBtn, null, uPerms.partlist);
+    setNavVisibility(historyBtn, wrapperHistory, uPerms.history);
+
+    const btnToggleProj = document.getElementById("btn-toggle-new-project");
+    const projFormContainer = document.getElementById("project-form-container");
+    if (btnToggleProj) {
+        if (isOrdinaryUser(role) || isStaffUser) {
+            btnToggleProj.style.display = 'none';
+            if (projFormContainer) projFormContainer.style.display = 'none';
+        } else {
+            btnToggleProj.style.display = 'inline-flex';
+        }
+    }
+
+    // ponytail: auto-fill and lock form department dropdowns for user's department
+    applyUserDepartmentToFormSelect("gejo-form-dept");
+    applyUserDepartmentToFormSelect("drawing-form-dept");
+    applyUserDepartmentToFormSelect("part-ejo-dept");
+
+    // ponytail: lock department filter for non-global lead users (Staff, SPV per dept, Manager per dept) to their own department only and hide the dropdown container
+    const isGlobalLead = isGlobalLeadUser();
+    const userDeptCode = getUserDepartmentCode();
+    const filterSelects = [
+        document.getElementById("gejo-filter-dept"),
+        document.getElementById("drawing-filter-dept"),
+        document.getElementById("proj-filter-dept")
+    ];
+
+    if (!isGlobalLead && userDeptCode && state.currentUser) {
+        filterSelects.forEach(select => {
+            if (select) {
+                select.value = userDeptCode;
+                select.disabled = true;
+                const group = select.closest(".filter-group");
+                if (group) group.style.display = "none";
+            }
+        });
+    } else {
+        filterSelects.forEach(select => {
+            if (select) {
+                select.disabled = false;
+                const group = select.closest(".filter-group");
+                if (group) group.style.display = "";
+            }
+        });
+    }
+
+    // ponytail: hide uploader filter for Staff users (Staff per dept)
+    const uploaderFilterSelects = [
+        document.getElementById("drawing-filter-uploader"),
+        document.getElementById("drawing-history-filter-uploader")
+    ];
+    uploaderFilterSelects.forEach(select => {
+        if (select) {
+            const group = select.closest(".filter-group");
+            if (group) {
+                if (isStaffUser) {
+                    group.style.display = "none";
+                    select.value = "all";
+                } else {
+                    group.style.display = "";
+                }
+            }
+        }
+    });
 }
 
 // ponytail: helper to get allowed assignee roles based on logged-in user role
 function getAllowedAssigneeRoles(currentUserRole) {
-    if (currentUserRole === 'Foreman') {
-        return [...DRAFTER_ROLES, 'Admin'];
-    } else if (currentUserRole === 'Supervisor') {
-        return ['Foreman', ...DRAFTER_ROLES, 'Admin'];
-    } else if (currentUserRole === 'Manager' || currentUserRole === 'Plant Manager') {
-        return ['Supervisor', 'Foreman', ...DRAFTER_ROLES, 'Admin'];
+    if (currentUserRole === 'Foreman Eng') {
+        return [...DRAFTER_ROLES, 'Admin Eng'];
+    } else if (currentUserRole === 'Supervisor Eng') {
+        return ['Foreman Eng', ...DRAFTER_ROLES, 'Admin Eng'];
+    } else if (currentUserRole === 'Manager Eng' || currentUserRole === 'Plant Manager') {
+        return ['Supervisor Eng', 'Foreman Eng', ...DRAFTER_ROLES, 'Admin Eng'];
     } else {
         // Admin or Server can assign to anyone (except Server which is filtered globally)
-        return ['Manager', 'Plant Manager', 'Supervisor', 'Foreman', ...DRAFTER_ROLES, 'Admin'];
-    }
-}
-
-// ponytail: batalkan drawing — set status ke Cancelled (hanya untuk Schedule phase)
-async function cancelDrawing(drawingId) {
-    if (!await showCustomConfirm(`Batalkan request drawing ${drawingId}?`)) return;
-
-    const drawing = (state.drawings || []).find(d => d.id === drawingId);
-    if (!drawing) return;
-
-    const now = new Date().toLocaleString('id-ID', { hour12: false }).replace(/\//g, '-');
-    const userName = state.currentUser ? state.currentUser.fullname : 'user';
-
-    const payload = {
-        status: 'Cancelled',
-        approvals: drawing.approvals || {},
-        logs: [{
-            date: now,
-            message: `Request drawing dibatalkan oleh ${userName}.`
-        }]
-    };
-
-    try {
-        const res = await fetch(`/api/drawings/${drawingId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-        if (!res.ok) throw new Error("Gagal membatalkan drawing");
-        await initData();
-        closeDrawingModal();
-        renderDrawings();
-        showToast(`Request Drawing ${drawingId} berhasil dibatalkan`, "warning");
-    } catch (err) {
-        console.error(err);
-        showToast(err.message || "Gagal membatalkan drawing", "error");
+        return ['Manager Eng', 'Plant Manager', 'Supervisor Eng', 'Foreman Eng', ...DRAFTER_ROLES, 'Admin Eng'];
     }
 }
 
@@ -471,6 +863,12 @@ const safeStorage = {
     },
     setItem(key, val) {
         try { localStorage.setItem(key, val); } catch (e) {}
+    },
+    removeItem(key) {
+        try { localStorage.removeItem(key); } catch (e) {}
+    },
+    clear() {
+        try { localStorage.clear(); } catch (e) {}
     }
 };
 const safeSessionStorage = {
@@ -482,6 +880,9 @@ const safeSessionStorage = {
     },
     removeItem(key) {
         try { sessionStorage.removeItem(key); } catch (e) {}
+    },
+    clear() {
+        try { sessionStorage.clear(); } catch (e) {}
     }
 };
 
@@ -498,10 +899,128 @@ if (!deviceId) {
     safeStorage.setItem("PTBAS_DEVICE_ID", deviceId);
 }
 
+// ponytail: Gentle & Ultra-Smooth 3D Tilted Card Interactive Effect for Login Box
+function initLoginTiltedCard() {
+    const loginBox = document.querySelector(".login-box");
+    if (!loginBox) return;
+
+    const rotateAmplitude = 2.5; // ponytail: ultra-subtle micro tilt
+    const scaleOnHover = 1.04; // ponytail: card enlarges smoothly on hover
+    let reqId = null;
+
+    let targetRotateX = 0;
+    let targetRotateY = 0;
+    let currentRotateX = 0;
+    let currentRotateY = 0;
+    let targetScale = 1;
+    let currentScale = 1;
+    let isHovered = false;
+
+    function updateCardTransform() {
+        const lerpFactor = 0.08; // ponytail: smooth fluid zoom & tilt dampening
+
+        if (!isHovered) {
+            currentRotateX += (0 - currentRotateX) * lerpFactor;
+            currentRotateY += (0 - currentRotateY) * lerpFactor;
+            currentScale += (1 - currentScale) * lerpFactor;
+        } else {
+            currentRotateX += (targetRotateX - currentRotateX) * lerpFactor;
+            currentRotateY += (targetRotateY - currentRotateY) * lerpFactor;
+            currentScale += (targetScale - currentScale) * lerpFactor;
+        }
+
+        loginBox.style.transform = `perspective(1000px) rotateX(${currentRotateX.toFixed(2)}deg) rotateY(${currentRotateY.toFixed(2)}deg) scale3d(${currentScale.toFixed(3)}, ${currentScale.toFixed(3)}, 1)`;
+
+        if (isHovered || Math.abs(currentRotateX) > 0.01 || Math.abs(currentRotateY) > 0.01 || Math.abs(currentScale - 1) > 0.001) {
+            reqId = requestAnimationFrame(updateCardTransform);
+        } else {
+            loginBox.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+            reqId = null;
+        }
+    }
+
+    loginBox.addEventListener("mousemove", (e) => {
+        if (window.innerWidth <= 640) return; // Skip 3D tilt on mobile
+        const rect = loginBox.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left - rect.width / 2;
+        const offsetY = e.clientY - rect.top - rect.height / 2;
+
+        targetRotateX = (offsetY / (rect.height / 2)) * -rotateAmplitude;
+        targetRotateY = (offsetX / (rect.width / 2)) * rotateAmplitude;
+        targetScale = scaleOnHover;
+
+        if (!reqId) {
+            reqId = requestAnimationFrame(updateCardTransform);
+        }
+    });
+
+    loginBox.addEventListener("mouseenter", () => {
+        if (window.innerWidth <= 640) return;
+        isHovered = true;
+        targetScale = scaleOnHover;
+        const wrapper = document.getElementById("login-container");
+        if (wrapper) wrapper.classList.add("box-hovered");
+        if (!reqId) {
+            reqId = requestAnimationFrame(updateCardTransform);
+        }
+    });
+
+    loginBox.addEventListener("mouseleave", () => {
+        isHovered = false;
+        targetRotateX = 0;
+        targetRotateY = 0;
+        targetScale = 1;
+        const wrapper = document.getElementById("login-container");
+        if (wrapper) wrapper.classList.remove("box-hovered");
+        if (!reqId) {
+            reqId = requestAnimationFrame(updateCardTransform);
+        }
+    });
+}
+
+function initLoginBackgroundVideo() {
+    const video = document.querySelector(".login-bg-video");
+    if (!video) return;
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute("muted", "");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    
+    if (!video.src && video.querySelector("source")) {
+        video.src = video.querySelector("source").src || "202607301136.mp4";
+    }
+
+    const startPlayback = () => {
+        video.muted = true;
+        const promise = video.play();
+        if (promise !== undefined) {
+            promise.catch(() => {
+                const handleUserInteraction = () => {
+                    video.muted = true;
+                    video.play().catch(() => {});
+                };
+                document.addEventListener("touchstart", handleUserInteraction, { once: true });
+                document.addEventListener("click", handleUserInteraction, { once: true });
+                document.addEventListener("scroll", handleUserInteraction, { once: true });
+            });
+        }
+    };
+
+    if (video.readyState >= 2) {
+        startPlayback();
+    } else {
+        video.addEventListener("canplay", startPlayback, { once: true });
+        startPlayback();
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     checkAuth();
     initClock();
     initEventListeners();
+    initLoginTiltedCard();
+    initLoginBackgroundVideo();
     applyDashboardSettings(); // ponytail: initialize dashboard visual settings
 
     // ponytail: check maintenance mode status on load
@@ -618,12 +1137,24 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ponytail: helper to log out user and clean up active session and state
-async function logoutUser() {
+async function logoutUser(customMessage = null, toastType = "warning") {
     const user = state.currentUser;
-    safeSessionStorage.removeItem("PTBAS_USER");
-    state.currentUser = null;
-    state.activeTab = 'overview';
+    const appContainer = document.querySelector(".app-container");
+    const welcomeScreen = document.getElementById("welcome-greeting-screen");
+    const loginContainer = document.getElementById("login-container");
 
+    // 1. Trigger smooth fade-out exit animation on current dashboard / welcome screen
+    if (welcomeScreen && welcomeScreen.style.display !== 'none') {
+        welcomeScreen.classList.add("dismissing");
+    }
+    if (appContainer) {
+        appContainer.classList.add("app-fade-exit");
+    }
+
+    // Wait 380ms for exit animation to play smoothly
+    await new Promise(resolve => setTimeout(resolve, 380));
+
+    // 2. Stop all polling loops immediately
     if (window._notifPoll) {
         clearInterval(window._notifPoll);
         window._notifPoll = null;
@@ -637,18 +1168,54 @@ async function logoutUser() {
         window._heartbeatPoll = null;
     }
 
-    if (user) {
+    // 3. Safely call server logout API if user exists
+    if (user && user.username) {
         try {
             await fetch("/api/logout", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username: user.username, device_id: deviceId })
+                body: JSON.stringify({ username: user.username, device_id: typeof deviceId !== 'undefined' ? deviceId : '' })
             });
         } catch (err) {
             console.error("Gagal logout di server:", err);
         }
     }
 
+    // 4. Clear session storage & user keys
+    safeSessionStorage.clear();
+    safeStorage.removeItem("PTBAS_USER");
+    safeStorage.removeItem("EJO_GREETING_DISMISSED");
+
+    // 5. Reset memory state to clean initial values
+    state.currentUser = null;
+    state.activeTab = 'overview';
+    state.notifications = [];
+    state.ejos = [];
+    state.generalEjos = [];
+    state.drawings = [];
+    state.projects = [];
+    state.editingGejoId = null;
+    state.editingDrawingId = null;
+    state.editingRepairPartEjoId = null;
+
+    // 6. Reset forms and urgent reason displays
+    ['gejo-form', 'drawing-form', 'part-form', 'login-form'].forEach(id => {
+        const f = document.getElementById(id);
+        if (f) f.reset();
+    });
+    ['gejo-form-priority', 'drawing-form-priority', 'part-ejo-priority'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.dataset.urgentReason = '';
+            el.dataset.prevVal = '3';
+        }
+    });
+    ['gejo-urgent-reason-display', 'drawing-urgent-reason-display', 'part-urgent-reason-display'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    // 7. Reset UI view & display login container with smooth entrance animation
     document.querySelectorAll(".tab-pane").forEach(pane => pane.classList.remove("active"));
     document.querySelectorAll(".nav-btn").forEach(btn => btn.classList.remove("active"));
 
@@ -657,24 +1224,31 @@ async function logoutUser() {
 
     const overviewBtn = document.querySelector('.nav-btn[data-tab="overview"]');
     if (overviewBtn) {
-        overviewBtn.style.display = 'flex'; // ponytail: reset overview button visibility on logout
-        overviewBtn.classList.add("active");
+        overviewBtn.style.display = 'none';
+        overviewBtn.classList.remove("active");
     }
 
-    const ejoChevron = document.querySelector("#btn-nav-job-orders .dropdown-chevron-btn");
+    const ejoChevron = document.getElementById("btn-nav-job-orders-chevron");
     if (ejoChevron) {
-        ejoChevron.style.display = 'inline-flex'; // ponytail: reset EJO chevron visibility on logout
+        ejoChevron.style.display = 'inline-flex';
     }
 
-    const limitContainerEl = document.getElementById("gejo-limit-container");
-    const controlBarEl = document.querySelector("#tab-general-ejo .control-bar");
-    if (limitContainerEl) limitContainerEl.style.display = 'flex';
-    if (controlBarEl) controlBarEl.style.gridTemplateColumns = '1.5fr 2fr auto';
+    if (appContainer) {
+        appContainer.style.display = 'none';
+        appContainer.classList.remove("app-fade-exit");
+    }
+    if (welcomeScreen) {
+        welcomeScreen.style.display = 'none';
+        welcomeScreen.classList.remove("dismissing");
+    }
 
-    document.getElementById("login-container").style.display = 'flex';
-    document.querySelector(".app-container").style.display = 'none';
+    if (loginContainer) {
+        loginContainer.style.display = 'flex';
+        loginContainer.classList.add("login-fade-enter");
+        setTimeout(() => loginContainer.classList.remove("login-fade-enter"), 750);
+    }
 
-    showToast("Anda telah keluar dari sistem", "warning");
+    showToast(customMessage || "Anda telah keluar dari sistem", toastType);
 }
 
 // ponytail: send periodic heartbeat to server to maintain device session and check if superseded
@@ -687,14 +1261,94 @@ async function sendHeartbeat() {
             body: JSON.stringify({ username: state.currentUser.username, device_id: deviceId })
         });
         if (res.status === 403) {
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
             // Force logout immediately because this session has been taken over/superseded
-            logoutUser();
-            showToast(data.message || "Akun Anda telah masuk di perangkat lain.", "error");
+            logoutUser(data.message || "Sesi akun Anda telah dikeluarkan (logout) oleh Admin.", "error");
         }
     } catch (err) {
         console.error("Gagal mengirim heartbeat:", err);
     }
+}
+
+// ponytail: Fullscreen Welcome greeting overlay initialization and scroll-to-dismiss handler
+function setupWelcomeGreeting() {
+    const screen = document.getElementById("welcome-greeting-screen");
+    if (!screen) return;
+
+    // Check if greeting was already dismissed in the current session
+    const isDismissed = safeSessionStorage.getItem("EJO_GREETING_DISMISSED") === "true";
+    if (isDismissed || !state.currentUser) {
+        screen.style.display = "none";
+        document.body.style.overflow = "";
+        return;
+    }
+
+    // Populate user greeting details
+    const nameEl = document.getElementById("welcome-user-name");
+    const roleEl = document.getElementById("welcome-user-role");
+    const deptEl = document.getElementById("welcome-user-dept");
+    const avatarEl = document.getElementById("welcome-user-avatar");
+
+    if (nameEl) nameEl.textContent = state.currentUser.fullname || state.currentUser.username || "Pengguna";
+    if (roleEl) roleEl.textContent = state.currentUser.role || "User";
+    if (deptEl) deptEl.textContent = getDepartmentDisplayLabel(getUserDepartmentCode()) || "Umum";
+    if (avatarEl) avatarEl.src = state.currentUser.avatar || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80";
+
+    screen.classList.remove("dismissing");
+    screen.style.display = "flex";
+    document.body.style.overflow = "hidden";
+    if (window.lucide) lucide.createIcons();
+
+    // Scroll listener to dismiss banner permanently for session
+    let dismissed = false;
+    const dismissGreeting = () => {
+        if (dismissed) return;
+        dismissed = true;
+
+        safeSessionStorage.setItem("EJO_GREETING_DISMISSED", "true");
+        screen.classList.add("dismissing");
+
+        // ponytail: Trigger toast notification after user scrolls down to enter main dashboard
+        const userName = state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : "Pengguna";
+        showToast(`Selamat datang kembali, ${userName}!`, "success");
+
+        setTimeout(() => {
+            screen.style.display = "none";
+            document.body.style.overflow = "";
+        }, 700);
+
+        // Remove event listeners once dismissed
+        window.removeEventListener("scroll", handleScroll, { passive: true });
+        if (mainContent) mainContent.removeEventListener("scroll", handleScroll, { passive: true });
+        window.removeEventListener("wheel", handleWheel, { passive: true });
+        window.removeEventListener("touchmove", handleTouch, { passive: true });
+        screen.removeEventListener("click", dismissGreeting);
+    };
+
+    const handleScroll = () => {
+        const winScroll = window.scrollY || document.documentElement.scrollTop || 0;
+        const mainScroll = mainContent ? mainContent.scrollTop : 0;
+        if (winScroll > 10 || mainScroll > 10) {
+            dismissGreeting();
+        }
+    };
+
+    const handleWheel = (e) => {
+        if (e.deltaY > 2) {
+            dismissGreeting();
+        }
+    };
+
+    const handleTouch = () => {
+        dismissGreeting();
+    };
+
+    const mainContent = document.querySelector(".main-content");
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    if (mainContent) mainContent.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    window.addEventListener("touchmove", handleTouch, { passive: true });
+    screen.addEventListener("click", dismissGreeting);
 }
 
 function checkAuth() {
@@ -708,9 +1362,12 @@ function checkAuth() {
         if (appContainer) appContainer.style.display = 'flex';
 
         // Populate profile sidebar
-        document.getElementById("sidebar-avatar").src = state.currentUser.avatar || "avatar-default.png";
+        document.getElementById("sidebar-avatar").src = state.currentUser.avatar || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80";
         document.getElementById("sidebar-fullname").textContent = state.currentUser.fullname || "";
         document.getElementById("sidebar-role").textContent = state.currentUser.role || "";
+
+        // Trigger welcome greeting hero banner if not dismissed yet
+        setupWelcomeGreeting();
 
         // ponytail: Fetch latest user details from server to sync role/permissions dynamically
         fetch("/api/users")
@@ -739,29 +1396,30 @@ function checkAuth() {
                             state.currentUser.signature = freshUser.signature;
                             hasChanges = true;
                         }
+                        if (state.currentUser.dept !== freshUser.dept) {
+                            state.currentUser.dept = freshUser.dept;
+                            hasChanges = true;
+                        }
+                        if (freshUser.access_permissions !== undefined && state.currentUser.access_permissions !== freshUser.access_permissions) {
+                            state.currentUser.access_permissions = freshUser.access_permissions;
+                            hasChanges = true;
+                        }
 
                         if (hasChanges) {
                             safeSessionStorage.setItem("PTBAS_USER", JSON.stringify(state.currentUser));
 
                             // Update UI elements instantly
-                            document.getElementById("sidebar-avatar").src = state.currentUser.avatar || "avatar-default.png";
+                            document.getElementById("sidebar-avatar").src = state.currentUser.avatar || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80";
                             document.getElementById("sidebar-fullname").textContent = state.currentUser.fullname;
                             document.getElementById("sidebar-role").textContent = state.currentUser.role;
-                            if (state.currentUser.role === 'Drafter') {
-                                // ponytail: redirect Drafter to drawing tab since it is their only accessible menu
-                                if (state.activeTab === 'overview' || state.activeTab === 'admin' || state.activeTab === 'general-ejo') {
-                                    state.activeTab = 'drawing';
-                                }
-                            } else if (isDrafterRole(state.currentUser.role) && state.activeTab === 'overview') {
-                                state.activeTab = 'general-ejo';
-                            }
-                            if (!isLeadRole(state.currentUser.role) && state.activeTab === 'admin') {
-                                state.activeTab = (state.currentUser.role === 'Drafter') ? 'drawing' : (isDrafterRole(state.currentUser.role) ? 'general-ejo' : 'overview');
+                            const uPerms = getUserPermissions(state.currentUser);
+                            if (!state.activeTab || !uPerms[state.activeTab === 'projects' ? 'project' : (state.activeTab === 'general-ejo' ? 'gejo' : state.activeTab)]) {
+                                state.activeTab = uPerms.drawing ? 'drawing' : (uPerms.gejo ? 'general-ejo' : (uPerms.overview ? 'overview' : (uPerms.partlist ? 'partlist' : 'history')));
                             }
                             applySidebarRoleRestrictions();
 
-                            // ponytail: force active tab sync if role changed
-                            switchTab(state.activeTab || 'overview');
+                            // ponytail: force active tab sync if role/permissions changed
+                            switchTab(state.activeTab || 'drawing');
                         }
                     }
                 }
@@ -787,20 +1445,24 @@ function checkAuth() {
             serverRoleOption.style.display = isServerUser ? 'block' : 'none';
         }
 
-        if (state.currentUser && state.currentUser.role === 'Drafter') {
-            // ponytail: redirect Drafter to drawing tab since it is their only accessible menu
-            if (state.activeTab === 'overview' || state.activeTab === 'admin' || state.activeTab === 'general-ejo') {
-                state.activeTab = 'drawing';
+        if (state.currentUser) {
+            const role = state.currentUser.role;
+            const isTechNonDrafter = isDrafterRole(role) && role !== 'Drafter';
+            if (role === 'Drafter') {
+                if (!state.activeTab || state.activeTab === 'overview' || state.activeTab === 'admin' || state.activeTab === 'general-ejo' || state.activeTab === 'projects') {
+                    state.activeTab = 'drawing';
+                }
+            } else if (isTechNonDrafter) {
+                if (!state.activeTab || state.activeTab === 'overview' || state.activeTab === 'drawing' || state.activeTab === 'projects' || state.activeTab === 'partlist' || state.activeTab === 'admin') {
+                    state.activeTab = 'general-ejo';
+                }
+            } else if (!canAccessAdminPanel(state.currentUser) && state.activeTab === 'admin') {
+                state.activeTab = 'overview';
+                const adminPane = document.getElementById("tab-admin");
+                if (adminPane) adminPane.classList.remove("active");
+                const adminBtn = document.getElementById("nav-admin-btn");
+                if (adminBtn) adminBtn.classList.remove("active");
             }
-        } else if (state.currentUser && isDrafterRole(state.currentUser.role) && state.activeTab === 'overview') {
-            state.activeTab = 'general-ejo';
-        }
-        if (state.currentUser && !isLeadRole(state.currentUser.role) && state.activeTab === 'admin') {
-            state.activeTab = (state.currentUser.role === 'Drafter') ? 'drawing' : (isDrafterRole(state.currentUser.role) ? 'general-ejo' : 'overview');
-            const adminPane = document.getElementById("tab-admin");
-            if (adminPane) adminPane.classList.remove("active");
-            const adminBtn = document.getElementById("nav-admin-btn");
-            if (adminBtn) adminBtn.classList.remove("active");
         }
         applySidebarRoleRestrictions();
         initData();
@@ -811,10 +1473,10 @@ function checkAuth() {
         // ponytail: start polling background data refresh every 4 seconds
         if (window._dataPoll) clearInterval(window._dataPoll);
         window._dataPoll = setInterval(refreshDataBackground, 4000);
-        // ponytail: start heartbeat polling to enforce single-device login
+        // ponytail: start heartbeat polling to enforce single-device login (fast 2s poll for instant responsiveness)
         sendHeartbeat();
         if (window._heartbeatPoll) clearInterval(window._heartbeatPoll);
-        window._heartbeatPoll = setInterval(sendHeartbeat, 10000);
+        window._heartbeatPoll = setInterval(sendHeartbeat, 2000);
     } else {
         if (window._notifPoll) {
             clearInterval(window._notifPoll);
@@ -906,6 +1568,9 @@ async function initData() {
             } else {
                 state.drawings = [];
             }
+            if (!state.editingDrawingId) {
+                generateDrawingId();
+            }
         } catch (err) {
             state.drawings = [];
             console.warn("Gagal memuat drawings:", err);
@@ -958,14 +1623,25 @@ async function initData() {
         }));
         populateEngineerDropdowns();
 
-        // Safety check: if the active tab is admin but the user is not authorized, reset to overview
-        // ponytail: rename Lead Engineer -> Foreman
-        if (state.activeTab === 'admin' && !isLeadRole(state.currentUser.role)) {
-            state.activeTab = 'overview';
+        // Safety check: if activeTab is unauthorized for role, redirect accordingly
+        if (state.currentUser) {
+            const role = state.currentUser.role;
+            const isTechNonDrafter = isDrafterRole(role) && role !== 'Drafter';
+            if (role === 'Drafter') {
+                if (!state.activeTab || state.activeTab === 'overview' || state.activeTab === 'admin' || state.activeTab === 'general-ejo' || state.activeTab === 'projects') {
+                    state.activeTab = 'drawing';
+                }
+            } else if (isTechNonDrafter) {
+                if (!state.activeTab || state.activeTab === 'overview' || state.activeTab === 'drawing' || state.activeTab === 'projects' || state.activeTab === 'partlist' || state.activeTab === 'admin') {
+                    state.activeTab = 'general-ejo';
+                }
+            } else if (!canAccessAdminPanel(state.currentUser) && state.activeTab === 'admin') {
+                state.activeTab = 'overview';
+            }
         }
 
         // Always force switchTab to synchronize HTML DOM classes with activeTab state
-        switchTab(state.activeTab || 'overview');
+        switchTab(state.activeTab || 'general-ejo');
         runExcelSelfTest();
     } catch (err) {
         console.error("Gagal mengambil data dari database server:", err);
@@ -998,7 +1674,7 @@ function populateEngineerDropdowns() {
         // ponytail: filter EJO assignees by role restrictions, projects PIC is only hierarchy roles (excluding Admin & User)
         const filteredEngs = dd.id === "form-engineer"
             ? engineersList.filter(eng => allowedRoles.includes(eng.role))
-            : engineersList.filter(eng => [...DRAFTER_ROLES, 'Foreman', 'Supervisor', 'Manager', 'Plant Manager'].includes(eng.role));
+            : engineersList.filter(eng => [...DRAFTER_ROLES, 'Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager'].includes(eng.role));
 
         html += filteredEngs.map(eng => {
             return `<option value="${eng.name}">${eng.name} (${eng.role})</option>`;
@@ -1142,7 +1818,7 @@ function initClock() {
 // ==========================================
 function initEventListeners() {
     // ponytail: EJO dropdown chevron toggle click listener
-    const chevronToggle = document.querySelector("#btn-nav-job-orders .dropdown-chevron-btn");
+    const chevronToggle = document.getElementById("btn-nav-job-orders-chevron");
     if (chevronToggle) {
         chevronToggle.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -1159,6 +1835,33 @@ function initEventListeners() {
         });
     }
 
+    // ponytail: helper function to toggle submenus smoothly with accordion behavior (closes all other submenus)
+    function toggleSubmenuSmooth(targetSubmenu, targetChevron) {
+        if (!targetSubmenu) return;
+        const isCurrentlyOpen = targetSubmenu.classList.contains("open");
+
+        const allSubmenuItems = [
+            { id: "general-ejo-submenu", chevron: document.querySelector("#btn-nav-general-ejo .gejo-chevron") },
+            { id: "drawing-submenu", chevron: document.querySelector("#btn-nav-drawing .drawing-chevron") },
+            { id: "projects-submenu", chevron: document.querySelector("#btn-nav-projects .nested-chevron") },
+            { id: "history-submenu", chevron: document.querySelector("#btn-nav-history .history-chevron") },
+            { id: "server-access-submenu", chevron: document.querySelector("#btn-nav-server-access .server-access-chevron") }
+        ];
+
+        // Close all submenus
+        allSubmenuItems.forEach(item => {
+            const sm = document.getElementById(item.id);
+            if (sm) sm.classList.remove("open");
+            if (item.chevron) item.chevron.classList.remove("rotated");
+        });
+
+        // If target submenu was not open, open it
+        if (!isCurrentlyOpen) {
+            targetSubmenu.classList.add("open");
+            if (targetChevron) targetChevron.classList.add("rotated");
+        }
+    }
+
     // ponytail: General EJO nested dropdown chevron toggle click listener
     const gejoChevronToggle = document.querySelector("#btn-nav-general-ejo .gejo-chevron-toggle");
     if (gejoChevronToggle) {
@@ -1167,13 +1870,7 @@ function initEventListeners() {
             e.preventDefault();
             const submenu = document.getElementById("general-ejo-submenu");
             const chevron = gejoChevronToggle.querySelector(".gejo-chevron");
-            if (submenu) {
-                const isVisible = submenu.style.display === "flex";
-                submenu.style.display = isVisible ? "none" : "flex";
-                if (chevron) {
-                    chevron.classList.toggle("rotated", !isVisible);
-                }
-            }
+            toggleSubmenuSmooth(submenu, chevron);
         });
     }
 
@@ -1185,13 +1882,7 @@ function initEventListeners() {
             e.preventDefault();
             const submenu = document.getElementById("drawing-submenu");
             const chevron = drawingChevronToggle.querySelector(".drawing-chevron");
-            if (submenu) {
-                const isVisible = submenu.style.display === "flex";
-                submenu.style.display = isVisible ? "none" : "flex";
-                if (chevron) {
-                    chevron.classList.toggle("rotated", !isVisible);
-                }
-            }
+            toggleSubmenuSmooth(submenu, chevron);
         });
     }
 
@@ -1203,13 +1894,31 @@ function initEventListeners() {
             e.preventDefault();
             const submenu = document.getElementById("projects-submenu");
             const chevron = projectsChevronToggle.querySelector(".nested-chevron");
-            if (submenu) {
-                const isVisible = submenu.style.display === "flex";
-                submenu.style.display = isVisible ? "none" : "flex";
-                if (chevron) {
-                    chevron.classList.toggle("rotated", !isVisible);
-                }
-            }
+            toggleSubmenuSmooth(submenu, chevron);
+        });
+    }
+
+    // ponytail: History nested dropdown chevron toggle click listener
+    const historyChevronToggle = document.querySelector("#btn-nav-history .history-chevron-toggle");
+    if (historyChevronToggle) {
+        historyChevronToggle.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const submenu = document.getElementById("history-submenu");
+            const chevron = historyChevronToggle.querySelector(".history-chevron");
+            toggleSubmenuSmooth(submenu, chevron);
+        });
+    }
+
+    // ponytail: Server Access nested dropdown chevron toggle click listener
+    const serverAccessChevronToggle = document.querySelector("#btn-nav-server-access .server-access-chevron-toggle");
+    if (serverAccessChevronToggle) {
+        serverAccessChevronToggle.addEventListener("click", (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const submenu = document.getElementById("server-access-submenu");
+            const chevron = serverAccessChevronToggle.querySelector(".server-access-chevron");
+            toggleSubmenuSmooth(submenu, chevron);
         });
     }
 
@@ -1217,55 +1926,66 @@ function initEventListeners() {
     document.querySelectorAll(".nav-btn").forEach(btn => {
         btn.addEventListener("click", (e) => {
 
+            // ponytail: handle toggle for nested server access button click
+            if (btn.id === "btn-nav-server-access") {
+                const submenu = document.getElementById("server-access-submenu");
+                const chevron = btn.querySelector(".server-access-chevron");
+                toggleSubmenuSmooth(submenu, chevron);
+                switchTab("server-dashboard-access");
+                e.preventDefault();
+                return;
+            }
+
+            // ponytail: handle toggle for nested history button click
+            if (btn.id === "btn-nav-history") {
+                const submenu = document.getElementById("history-submenu");
+                const chevron = btn.querySelector(".history-chevron");
+                toggleSubmenuSmooth(submenu, chevron);
+                state.activeHistoryType = 'all';
+                switchTab("history");
+                e.preventDefault();
+                return;
+            }
+
             // ponytail: handle toggle for nested general-ejo button click
             if (btn.id === "btn-nav-general-ejo") {
                 const submenu = document.getElementById("general-ejo-submenu");
                 const chevron = btn.querySelector(".gejo-chevron");
-                if (submenu) {
-                    const isVisible = submenu.style.display === "flex";
-                    submenu.style.display = isVisible ? "none" : "flex";
-                    if (chevron) {
-                        chevron.classList.toggle("rotated", !isVisible);
-                    }
-                    state.activeGeneralEjoPhase = null;
-                    switchTab("general-ejo");
-                    e.preventDefault();
-                    return;
-                }
+                toggleSubmenuSmooth(submenu, chevron);
+                state.activeGeneralEjoPhase = null;
+                switchTab("general-ejo");
+                e.preventDefault();
+                return;
             }
 
             // ponytail: handle toggle for nested projects button click
             if (btn.id === "btn-nav-projects") {
                 const submenu = document.getElementById("projects-submenu");
                 const chevron = btn.querySelector(".nested-chevron");
-                if (submenu) {
-                    const isVisible = submenu.style.display === "flex";
-                    submenu.style.display = isVisible ? "none" : "flex";
-                    if (chevron) {
-                        chevron.classList.toggle("rotated", !isVisible);
-                    }
-                    state.activeProjectPhase = null;
-                    switchTab("projects");
-                    e.preventDefault();
-                    return;
-                }
+                toggleSubmenuSmooth(submenu, chevron);
+                state.activeProjectPhase = null;
+                switchTab("projects");
+                e.preventDefault();
+                return;
             }
 
             // ponytail: handle toggle for nested drawing button click
             if (btn.id === "btn-nav-drawing") {
                 const submenu = document.getElementById("drawing-submenu");
                 const chevron = btn.querySelector(".drawing-chevron");
-                if (submenu) {
-                    const isVisible = submenu.style.display === "flex";
-                    submenu.style.display = isVisible ? "none" : "flex";
-                    if (chevron) {
-                        chevron.classList.toggle("rotated", !isVisible);
-                    }
-                    state.activeDrawingPhase = null;
-                    switchTab("drawing");
-                    e.preventDefault();
-                    return;
-                }
+                toggleSubmenuSmooth(submenu, chevron);
+                state.activeDrawingPhase = null;
+                switchTab("drawing");
+                e.preventDefault();
+                return;
+            }
+
+            // ponytail: capture type attribute for history submenus
+            const historyTypeAttr = btn.getAttribute("data-history-type");
+            if (historyTypeAttr) {
+                state.activeHistoryType = historyTypeAttr;
+            } else if (btn.getAttribute("data-tab") === 'history' || btn.id === "btn-nav-history") {
+                state.activeHistoryType = 'all';
             }
 
             // ponytail: capture phase attribute for projects submenus including archive
@@ -1294,12 +2014,30 @@ function initEventListeners() {
                 state.activeDrawingPhase = null;
             }
 
+            // ponytail: capture server-view attribute for server-access submenus
+            const serverViewAttr = btn.getAttribute("data-server-view");
+            if (serverViewAttr) {
+                state.serverAccessViewMode = serverViewAttr;
+                switchServerAccessViewMode(serverViewAttr);
+            }
+
             document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
 
             const targetTab = btn.getAttribute("data-tab");
             switchTab(targetTab);
         });
+    });
+
+    // ponytail: History Date Range Filter event listeners
+    document.getElementById("history-start-date")?.addEventListener("change", () => renderHistory());
+    document.getElementById("history-end-date")?.addEventListener("change", () => renderHistory());
+    document.getElementById("btn-reset-history-date")?.addEventListener("click", () => {
+        const startDateInput = document.getElementById("history-start-date");
+        const endDateInput = document.getElementById("history-end-date");
+        if (startDateInput) startDateInput.value = "";
+        if (endDateInput) endDateInput.value = "";
+        renderHistory();
     });
 
     // ponytail: KPI scorecards click redirecting to general-ejo tab with relevant filters
@@ -1346,6 +2084,12 @@ function initEventListeners() {
     document.getElementById("trend-time-filter")?.addEventListener("change", (e) => {
         state.trendPeriod = e.target.value;
         renderOverviewCharts();
+    });
+
+    // ponytail: partlist trend chart time range filter change listener
+    document.getElementById("partlist-trend-time-filter")?.addEventListener("change", (e) => {
+        state.partlistTrendPeriod = e.target.value;
+        renderPartlistCharts();
     });
 
     // ponytail: dashboard visual settings toggle change listener
@@ -1456,6 +2200,8 @@ function initEventListeners() {
     document.getElementById("gejo-filter-priority").addEventListener("change", renderGeneralEJO);
     document.getElementById("gejo-filter-dept").addEventListener("change", renderGeneralEJO);
     document.getElementById("gejo-filter-category").addEventListener("change", renderGeneralEJO); // ponytail: listener kategori
+
+    initPriorityUrgentListeners();
     document.getElementById("gejo-view-grid-btn").addEventListener("click", () => {
         state.viewMode = 'grid';
         document.getElementById("gejo-view-grid-btn").classList.add("active");
@@ -1469,22 +2215,37 @@ function initEventListeners() {
         renderGeneralEJO();
     });
     document.getElementById("gejo-btn-quick-new").addEventListener("click", () => {
+        state.editingGejoId = null;
         // ponytail: check General EJO limit
         if (checkGeneralEjoLimit()) {
-            showToast("Batas pembuatan General EJO tercapai! Anda hanya dapat membuat maksimal 2 General EJO aktif.", "warning");
+            showToast("Batas pembuatan General EJO di semua kategori telah tercapai! Maksimal 2 General EJO aktif per kategori.", "warning");
             return;
         }
         // ponytail: toggle form General EJO (DB terpisah), bukan switchTab
         const form = document.getElementById("gejo-form-container");
         if (form) {
-            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            const isOpening = form.style.display === 'none';
+            if (isOpening) {
+                const formEl = document.getElementById("gejo-form");
+                if (formEl) formEl.reset();
+                resetGejoImagePreview();
+                toggleGejoRepairFields("");
+                applyUserDepartmentToFormSelect("gejo-form-dept");
+                updateGejoCategoryOptionsLimit();
+                updateGejoFormCategoryLimitNotice("");
+            }
+            form.style.display = isOpening ? 'block' : 'none';
         }
     });
 
     // ponytail: cancel button General EJO form
     document.getElementById("gejo-btn-cancel-form").addEventListener("click", () => {
+        state.editingGejoId = null;
         const formEl = document.getElementById("gejo-form");
         if (formEl) formEl.reset();
+        resetGejoImagePreview();
+        toggleGejoRepairFields("");
+        updateGejoFormCategoryLimitNotice("");
         document.getElementById("gejo-form-container").style.display = 'none';
     });
 
@@ -1492,6 +2253,24 @@ function initEventListeners() {
     document.getElementById("gejo-form").addEventListener("submit", (e) => {
         e.preventDefault();
         createNewGeneralEJO();
+    });
+
+    // ponytail: gejo form category change listener
+    document.getElementById("gejo-form-category").addEventListener("change", (e) => {
+        const cat = e.target.value;
+        toggleGejoRepairFields(cat);
+        updateGejoFormCategoryLimitNotice(cat);
+        if (cat && checkGeneralEjoLimit(cat)) {
+            showToast(`Quota EJO kategori '${cat}' Anda sudah habis! (2/2 Aktif)`, "warning");
+        }
+    });
+
+    // ponytail: auto recalculate quantity stock on input change
+    ["gejo-form-quantity", "gejo-form-qty-needed"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener("input", calcGejoQtyStock);
+        }
     });
 
     // ponytail: galeri drawing cukup toggle form + submit multipart + delete
@@ -1538,7 +2317,8 @@ function initEventListeners() {
                 titleText.textContent = mode === 'import' ? 'Import Drawing Baru' : 'Request Drawing Baru';
             }
             if (fileContainer) {
-                fileContainer.style.display = mode === 'import' ? 'block' : 'none';
+                // ponytail: change display from block to flex to preserve its flexbox layout and gaps
+                fileContainer.style.display = mode === 'import' ? 'flex' : 'none';
             }
             if (requiredStar) {
                 requiredStar.style.display = 'inline';
@@ -1552,6 +2332,8 @@ function initEventListeners() {
             // reset form fields
             const formEl = document.getElementById("drawing-form");
             if (formEl) formEl.reset();
+
+            applyUserDepartmentToFormSelect("drawing-form-dept");
 
             // ponytail: reset filename and preview
             const drawingFilename = document.getElementById("drawing-file-filename");
@@ -1602,10 +2384,53 @@ function initEventListeners() {
         });
     }
     // ponytail: additional drawing filter listeners
+    document.getElementById("drawing-search-input")?.addEventListener("input", renderDrawings);
     document.getElementById("drawing-filter-category")?.addEventListener("change", renderDrawings);
     document.getElementById("drawing-filter-priority")?.addEventListener("change", renderDrawings);
     document.getElementById("drawing-filter-dept")?.addEventListener("change", renderDrawings);
     document.getElementById("drawing-filter-status")?.addEventListener("change", renderDrawings);
+    
+    // ponytail: drawing view mode toggles listener
+    const drwGridBtn = document.getElementById("drawing-view-grid-btn");
+    const drwTableBtn = document.getElementById("drawing-view-table-btn");
+    if (drwGridBtn && drwTableBtn) {
+        drwGridBtn.addEventListener("click", () => {
+            state.drawingViewMode = 'grid';
+            renderDrawings();
+        });
+        drwTableBtn.addEventListener("click", () => {
+            state.drawingViewMode = 'table';
+            renderDrawings();
+        });
+    }
+
+    // ponytail: general ejo view mode toggles listener
+    const gejoGridBtn = document.getElementById("gejo-view-grid-btn");
+    const gejoTableBtn = document.getElementById("gejo-view-table-btn");
+    if (gejoGridBtn && gejoTableBtn) {
+        gejoGridBtn.addEventListener("click", () => {
+            state.gejoViewMode = 'grid';
+            renderGeneralEJO();
+        });
+        gejoTableBtn.addEventListener("click", () => {
+            state.gejoViewMode = 'table';
+            renderGeneralEJO();
+        });
+    }
+
+    // ponytail: project view mode toggles listener
+    const projGridBtn = document.getElementById("proj-view-grid-btn");
+    const projTableBtn = document.getElementById("proj-view-table-btn");
+    if (projGridBtn && projTableBtn) {
+        projGridBtn.addEventListener("click", () => {
+            state.projViewMode = 'grid';
+            renderProjects();
+        });
+        projTableBtn.addEventListener("click", () => {
+            state.projViewMode = 'table';
+            renderProjects();
+        });
+    }
     const modalDrawingCloseBtn = document.getElementById("modal-drawing-close-btn");
     if (modalDrawingCloseBtn) {
         modalDrawingCloseBtn.addEventListener("click", closeDrawingModal);
@@ -1630,37 +2455,40 @@ function initEventListeners() {
         if (drawingPreviewImg) drawingPreviewImg.src = "";
     });
 
-    // ponytail: premium upload trigger listener for request/import drawing form
-    const drawingFileTrigger = document.getElementById("drawing-file-trigger");
-    const drawingFileInput = document.getElementById("drawing-file");
-    const drawingFilename = document.getElementById("drawing-file-filename");
-    const drawingPreview = document.getElementById("drawing-file-preview");
-    const drawingPreviewImg = document.getElementById("drawing-file-preview-img");
+    // ponytail: reset helper for gejo photo before preview
+    if (typeof window.resetGejoImagePreview === 'function') {
+        window.resetGejoImagePreview();
+    }
 
-    if (drawingFileTrigger && drawingFileInput) {
-        drawingFileTrigger.onclick = () => {
-            drawingFileInput.click();
+    const gejoFileTrigger = document.getElementById("gejo-file-before-trigger");
+    const gejoFileInput = document.getElementById("gejo-file-before");
+    const gejoFilename = document.getElementById("gejo-file-before-filename");
+    const gejoPreview = document.getElementById("gejo-file-before-preview");
+    const gejoPreviewImg = document.getElementById("gejo-file-before-preview-img");
+
+    if (gejoFileTrigger && gejoFileInput) {
+        gejoFileTrigger.onclick = () => {
+            gejoFileInput.click();
         };
 
-        drawingFileInput.onchange = () => {
-            const file = drawingFileInput.files[0];
+        gejoFileInput.onchange = () => {
+            const file = gejoFileInput.files[0];
             if (file) {
-                if (drawingFilename) drawingFilename.textContent = file.name;
+                if (gejoFilename) gejoFilename.textContent = file.name;
                 if (file.type.startsWith("image/")) {
                     const reader = new FileReader();
                     reader.onload = (e) => {
-                        if (drawingPreviewImg) {
-                            drawingPreviewImg.src = e.target.result;
-                            if (drawingPreview) drawingPreview.style.display = "flex";
+                        if (gejoPreviewImg) {
+                            gejoPreviewImg.src = e.target.result;
+                            if (gejoPreview) gejoPreview.style.display = "flex";
                         }
                     };
                     reader.readAsDataURL(file);
                 } else {
-                    if (drawingPreview) drawingPreview.style.display = "none";
+                    if (gejoPreview) gejoPreview.style.display = "none";
                 }
             } else {
-                if (drawingFilename) drawingFilename.textContent = "Pilih file Lampiran (PDF/Gambar)";
-                if (drawingPreview) drawingPreview.style.display = "none";
+                resetGejoImagePreview();
             }
         };
     }
@@ -1696,6 +2524,51 @@ function initEventListeners() {
         });
     }
 
+    // Global ESC Key Listener to close any active modal pop-up
+    window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" || e.key === "Esc" || e.keyCode === 27) {
+            const allModals = Array.from(document.querySelectorAll(".modal-backdrop, [id$='-modal']"));
+            const visibleModals = allModals.filter(modal => {
+                const style = window.getComputedStyle(modal);
+                return style.display !== "none" && style.visibility !== "hidden" && modal.offsetWidth > 0 && modal.offsetHeight > 0;
+            });
+
+            if (visibleModals.length > 0) {
+                // Sort by z-index descending so top-most active modal closes first
+                visibleModals.sort((a, b) => {
+                    const zA = parseInt(window.getComputedStyle(a).zIndex) || 0;
+                    const zB = parseInt(window.getComputedStyle(b).zIndex) || 0;
+                    return zB - zA;
+                });
+
+                const topModal = visibleModals[0];
+                
+                // Try clicking its close button if present
+                const closeBtn = topModal.querySelector(".modal-close, #modal-project-close-btn, #modal-drawing-close-btn, #modal-part-close-btn, #modal-close-btn, button[id$='-close-btn'], .btn-close");
+                if (closeBtn && typeof closeBtn.click === "function") {
+                    closeBtn.click();
+                } else {
+                    if (topModal.id === "ejo-modal" && typeof closeModal === "function") {
+                        closeModal();
+                    } else if (topModal.id === "part-detail-modal" && typeof closePartModal === "function") {
+                        closePartModal();
+                    } else if (topModal.id === "drawing-detail-modal" && typeof closeDrawingModal === "function") {
+                        closeDrawingModal();
+                    } else if (topModal.id === "etiket-zoom-modal" && typeof closeEtiketZoomModal === "function") {
+                        closeEtiketZoomModal();
+                    } else if (topModal.id === "kpi-edit-modal" && typeof closeKpiEditModal === "function") {
+                        closeKpiEditModal();
+                    } else if (topModal.id === "transfer-drawing-project-modal" && typeof closeTransferDrawingToProjectModal === "function") {
+                        closeTransferDrawingToProjectModal();
+                    } else {
+                        topModal.classList.remove("active");
+                        topModal.style.display = "none";
+                    }
+                }
+            }
+        }
+    });
+
     // ponytail: Project Documentation Upload listeners
     const projDocUploadMock = document.getElementById("proj-doc-upload-mock");
     const projDocFileInput = document.getElementById("proj-doc-file-input");
@@ -1709,7 +2582,7 @@ function initEventListeners() {
             if (!state.currentDetailProjectId) return;
 
             const userRole = state.currentUser ? state.currentUser.role : "";
-            const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
+            const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
             if (!isAuthorized) {
                 showToast("Hanya Foreman atau Admin yang diperbolehkan mengunggah foto dokumentasi!", "error");
                 projDocFileInput.value = "";
@@ -1764,7 +2637,7 @@ function initEventListeners() {
                         (proj.execution_docs || []).forEach(docUrl => {
                             gallery.insertAdjacentHTML('beforeend', `
                                 <div style="position: relative; width: 110px; height: 80px; background: rgba(0,0,0,0.2); border-radius: var(--border-radius-sm); overflow: hidden; border: 1px solid var(--card-border);">
-                                    <img src="${docUrl}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;" onclick="window.open('${docUrl}', '_blank')" />
+                                    <img src="${docUrl}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;" onclick="openImagePreviewModal('${docUrl}', 'Foto Eksekusi Proyek')" />
                                 </div>
                             `);
                         });
@@ -1796,7 +2669,7 @@ function initEventListeners() {
 
             // ponytail: only Foreman, Admin, and Server can upload BOQ files
             const userRole = state.currentUser ? state.currentUser.role : "";
-            const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
+            const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
             if (!isAuthorized) {
                 showToast("Hanya Foreman atau Admin yang diperbolehkan mengunggah file BOQ!", "error");
                 projAttachFileInput.value = "";
@@ -1920,8 +2793,29 @@ function initEventListeners() {
         btnToggleProj.addEventListener("click", () => {
             const isHidden = projFormContainer.style.display === 'none';
             projFormContainer.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) populateApprovedDrawingsSelect();
             btnToggleProj.innerHTML = isHidden ? '<i data-lucide="minus-circle"></i> Sembunyikan Form' : '<i data-lucide="plus-circle"></i> Project Baru';
             lucide.createIcons();
+        });
+    }
+
+    const projDrawingSelect = document.getElementById("proj-drawing-select");
+    if (projDrawingSelect) {
+        projDrawingSelect.addEventListener("change", () => {
+            const val = projDrawingSelect.value;
+            if (!val) return;
+            const drawing = (state.drawings || []).find(d => d.id === val);
+            if (!drawing) return;
+
+            const titleInput = document.getElementById("proj-title");
+            const descInput = document.getElementById("proj-desc");
+            if (titleInput && (!titleInput.value || titleInput.value.trim() === '')) {
+                titleInput.value = drawing.title || `Project ${drawing.id}`;
+            }
+            if (descInput && (!descInput.value || descInput.value.trim() === '')) {
+                descInput.value = `Gagasan project berbasis Drawing EJO: ${drawing.id} - ${drawing.title || ''}\nRef EJO: ${drawing.ejo_id || '-'}\n\nCatatan Drawing:\n${drawing.description || ''}`;
+            }
+            showToast(`Drawing EJO ${drawing.id} dipilih untuk project ini`, "info");
         });
     }
 
@@ -1943,28 +2837,64 @@ function initEventListeners() {
         });
     }
 
+function populateApprovedDrawingsSelect() {
+    const select = document.getElementById("proj-drawing-select");
+    if (!select) return;
+
+    select.innerHTML = '<option value="">-- Pilih Drawing EJO yang Selesai (Factory Manager Approved) --</option>';
+
+    const approvedDrawings = (state.drawings || []).filter(d => {
+        const status = (d.status || '').toLowerCase();
+        const hasFmSig = d.approvals && (d.approvals.factory_manager || d.approvals['factory_manager']);
+        return status === 'completed' || status === 'approved' || hasFmSig;
+    });
+
+    if (approvedDrawings.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "Belum ada Drawing EJO yang selesai tertanda tangan Factory Manager";
+        opt.disabled = true;
+        select.appendChild(opt);
+        return;
+    }
+
+    approvedDrawings.forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d.id;
+        opt.textContent = `${d.id} - ${d.title || 'Drawing EJO'} (${d.ejo_id || 'Umum'})`;
+        select.appendChild(opt);
+    });
+}
+
     // ponytail: register input/change listeners for projects search and filters to refresh matching data instantly
     const projSearchInput = document.getElementById("proj-search-input");
     if (projSearchInput) {
         projSearchInput.addEventListener("input", renderProjects);
     }
-    const projFilterDept = document.getElementById("proj-filter-dept");
-    if (projFilterDept) {
-        projFilterDept.addEventListener("change", renderProjects);
-    }
-    const projFilterPic = document.getElementById("proj-filter-pic");
-    if (projFilterPic) {
-        projFilterPic.addEventListener("change", renderProjects);
+    const projFilterDate = document.getElementById("proj-filter-date");
+    if (projFilterDate) {
+        projFilterDate.addEventListener("change", renderProjects);
     }
 
-    // ponytail: Repair Parts Form Toggles
+    // ponytail: EJO Repair Parts Form Toggles
     const btnTogglePart = document.getElementById("btn-toggle-new-part");
     const partFormContainer = document.getElementById("part-form-container");
     if (btnTogglePart) {
         btnTogglePart.addEventListener("click", () => {
             const isHidden = partFormContainer.style.display === 'none';
             partFormContainer.style.display = isHidden ? 'block' : 'none';
-            btnTogglePart.innerHTML = isHidden ? '<i data-lucide="minus-circle"></i> Sembunyikan Form' : '<i data-lucide="plus-circle"></i> Tambah Part';
+            btnTogglePart.innerHTML = isHidden ? '<i data-lucide="minus-circle"></i> Sembunyikan Form' : '<i data-lucide="plus-circle"></i> Tambah EJO Repair Part';
+            if (isHidden) {
+                resetRepairPartEjoForm();
+                partFormContainer.style.display = 'block';
+                // Close the spare part form if open
+                const spareFormContainer = document.getElementById("sparepart-form-container");
+                const btnToggleSpare = document.getElementById("btn-toggle-new-sparepart");
+                if (spareFormContainer && btnToggleSpare) {
+                    spareFormContainer.style.display = 'none';
+                    btnToggleSpare.innerHTML = '<i data-lucide="plus-circle"></i> Tambah Spare Part';
+                }
+            }
             lucide.createIcons();
         });
     }
@@ -1972,9 +2902,10 @@ function initEventListeners() {
     const btnCancelPart = document.getElementById("btn-cancel-part");
     if (btnCancelPart) {
         btnCancelPart.addEventListener("click", () => {
-            document.getElementById("part-form").reset();
-            partFormContainer.style.display = 'none';
-            btnTogglePart.innerHTML = '<i data-lucide="plus-circle"></i> Tambah Part';
+            resetRepairPartEjoForm();
+            if (btnTogglePart) {
+                btnTogglePart.innerHTML = '<i data-lucide="plus-circle"></i> Tambah EJO Repair Part';
+            }
             lucide.createIcons();
         });
     }
@@ -1982,117 +2913,251 @@ function initEventListeners() {
     const partForm = document.getElementById("part-form");
     if (partForm) {
         partForm.addEventListener("submit", (e) => {
-            e.preventDefault();
-            createNewRepairPart();
+            submitRepairPartEJO(e);
         });
+    }
+
+    // ponytail: helper to reset premium image upload preview
+    function resetPartImagePreview() {
+        const fn = document.getElementById("part-image-filename");
+        const pv = document.getElementById("part-image-preview");
+        const pi = document.getElementById("part-image-preview-img");
+        if (fn) fn.textContent = "Klik untuk upload gambar spare part";
+        if (pv) pv.style.display = "none";
+        if (pi) pi.src = "";
+    }
+
+    // ponytail: Spare Parts Form Toggles
+    const btnToggleSpare = document.getElementById("btn-toggle-new-sparepart");
+    const spareFormContainer = document.getElementById("sparepart-form-container");
+    if (btnToggleSpare && spareFormContainer) {
+        btnToggleSpare.addEventListener("click", () => {
+            const isHidden = spareFormContainer.style.display === 'none';
+            spareFormContainer.style.display = isHidden ? 'block' : 'none';
+            btnToggleSpare.innerHTML = isHidden ? '<i data-lucide="minus-circle"></i> Sembunyikan Form' : '<i data-lucide="plus-circle"></i> Tambah Spare Part';
+            if (isHidden) {
+                document.getElementById("sparepart-form").reset();
+                resetPartImagePreview();
+                // Close the EJO form if open
+                if (partFormContainer && btnTogglePart) {
+                    partFormContainer.style.display = 'none';
+                    btnTogglePart.innerHTML = '<i data-lucide="plus-circle"></i> Tambah EJO Repair Part';
+                }
+            }
+            lucide.createIcons();
+        });
+    }
+
+    const btnCancelSpare = document.getElementById("btn-cancel-sparepart");
+    if (btnCancelSpare) {
+        btnCancelSpare.addEventListener("click", () => {
+            document.getElementById("sparepart-form").reset();
+            resetPartImagePreview();
+            if (spareFormContainer) spareFormContainer.style.display = 'none';
+            if (btnToggleSpare) {
+                btnToggleSpare.innerHTML = '<i data-lucide="plus-circle"></i> Tambah Spare Part';
+            }
+            lucide.createIcons();
+        });
+    }
+
+    const spareForm = document.getElementById("sparepart-form");
+    if (spareForm) {
+        spareForm.addEventListener("submit", (e) => {
+            submitSparePart(e);
+        });
+    }
+
+    // ponytail: premium upload trigger for spare part image
+    const partImageTrigger = document.getElementById("part-image-trigger");
+    const partImageInput = document.getElementById("part-image");
+    const partImageFilename = document.getElementById("part-image-filename");
+    const partImagePreview = document.getElementById("part-image-preview");
+    const partImagePreviewImg = document.getElementById("part-image-preview-img");
+    if (partImageTrigger && partImageInput) {
+        partImageTrigger.onclick = () => partImageInput.click();
+        partImageInput.onchange = () => {
+            const file = partImageInput.files[0];
+            if (file) {
+                if (partImageFilename) partImageFilename.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    if (partImagePreviewImg) {
+                        partImagePreviewImg.src = ev.target.result;
+                        if (partImagePreview) partImagePreview.style.display = "flex";
+                    }
+                };
+                reader.readAsDataURL(file);
+            } else {
+                if (partImageFilename) partImageFilename.textContent = "Klik untuk upload gambar spare part";
+                if (partImagePreview) partImagePreview.style.display = "none";
+            }
+        };
     }
 
     // ponytail: Repair Parts Search Input Handler
-    const searchPartInput = document.getElementById("search-repair-parts");
+    const searchPartInput = document.getElementById("search-partlist");
     if (searchPartInput) {
         searchPartInput.addEventListener("input", () => {
-            renderRepairParts();
+            renderPartlistTab();
         });
     }
 
-    // Login Form Submit Handler
+    // Global Login Form Submit Handler
+    window.handleLoginFormSubmit = async function (e) {
+        if (e) {
+            e.preventDefault();
+            if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        }
+        const loginForm = document.getElementById("login-form");
+        const usernameInput = (document.getElementById("login-username")?.value || "").trim().toLowerCase();
+        const passwordInput = document.getElementById("login-password")?.value || "";
+        const errorMsg = document.getElementById("login-error-msg");
+        const submitBtn = document.getElementById("btn-login-submit") || loginForm?.querySelector("button[type='submit']");
+        const originalBtnHTML = submitBtn ? submitBtn.innerHTML : null;
+
+        if (errorMsg) errorMsg.style.display = 'none';
+
+        if (!usernameInput || !passwordInput) {
+            if (errorMsg) {
+                const span = errorMsg.querySelector("span");
+                if (span) span.textContent = "Silakan isi username dan password!";
+                errorMsg.style.color = "var(--color-rose)";
+                errorMsg.style.display = 'flex';
+            }
+            return false;
+        }
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;vertical-align:middle;display:inline-block;"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg> Memproses...`;
+        }
+
+        try {
+            const res = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username: usernameInput, password: passwordInput, device_id: typeof deviceId !== 'undefined' ? deviceId : '' })
+            });
+
+            if (res.status === 200) {
+                const userData = await res.json();
+                safeSessionStorage.setItem("PTBAS_USER", JSON.stringify(userData));
+                safeSessionStorage.removeItem("EJO_GREETING_DISMISSED");
+
+                const loginWrapper = document.getElementById("login-container");
+                if (loginWrapper) {
+                    loginWrapper.classList.add("login-fade-exit");
+                }
+
+                setTimeout(() => {
+                    if (loginForm) loginForm.reset();
+                    if (submitBtn && originalBtnHTML) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalBtnHTML;
+                    }
+                    if (loginWrapper) {
+                        loginWrapper.classList.remove("login-fade-exit");
+                    }
+                    checkAuth();
+
+                    const welcomeScreen = document.getElementById("welcome-greeting-screen");
+                    if (welcomeScreen) {
+                        welcomeScreen.classList.add("welcome-fade-enter");
+                        setTimeout(() => welcomeScreen.classList.remove("welcome-fade-enter"), 850);
+                    }
+                }, 450);
+            } else {
+                if (submitBtn && originalBtnHTML) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnHTML;
+                }
+                const errData = await res.json().catch(() => ({}));
+                const errMsgText = errData.message || (res.status === 401 ? "Username atau password salah!" : "Gagal melakukan login.");
+                if (errorMsg) {
+                    const span = errorMsg.querySelector("span");
+                    if (span) span.textContent = errMsgText;
+                    errorMsg.style.color = res.status === 503 ? "#f59e0b" : "var(--color-rose)";
+                    errorMsg.style.display = 'flex';
+                }
+                showToast(errMsgText, res.status === 503 ? "warning" : "error");
+            }
+        } catch (err) {
+            console.error("Gagal melakukan login:", err);
+            if (submitBtn && originalBtnHTML) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnHTML;
+            }
+            if (errorMsg) {
+                const span = errorMsg.querySelector("span");
+                if (span) span.textContent = "Gagal terhubung ke server!";
+                errorMsg.style.color = "var(--color-rose)";
+                errorMsg.style.display = 'flex';
+            }
+        }
+        return false;
+    };
+
     const loginForm = document.getElementById("login-form");
     if (loginForm) {
-        loginForm.addEventListener("submit", async (e) => {
+        loginForm.addEventListener("submit", window.handleLoginFormSubmit);
+    }
+
+    // Global Password Visibility Eye Toggle Handler
+    window.togglePasswordVisibility = function(toggleBtn) {
+        if (!toggleBtn) return;
+        const wrapper = toggleBtn.closest(".password-input-wrapper") || toggleBtn.parentElement;
+        const input = wrapper ? wrapper.querySelector("input") : null;
+        if (input) {
+            const isPass = input.type === "password";
+            input.type = isPass ? "text" : "password";
+            input.style.webkitTextSecurity = isPass ? "none" : "disc";
+            toggleBtn.innerHTML = isPass
+                ? `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" x2="22" y1="2" y2="22"></line></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+            toggleBtn.setAttribute("title", isPass ? "Sembunyikan Password" : "Tampilkan Password");
+            if (window.lucide) {
+                try { lucide.createIcons(); } catch (err) {}
+            }
+        }
+    };
+
+    document.addEventListener("click", (e) => {
+        const toggleBtn = e.target.closest(".btn-toggle-password");
+        const wrapper = e.target.closest(".password-input-wrapper");
+        if (toggleBtn) {
             e.preventDefault();
-            const usernameInput = document.getElementById("login-username").value.trim().toLowerCase();
-            const passwordInput = document.getElementById("login-password").value;
-            const errorMsg = document.getElementById("login-error-msg");
-
-            if (errorMsg) errorMsg.style.display = 'none';
-
-            try {
-                const res = await fetch("/api/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username: usernameInput, password: passwordInput, device_id: deviceId })
-                });
-
-                if (res.status === 200) {
-                    const userData = await res.json();
-                    safeSessionStorage.setItem("PTBAS_USER", JSON.stringify(userData));
-
-                    // Reset login form inputs
-                    loginForm.reset();
-
-                    // Authenticate and load app
-                    checkAuth();
-                    showToast(`Selamat datang kembali, ${userData.fullname}!`, "success");
-                } else if (res.status === 403) {
-                    const errData = await res.json();
-                    if (errorMsg) {
-                        const span = errorMsg.querySelector("span");
-                        if (span) span.textContent = errData.message || "Akun ini sedang aktif di perangkat lain.";
-                        errorMsg.style.color = "var(--color-rose)";
-                        errorMsg.style.display = 'flex';
-                    }
-                    showToast(errData.message || "Akun ini sedang aktif di perangkat lain.", "error");
-                } else if (res.status === 503) {
-                    const errData = await res.json();
-                    if (errorMsg) {
-                        const span = errorMsg.querySelector("span");
-                        if (span) span.textContent = errData.message || "Server sedang dalam pemeliharaan (maintenance).";
-                        errorMsg.style.color = "#f59e0b"; // amber for maintenance
-                        errorMsg.style.display = 'flex';
-                    }
-                    showToast(errData.message || "Server sedang dalam pemeliharaan (maintenance).", "warning");
-                } else {
-                    if (errorMsg) {
-                        const span = errorMsg.querySelector("span");
-                        if (span) span.textContent = "Username atau password salah!";
-                        errorMsg.style.color = "var(--color-rose)"; // reset to standard rose color
-                        errorMsg.style.display = 'flex';
-                    }
+            e.stopPropagation();
+            window.togglePasswordVisibility(toggleBtn);
+        } else if (wrapper) {
+            const rect = wrapper.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            if (clickX >= rect.width - 50) {
+                const btn = wrapper.querySelector(".btn-toggle-password");
+                if (btn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.togglePasswordVisibility(btn);
                 }
-            } catch (err) {
-                console.error(err);
-                showToast("Gagal terhubung ke server login", "error");
             }
-        });
-    }
+        }
+    }, true);
 
-    // Toggle Password Visibility Eye Handler
-    const btnTogglePass = document.getElementById("btn-toggle-pass");
-    if (btnTogglePass) {
-        btnTogglePass.addEventListener("click", () => {
-            const passwordInput = document.getElementById("login-password");
-            const eyeIcon = document.getElementById("pass-eye-icon");
-            if (passwordInput.type === "password") {
-                passwordInput.type = "text";
-                eyeIcon.setAttribute("data-lucide", "eye-off");
-                btnTogglePass.setAttribute("title", "Sembunyikan Password");
+    document.addEventListener("mousemove", (e) => {
+        const wrapper = e.target.closest(".password-input-wrapper");
+        if (wrapper) {
+            const rect = wrapper.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const input = wrapper.querySelector("input");
+            if (mouseX >= rect.width - 50) {
+                wrapper.style.cursor = "pointer";
+                if (input) input.style.cursor = "pointer";
             } else {
-                passwordInput.type = "password";
-                eyeIcon.setAttribute("data-lucide", "eye");
-                btnTogglePass.setAttribute("title", "Tampilkan Password");
+                wrapper.style.cursor = "";
+                if (input) input.style.cursor = "";
             }
-            lucide.createIcons();
-        });
-    }
-
-    // Toggle User Form Password Visibility
-    const btnToggleUsrPass = document.getElementById("btn-toggle-usr-pass");
-    if (btnToggleUsrPass) {
-        btnToggleUsrPass.addEventListener("click", () => {
-            const passwordInput = document.getElementById("usr-password");
-            const eyeIcon = document.getElementById("usr-pass-eye-icon");
-            if (passwordInput.type === "password") {
-                passwordInput.type = "text";
-                eyeIcon.setAttribute("data-lucide", "eye-off");
-                btnToggleUsrPass.setAttribute("title", "Sembunyikan Password");
-            } else {
-                passwordInput.type = "password";
-                eyeIcon.setAttribute("data-lucide", "eye");
-                btnToggleUsrPass.setAttribute("title", "Tampilkan Password");
-            }
-            lucide.createIcons();
-        });
-    }
+        }
+    }, true);
 
     // Logout Button Handler
     const btnLogout = document.getElementById("btn-logout");
@@ -2105,40 +3170,105 @@ function initEventListeners() {
     }
 
     // ponytail: User Profile settings modal toggle and event listeners
+    function openUserProfileModal() {
+        if (!state.currentUser) return;
+
+        document.getElementById("profile-modal-username").value = state.currentUser.username || "";
+        document.getElementById("profile-modal-role").value = state.currentUser.role || "";
+        document.getElementById("profile-modal-fullname").value = state.currentUser.fullname || "";
+        document.getElementById("profile-modal-password").value = "";
+
+        const modalAvatar = document.getElementById("profile-modal-avatar");
+        if (modalAvatar) {
+            modalAvatar.src = state.currentUser.avatar || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80";
+        }
+
+        const modalAvatarInput = document.getElementById("profile-modal-avatar-input");
+        if (modalAvatarInput) modalAvatarInput.value = "";
+
+        const modalSignature = document.getElementById("profile-modal-signature");
+        const signaturePlaceholder = document.getElementById("profile-modal-signature-placeholder");
+        if (modalSignature && signaturePlaceholder) {
+            if (state.currentUser.signature) {
+                modalSignature.src = state.currentUser.signature;
+                modalSignature.style.display = "block";
+                signaturePlaceholder.style.display = "none";
+            } else {
+                modalSignature.src = "";
+                modalSignature.style.display = "none";
+                signaturePlaceholder.style.display = "block";
+            }
+        }
+
+        document.getElementById("user-profile-modal").style.display = "flex";
+    }
+    window.openUserProfileModal = openUserProfileModal;
+
+    // ponytail: Show popup modal notification when user signature is missing in profile
+    function showProfileSignatureRequiredPopup(message) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement("div");
+            overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);display:flex;justify-content:center;align-items:center;z-index:999999;";
+            
+            const popupMsg = message || "Anda belum mengunggah tanda tangan di profil Anda. Untuk melakukan persetujuan / approval, Anda wajib mengunggah tanda tangan resmi di profil terlebih dahulu.";
+            
+            overlay.innerHTML = `
+                <div class="card-glass animate-in" style="width:90%;max-width:440px;padding:1.75rem;display:flex;flex-direction:column;gap:1.25rem;align-items:center;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.3);border:1px solid rgba(239, 68, 68, 0.35);border-radius:14px;">
+                    <div style="background:var(--color-rose-glow, rgba(239, 68, 68, 0.15));color:var(--color-rose, #ef4444);width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid rgba(239, 68, 68, 0.3);box-shadow:0 0 15px rgba(239, 68, 68, 0.2);">
+                        <i data-lucide="pen-tool" style="width:30px;height:30px;"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin:0 0 0.5rem 0;font-size:1.2rem;font-weight:700;color:var(--text-primary);">Tanda Tangan Belum Diunggah</h3>
+                        <p style="margin:0;font-size:0.875rem;color:var(--text-secondary);line-height:1.5;">${popupMsg}</p>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.75rem;width:100%;margin-top:0.25rem;">
+                        <button class="btn btn-primary full-width" id="popup-sig-btn-upload" style="padding:0.75rem;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;cursor:pointer;">
+                            <i data-lucide="upload-cloud" style="width:18px;height:18px;"></i>
+                            <span>Upload Tanda Tangan di Profile</span>
+                        </button>
+                        <button class="btn btn-outline full-width" id="popup-sig-btn-cancel" style="padding:0.6rem;border-radius:8px;cursor:pointer;">Batal</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            if (window.lucide) lucide.createIcons({ nodes: [overlay] });
+
+            const cleanup = (openProfile) => {
+                overlay.remove();
+                if (openProfile) {
+                    openUserProfileModal();
+                }
+                resolve(false);
+            };
+
+            overlay.querySelector("#popup-sig-btn-cancel").addEventListener("click", () => cleanup(false));
+            overlay.querySelector("#popup-sig-btn-upload").addEventListener("click", () => cleanup(true));
+            overlay.addEventListener("click", (e) => { if (e.target === overlay) cleanup(false); });
+        });
+    }
+    window.showProfileSignatureRequiredPopup = showProfileSignatureRequiredPopup;
+
+    // ponytail: Ensure current user has a valid signature in profile before approval
+    async function ensureUserProfileSignature(actionName = "persetujuan") {
+        if (!state.currentUser) {
+            showToast("Anda harus login terlebih dahulu!", "warning");
+            return false;
+        }
+
+        const hasSignature = state.currentUser.signature && typeof state.currentUser.signature === 'string' && state.currentUser.signature.trim().length > 10;
+
+        if (!hasSignature) {
+            await showProfileSignatureRequiredPopup(`Untuk melakukan ${actionName}, Anda wajib mengunggah tanda tangan di profil Anda terlebih dahulu.`);
+            return false;
+        }
+
+        return true;
+    }
+    window.ensureUserProfileSignature = ensureUserProfileSignature;
+
     const profileTrigger = document.getElementById("sidebar-user-profile-trigger");
     if (profileTrigger) {
-        profileTrigger.addEventListener("click", () => {
-            if (!state.currentUser) return;
-
-            document.getElementById("profile-modal-username").value = state.currentUser.username || "";
-            document.getElementById("profile-modal-role").value = state.currentUser.role || "";
-            document.getElementById("profile-modal-fullname").value = state.currentUser.fullname || "";
-            document.getElementById("profile-modal-password").value = "";
-
-            const modalAvatar = document.getElementById("profile-modal-avatar");
-            if (modalAvatar) {
-                modalAvatar.src = state.currentUser.avatar || "avatar-default.png";
-            }
-
-            const modalAvatarInput = document.getElementById("profile-modal-avatar-input");
-            if (modalAvatarInput) modalAvatarInput.value = "";
-
-            const modalSignature = document.getElementById("profile-modal-signature");
-            const signaturePlaceholder = document.getElementById("profile-modal-signature-placeholder");
-            if (modalSignature && signaturePlaceholder) {
-                if (state.currentUser.signature) {
-                    modalSignature.src = state.currentUser.signature;
-                    modalSignature.style.display = "block";
-                    signaturePlaceholder.style.display = "none";
-                } else {
-                    modalSignature.src = "";
-                    modalSignature.style.display = "none";
-                    signaturePlaceholder.style.display = "block";
-                }
-            }
-
-            document.getElementById("user-profile-modal").style.display = "flex";
-        });
+        profileTrigger.addEventListener("click", openUserProfileModal);
     }
 
     const btnProfileChangeAvatar = document.getElementById("btn-profile-change-avatar");
@@ -2227,19 +3357,9 @@ function initEventListeners() {
     }
 
     const btnProfileDrawSignature = document.getElementById("btn-profile-draw-signature");
-    if (btnProfileDrawSignature) {
-        btnProfileDrawSignature.addEventListener("click", async () => {
-            // ponytail: Pass hideUpload = false so user can upload/choose signature for profile settings
-            const sig = await showSignatureModal("Gambar/Tulis Tanda Tangan", "Unggah gambar tanda tangan Anda atau gunakan file yang ada.", false);
-            if (sig) {
-                const previewImg = document.getElementById("profile-modal-signature");
-                const placeholder = document.getElementById("profile-modal-signature-placeholder");
-                if (previewImg && placeholder) {
-                    previewImg.src = sig;
-                    previewImg.style.display = "block";
-                    placeholder.style.display = "none";
-                }
-            }
+    if (btnProfileDrawSignature && profileSignatureInput) {
+        btnProfileDrawSignature.addEventListener("click", () => {
+            profileSignatureInput.click();
         });
     }
 
@@ -2311,7 +3431,11 @@ function initEventListeners() {
             let relativeAvatarUrl = avatarUrl;
             try {
                 const urlObj = new URL(avatarUrl);
-                relativeAvatarUrl = urlObj.pathname;
+                if (urlObj.hostname.includes("unsplash.com") || urlObj.protocol.startsWith("http")) {
+                    relativeAvatarUrl = avatarUrl;
+                } else {
+                    relativeAvatarUrl = urlObj.pathname;
+                }
             } catch (e) { }
 
 
@@ -2349,7 +3473,7 @@ function initEventListeners() {
                 safeSessionStorage.setItem('PTBAS_USER', JSON.stringify(state.currentUser));
 
                 // Update sidebar details
-                document.getElementById("sidebar-avatar").src = relativeAvatarUrl || "avatar-default.png";
+                document.getElementById("sidebar-avatar").src = relativeAvatarUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80";
                 document.getElementById("sidebar-fullname").textContent = fullname;
 
                 document.getElementById("user-profile-modal").style.display = "none";
@@ -2393,6 +3517,13 @@ function initEventListeners() {
         userForm.addEventListener("submit", async (e) => {
             e.preventDefault();
             await saveUserData();
+        });
+    }
+
+    const usrDeptSelect = document.getElementById("usr-dept");
+    if (usrDeptSelect) {
+        usrDeptSelect.addEventListener("change", () => {
+            filterUserRoleOptions();
         });
     }
 
@@ -2466,26 +3597,216 @@ function initEventListeners() {
             }
         });
     }
+
+    // ponytail: Event listeners for KPI edit modal
+    const modalKpiCloseBtn = document.getElementById("modal-kpi-close-btn");
+    if (modalKpiCloseBtn) {
+        modalKpiCloseBtn.addEventListener("click", closeKpiEditModal);
+    }
+    const btnCancelKpiModal = document.getElementById("btn-cancel-kpi-modal");
+    if (btnCancelKpiModal) {
+        btnCancelKpiModal.addEventListener("click", closeKpiEditModal);
+    }
+    const kpiEditModal = document.getElementById("kpi-edit-modal");
+    if (kpiEditModal) {
+        kpiEditModal.addEventListener("click", (e) => {
+            if (e.target === kpiEditModal) closeKpiEditModal();
+        });
+    }
+    const btnSaveKpiModal = document.getElementById("btn-save-kpi-modal");
+    if (btnSaveKpiModal) {
+        btnSaveKpiModal.addEventListener("click", async () => {
+            const input = document.getElementById("input-kpi-percentage");
+            if (!input) return;
+            const val = parseInt(input.value);
+            if (isNaN(val) || val < 0 || val > 100) {
+                showToast("Persentase harus berupa angka antara 0 dan 100", "error");
+                return;
+            }
+
+            try {
+                let settingKey;
+                if (state.activeKpiEditType === 'drawing') {
+                    settingKey = state.activeKpiEditCategory === 'realisasi' ? 'kpi_realisasi_drawing' : 'kpi_percentage_drawing';
+                } else {
+                    settingKey = state.activeKpiEditCategory === 'realisasi' ? 'kpi_realisasi_gejo' : 'kpi_percentage_gejo';
+                }
+                const payload = {};
+                payload[settingKey] = val.toString();
+
+                const res = await fetch("/api/settings", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    if (!state.settings) state.settings = {};
+                    state.settings[settingKey] = val.toString();
+
+                    showToast("Persentase KPI berhasil diperbarui", "success");
+                    closeKpiEditModal();
+
+                    // Immediate DOM sync
+                    const gejoValEl = document.getElementById("overview-gejo-kpi-val");
+                    const gejoRealisasiValEl = document.getElementById("overview-gejo-kpi-realisasi-val");
+                    const drawingValEl = document.getElementById("overview-drawing-kpi-val");
+                    const drawingRealisasiValEl = document.getElementById("overview-drawing-kpi-realisasi-val");
+
+                    if (settingKey === 'kpi_percentage_gejo' && gejoValEl) gejoValEl.textContent = val + "%";
+                    if (settingKey === 'kpi_realisasi_gejo' && gejoRealisasiValEl) gejoRealisasiValEl.textContent = val + "%";
+                    if (settingKey === 'kpi_percentage_drawing' && drawingValEl) drawingValEl.textContent = val + "%";
+                    if (settingKey === 'kpi_realisasi_drawing' && drawingRealisasiValEl) drawingRealisasiValEl.textContent = val + "%";
+
+                    if (typeof updateOverviewDashboard === "function") updateOverviewDashboard();
+                    if (state.activeTab === 'server-dashboard-access' && typeof renderServerDashboardAccessTab === "function") {
+                        renderServerDashboardAccessTab();
+                    }
+                    await initData();
+                } else {
+                    showToast("Gagal memperbarui KPI", "error");
+                }
+            } catch (err) {
+                console.error("Gagal memperbarui KPI:", err);
+                showToast("Gagal memperbarui KPI", "error");
+            }
+        });
+    }
+
+    // ponytail: Project Timeline Modal Event Listeners
+    const btnAddTimelineItem = document.getElementById("btn-add-timeline-item");
+    if (btnAddTimelineItem) {
+        btnAddTimelineItem.addEventListener("click", (e) => {
+            e.preventDefault();
+            addTimelineItemToEditing();
+        });
+    }
+
+    const btnSaveTimelineModal = document.getElementById("btn-save-timeline-modal");
+    if (btnSaveTimelineModal) {
+        btnSaveTimelineModal.addEventListener("click", (e) => {
+            e.preventDefault();
+            saveProjectTimeline();
+        });
+    }
+
+    const btnCancelTimelineModal = document.getElementById("btn-cancel-timeline-modal");
+    if (btnCancelTimelineModal) {
+        btnCancelTimelineModal.addEventListener("click", closeProjectTimelineModal);
+    }
+
+    const projTimelineBtnClose = document.getElementById("proj-timeline-btn-close");
+    if (projTimelineBtnClose) {
+        projTimelineBtnClose.addEventListener("click", closeProjectTimelineModal);
+    }
+
+    const projTimelineModal = document.getElementById("project-timeline-edit-modal");
+    if (projTimelineModal) {
+        projTimelineModal.addEventListener("click", (e) => {
+            if (e.target === projTimelineModal) closeProjectTimelineModal();
+        });
+    }
+}
+
+function canUserEditKpiNumbers() {
+    if (!state.currentUser) return false;
+    const userRole = String(state.currentUser.role || 'User').trim();
+    const isServer = isServerAccount(state.currentUser) || (state.currentUser.username && state.currentUser.username.toLowerCase() === 'server');
+    if (isServer) return true;
+
+    if (typeof getDashboardWidgetPermissions !== 'function') return userRole === 'Admin Eng' || userRole === 'Server' || userRole === 'Foreman Eng';
+    const perms = getDashboardWidgetPermissions();
+    const conf = perms["widget_kpi_edit_setting"];
+    if (conf && conf.mode && conf.mode !== "all") {
+        const rolesList = conf.roles || [];
+        const isMatched = rolesList.some(r => String(r).trim().toLowerCase() === userRole.toLowerCase());
+        if (conf.mode === "exclude") return !isMatched;
+        return isMatched;
+    }
+    // Default when mode is "all": tech admin, foreman eng, server can edit
+    return userRole === 'Admin Eng' || userRole === 'Server' || userRole === 'Foreman Eng';
+}
+window.canUserEditKpiNumbers = canUserEditKpiNumbers;
+
+// ponytail: Global functions to open/close KPI edit modal
+function openKpiEditModal(type = 'gejo', category = 'target') {
+    if (!canUserEditKpiNumbers()) {
+        showToast("Akses Ditolak: Anda tidak memiliki izin untuk mengedit persentase KPI!", "error");
+        return;
+    }
+    state.activeKpiEditType = type;
+    state.activeKpiEditCategory = category;
+
+    // update the modal title/description to reflect what we are editing
+    const titleEl = document.querySelector("#kpi-edit-modal h3");
+    const descEl = document.querySelector("#kpi-edit-modal p");
+    const labelEl = document.querySelector("#kpi-edit-modal label");
+
+    let kpiValElement;
+    if (type === 'drawing') {
+        if (category === 'realisasi') {
+            if (titleEl) titleEl.textContent = "Update KPI Terealisasi Drawing";
+            if (descEl) descEl.textContent = "Masukkan persentase pencapaian KPI Terealisasi Drawing saat ini (0-100) untuk diperbarui setiap minggunya.";
+            if (labelEl) labelEl.textContent = "KPI Terealisasi (%)";
+            kpiValElement = document.getElementById("overview-drawing-kpi-realisasi-val");
+        } else {
+            if (titleEl) titleEl.textContent = "Update Persentase KPI Target Drawing";
+            if (descEl) descEl.textContent = "Masukkan persentase pencapaian KPI Target Drawing saat ini (0-100) untuk diperbarui setiap minggunya.";
+            if (labelEl) labelEl.textContent = "Persentase KPI Target (%)";
+            kpiValElement = document.getElementById("overview-drawing-kpi-val");
+        }
+    } else {
+        if (category === 'realisasi') {
+            if (titleEl) titleEl.textContent = "Update KPI Terealisasi General EJO";
+            if (descEl) descEl.textContent = "Masukkan persentase pencapaian KPI Terealisasi General EJO saat ini (0-100) untuk diperbarui setiap minggunya.";
+            if (labelEl) labelEl.textContent = "KPI Terealisasi (%)";
+            kpiValElement = document.getElementById("overview-gejo-kpi-realisasi-val");
+        } else {
+            if (titleEl) titleEl.textContent = "Update Persentase KPI Target General EJO";
+            if (descEl) descEl.textContent = "Masukkan persentase pencapaian KPI Target General EJO saat ini (0-100) untuk diperbarui setiap minggunya.";
+            if (labelEl) labelEl.textContent = "Persentase KPI Target (%)";
+            kpiValElement = document.getElementById("overview-gejo-kpi-val");
+        }
+    }
+
+    const currentVal = kpiValElement ? parseInt(kpiValElement.textContent) || 0 : 0;
+    const input = document.getElementById("input-kpi-percentage");
+    if (input) input.value = currentVal;
+
+    const modal = document.getElementById("kpi-edit-modal");
+    if (modal) modal.classList.add("active");
+}
+window.openKpiEditModal = openKpiEditModal;
+
+function closeKpiEditModal() {
+    const modal = document.getElementById("kpi-edit-modal");
+    if (modal) modal.classList.remove("active");
 }
 
 function switchTab(tabId) {
-    // ponytail: redirect overview, admin, and general-ejo tabs to drawing if user is a Drafter (since Drawing is their only visible menu)
     if (state.currentUser) {
-        const isDrafterOnly = state.currentUser.role === 'Drafter';
-        const isTechNonDrafter = isDrafterRole(state.currentUser.role) && !isDrafterOnly;
-        if (isDrafterOnly) {
-            if (tabId === 'overview' || tabId === 'admin' || tabId === 'general-ejo') {
-                tabId = 'drawing';
-            }
-        } else if (isTechNonDrafter) {
-            if (tabId === 'overview' || tabId === 'admin') {
-                tabId = 'general-ejo';
-            }
+        const uPerms = getUserPermissions(state.currentUser);
+
+        // If requested tabId is not allowed by uPerms, route to first allowed module
+        if (tabId === 'overview' && !uPerms.overview) {
+            tabId = uPerms.drawing ? 'drawing' : (uPerms.gejo ? 'general-ejo' : (uPerms.partlist ? 'partlist' : 'history'));
+        } else if (tabId === 'general-ejo' && !uPerms.gejo) {
+            tabId = uPerms.drawing ? 'drawing' : (uPerms.project ? 'projects' : (uPerms.partlist ? 'partlist' : 'history'));
+        } else if (tabId === 'drawing' && !uPerms.drawing) {
+            tabId = uPerms.gejo ? 'general-ejo' : (uPerms.project ? 'projects' : (uPerms.partlist ? 'partlist' : 'history'));
+        } else if (tabId === 'projects' && !uPerms.project) {
+            tabId = uPerms.drawing ? 'drawing' : (uPerms.gejo ? 'general-ejo' : (uPerms.partlist ? 'partlist' : 'history'));
+        } else if (tabId === 'partlist' && !uPerms.partlist) {
+            tabId = uPerms.drawing ? 'drawing' : (uPerms.gejo ? 'general-ejo' : (uPerms.history ? 'history' : 'overview'));
+        } else if (tabId === 'history' && !uPerms.history) {
+            tabId = uPerms.drawing ? 'drawing' : (uPerms.gejo ? 'general-ejo' : (uPerms.partlist ? 'partlist' : 'overview'));
+        } else if (tabId === 'admin' && !uPerms.admin) {
+            showToast("Akses Ditolak: Anda tidak memiliki izin untuk membuka Admin Panel!", "error");
+            tabId = uPerms.drawing ? 'drawing' : (uPerms.gejo ? 'general-ejo' : 'overview');
+        } else if ((tabId === 'server-access' || tabId === 'server-dashboard-access') && !canAccessServerAccessTab(state.currentUser)) {
+            showToast("Akses Ditolak: Fitur Manajemen Akses Akun khusus untuk Akun Server!", "error");
+            tabId = uPerms.drawing ? 'drawing' : (uPerms.gejo ? 'general-ejo' : 'overview');
         }
-    }
-    // ponytail: rename Lead Engineer -> Foreman
-    if (tabId === 'admin' && (!state.currentUser || (!isLeadRole(state.currentUser.role)))) {
-        tabId = 'overview';
     }
     state.activeTab = tabId;
 
@@ -2506,57 +3827,37 @@ function switchTab(tabId) {
     const titleEl = document.getElementById("page-title");
     const subEl = document.getElementById("page-subtitle");
 
+    if (subEl) {
+        subEl.style.display = "none";
+    }
+
     if (tabId === 'overview') {
-        titleEl.textContent = "Dashboard Overview";
-        subEl.textContent = "Monitoring status, kinerja, dan anggaran order lapangan.";
+        titleEl.textContent = "EJO DASHBOARD";
     } else if (tabId === 'general-ejo') {
         titleEl.textContent = "General EJO";
-        if (state.activeGeneralEjoPhase === 1) {
-            // ponytail: update subtitle texts to match new header names
-            subEl.textContent = "Schedule — Daftar EJO langsung yang menunggu atau disetujui.";
-        } else if (state.activeGeneralEjoPhase === 2) {
-            // ponytail: update subtitle texts to match new header names
-            subEl.textContent = "On Progress — Daftar EJO langsung yang sedang berjalan di lapangan.";
-        } else if (state.activeGeneralEjoPhase === 3) {
-            // ponytail: update subtitle texts to match new header names
-            subEl.textContent = "Done — Daftar EJO langsung yang sudah selesai atau dibatalkan.";
-        } else {
-            subEl.textContent = "Daftar lengkap seluruh Engineering Job Order (semua status).";
-        }
     } else if (tabId === 'drawing') {
-        titleEl.textContent = "Galeri Drawing";
-        if (state.activeDrawingPhase === 1) {
-            subEl.textContent = "Schedule — File drawing terkait EJO yang dalam status Schedule.";
-        } else if (state.activeDrawingPhase === 2) {
-            subEl.textContent = "On Progress — File drawing terkait EJO yang sedang berjalan di lapangan.";
-        } else if (state.activeDrawingPhase === 3) {
-            subEl.textContent = "Done — File drawing terkait EJO yang sudah selesai atau dibatalkan.";
-        } else {
-            subEl.textContent = "Kumpulan file gambar teknik dan PDF yang terhubung ke EJO.";
-        }
+        titleEl.textContent = "Drawing EJO";
     } else if (tabId === 'projects') {
         titleEl.textContent = "Project Monitoring Board";
-        if (state.activeProjectPhase === 1) {
-            subEl.textContent = "Fase 1: Inisialisasi Ide — Gagasan dituangkan ke atasan/bos.";
-        } else if (state.activeProjectPhase === 2) {
-            subEl.textContent = "Fase 2: Ide Disetujui & Pengadaan — Persetujuan & penyediaan barang/jasa.";
-        } else if (state.activeProjectPhase === 3) {
-            subEl.textContent = "Fase 3: Tinggal Eksekusi — Seluruh barang tersedia & siap pengerjaan.";
-        } else if (state.activeProjectPhase === 'archive') {
-            subEl.textContent = "Arsip Project — Daftar project yang sudah selesai atau diarsipkan.";
-        } else {
-            subEl.textContent = "Pantau siklus inisialisasi ide baru hingga kesiapan eksekusi proyek.";
-        }
-    } else if (tabId === 'repair-parts') {
-        titleEl.textContent = "Daftar Repair Part (Spare Parts)";
-        subEl.textContent = "Kelola inventori spare part yang dialokasikan untuk pekerjaan perbaikan EJO.";
+    } else if (tabId === 'partlist') {
+        titleEl.textContent = "Dashboard Part";
     } else if (tabId === 'history') {
-        titleEl.textContent = "History EJO";
-        subEl.textContent = "Riwayat Engineering Job Order yang sudah selesai atau dibatalkan.";
+        const type = state.activeHistoryType || 'all';
+        if (type === 'drawing') {
+            titleEl.textContent = "History Drawing EJO";
+        } else if (type === 'general-ejo') {
+            titleEl.textContent = "History General EJO";
+        } else {
+            titleEl.textContent = "History EJO";
+        }
     } else if (tabId === 'admin') {
         titleEl.textContent = "Admin Panel & Utilities";
-        subEl.textContent = "Kelola akun, password, otoritas tim teknisi, dan utilitas data Excel PT. BAS.";
+    } else if (tabId === 'server-dashboard-access') {
+        titleEl.textContent = "Perizinan Tampil Dashboard";
+    } else if (tabId === 'server-access') {
+        titleEl.textContent = "Manajemen Akses & Otoritas Server";
     }
+
 
     // Toggle tab panes
     document.querySelectorAll(".tab-pane").forEach(pane => {
@@ -2576,36 +3877,43 @@ function switchTab(tabId) {
         const bPhase = b.getAttribute("data-phase");
         const bGejoPhase = b.getAttribute("data-gejo-phase");
         const bDrawingPhase = b.getAttribute("data-drawing-phase");
+        const bHistoryType = b.getAttribute("data-history-type");
 
         if (bTab === tabId) {
-            if (tabId === 'projects') {
-                if (bPhase) {
-                    const isMatch = (bPhase === 'archive' && state.activeProjectPhase === 'archive') ||
-                        (state.activeProjectPhase && parseInt(bPhase) === state.activeProjectPhase);
-                    if (isMatch) {
+            if (tabId === 'history') {
+                if (bHistoryType) {
+                    const activeType = state.activeHistoryType || 'all';
+                    if (bHistoryType === activeType) {
                         b.classList.add("active");
                     }
-                } else {
+                } else if (!state.activeHistoryType || state.activeHistoryType === 'all') {
+                    b.classList.add("active");
+                }
+            } else if (tabId === 'projects') {
+                if (bPhase !== null && bPhase !== undefined && bPhase !== "") {
+                    const activeP = state.activeProjectPhase;
+                    if (String(bPhase) === String(activeP)) {
+                        b.classList.add("active");
+                    }
+                } else if (state.activeProjectPhase === null || state.activeProjectPhase === undefined) {
                     b.classList.add("active");
                 }
             } else if (tabId === 'general-ejo') {
-                if (bGejoPhase) {
-                    if (state.activeGeneralEjoPhase && parseInt(bGejoPhase) === state.activeGeneralEjoPhase) {
+                if (bGejoPhase !== null && bGejoPhase !== undefined && bGejoPhase !== "") {
+                    const activeP = state.activeGeneralEjoPhase;
+                    if (String(bGejoPhase) === String(activeP)) {
                         b.classList.add("active");
                     }
-                } else {
+                } else if (state.activeGeneralEjoPhase === null || state.activeGeneralEjoPhase === undefined) {
                     b.classList.add("active");
                 }
             } else if (tabId === 'drawing') {
-                if (b.id === 'btn-nav-drawing-all') {
-                    if (state.activeDrawingPhase === 'history') {
+                if (bDrawingPhase !== null && bDrawingPhase !== undefined && bDrawingPhase !== "") {
+                    const activeP = state.activeDrawingPhase;
+                    if (String(bDrawingPhase) === String(activeP)) {
                         b.classList.add("active");
                     }
-                } else if (bDrawingPhase) {
-                    if (state.activeDrawingPhase && parseInt(bDrawingPhase) === state.activeDrawingPhase) {
-                        b.classList.add("active");
-                    }
-                } else if (b.id === 'btn-nav-drawing') {
+                } else if (state.activeDrawingPhase === null || state.activeDrawingPhase === undefined) {
                     b.classList.add("active");
                 }
             } else {
@@ -2615,7 +3923,7 @@ function switchTab(tabId) {
     });
 
     // ponytail: highlight parent EJO button if active tab is a child of the EJO dropdown
-    const ejoChildTabs = ['general-ejo', 'drawing', 'repair-parts', 'projects'];
+    const ejoChildTabs = ['general-ejo', 'drawing', 'projects'];
     const parentJobOrdersBtn = document.getElementById("btn-nav-job-orders");
     if (parentJobOrdersBtn) {
         if (ejoChildTabs.includes(tabId)) {
@@ -2626,9 +3934,9 @@ function switchTab(tabId) {
     // ponytail: handle dropdown toggle matching active tab state (excluding general-ejo to keep it collapsed by default, except for tech roles)
     const isTechNonDrafter = state.currentUser && isDrafterRole(state.currentUser.role) && state.currentUser.role !== 'Drafter';
     const isDrafterOnly = state.currentUser && state.currentUser.role === 'Drafter';
-    const ejoSubmenuTabs = isTechNonDrafter ? ['general-ejo'] : ['drawing', 'repair-parts', 'projects'];
+    const ejoSubmenuTabs = isTechNonDrafter ? ['general-ejo'] : ['drawing', 'projects'];
     const jobOrdersSubmenu = document.getElementById("job-orders-submenu");
-    const chevron = document.querySelector("#btn-nav-job-orders .dropdown-chevron");
+    const chevron = document.querySelector("#btn-nav-job-orders-chevron .dropdown-chevron");
     if (jobOrdersSubmenu && chevron) {
         if (isDrafterOnly) {
             // ponytail: do not force flex here to allow toggling by EJO button click; only collapse if navigating completely away
@@ -2645,38 +3953,43 @@ function switchTab(tabId) {
         }
     }
 
+    // ponytail: handle nested general-ejo submenu toggle matching active tab state
+    const gejoSubmenu = document.getElementById("general-ejo-submenu");
+    const gejoChevron = document.querySelector("#btn-nav-general-ejo .gejo-chevron");
+    if (gejoSubmenu && gejoChevron) {
+        if (tabId !== 'general-ejo') {
+            gejoSubmenu.classList.remove("open");
+            gejoChevron.classList.remove("rotated");
+        }
+    }
+
     // ponytail: handle nested projects submenu toggle matching active tab state (keep collapsed by default on projects tab load, only collapse when switching away)
     const projectsSubmenu = document.getElementById("projects-submenu");
     const nestedChevron = document.querySelector("#btn-nav-projects .nested-chevron");
     if (projectsSubmenu && nestedChevron) {
         if (tabId !== 'projects') {
-            projectsSubmenu.style.display = "none";
+            projectsSubmenu.classList.remove("open");
             nestedChevron.classList.remove("rotated");
         }
     }
 
-    // ponytail: handle nested general-ejo submenu toggle matching active tab state (keep collapsed by default on general-ejo tab load)
-    const generalEjoSubmenu = document.getElementById("general-ejo-submenu");
-    const gejoChevron = document.querySelector("#btn-nav-general-ejo .gejo-chevron");
-    if (generalEjoSubmenu && gejoChevron) {
-        if (tabId !== 'general-ejo') {
-            generalEjoSubmenu.style.display = "none";
-            gejoChevron.classList.remove("rotated");
+    // ponytail: handle nested history submenu toggle matching active tab state
+    const historySubmenu = document.getElementById("history-submenu");
+    const historyChevron = document.querySelector("#btn-nav-history .history-chevron");
+    if (historySubmenu && historyChevron) {
+        if (tabId !== 'history') {
+            historySubmenu.classList.remove("open");
+            historyChevron.classList.remove("rotated");
         }
     }
 
     // ponytail: handle nested drawing submenu toggle matching active tab state (keep collapsed by default on drawing tab load, only collapse when switching away)
     const drawingSubmenu = document.getElementById("drawing-submenu");
     const drawingChevron = document.querySelector("#btn-nav-drawing .drawing-chevron");
-    if (drawingSubmenu) {
-        if (isDrafterOnly) {
-            // ponytail: always show drawing submenu for Drafter since it's the only one they have
-            drawingSubmenu.style.display = "flex";
-        } else if (drawingChevron) {
-            if (tabId !== 'drawing') {
-                drawingSubmenu.style.display = "none";
-                drawingChevron.classList.remove("rotated");
-            }
+    if (drawingSubmenu && drawingChevron) {
+        if (tabId !== 'drawing') {
+            drawingSubmenu.classList.remove("open");
+            drawingChevron.classList.remove("rotated");
         }
     }
 
@@ -2694,19 +4007,27 @@ function renderAll() {
     if (state.activeTab === 'overview') {
         renderOverviewCharts();
         renderCriticalList();
+        if (typeof applyDashboardWidgetPermissions === "function") {
+            applyDashboardWidgetPermissions();
+        }
     } else if (state.activeTab === 'general-ejo') {
         renderGeneralEJO();
     } else if (state.activeTab === 'drawing') {
         renderDrawings();
     } else if (state.activeTab === 'projects') {
         renderProjects();
-    } else if (state.activeTab === 'repair-parts') {
-        renderRepairParts();
+    } else if (state.activeTab === 'partlist') {
+        renderPartlistTab();
     } else if (state.activeTab === 'history') {
         renderHistory();
     } else if (state.activeTab === 'admin') {
         renderUsers();
+    } else if (state.activeTab === 'server-access') {
+        renderServerAccessTab();
+    } else if (state.activeTab === 'server-dashboard-access') {
+        renderServerDashboardAccessTab();
     }
+
 
     lucide.createIcons();
 }
@@ -2732,15 +4053,32 @@ function isApprovalPendingForCurrentUser(e) {
         return isLead;
     }
     if (e.status === 'Pending Foreman Approval') {
-        return role === 'Foreman' || role === 'Admin' || role === 'Server';
+        return role === 'Foreman Eng' || role === 'Admin Eng' || role === 'Server';
     }
     if (e.status === 'Pending Supervisor Approval') {
-        return role === 'Supervisor' || role === 'Manager' || role === 'Plant Manager' || role === 'Server';
+        return role === 'Supervisor Eng' || role === 'Manager Eng' || role === 'Plant Manager' || role === 'Server';
     }
     if (e.status === 'Pending Manager Approval') {
-        return role === 'Manager' || role === 'Plant Manager' || role === 'Server';
+        return role === 'Manager Eng' || role === 'Plant Manager' || role === 'Server';
+    }
+    if (e.status === 'Pending Factory Manager Approval') {
+        return role === 'Factory Manager' || role === 'Server';
     }
 
+    return false;
+}
+
+// ponytail: helper to check if a Drawing EJO is waiting for approval by the current logged-in user
+function isDrawingApprovalPendingForCurrentUser(d) {
+    if (!state.currentUser) return false;
+    const role = state.currentUser.role;
+
+    if (d.status === 'Pending Requester Approval') return checkIsRequesterOrRole(d);
+    if (d.status === 'Pending Dept Approval') return isDepartmentApprover(state.currentUser, d.dept, d);
+    if (d.status === 'Pending Foreman Approval') return role === 'Foreman Eng' || role === 'Admin Eng' || role === 'Server';
+    if (d.status === 'Pending Supervisor Approval') return role === 'Supervisor Eng' || role === 'Server';
+    if (d.status === 'Pending Manager Approval') return role === 'Manager Eng' || role === 'Plant Manager' || role === 'Server';
+    if (d.status === 'Pending Factory Manager Approval') return role === 'Factory Manager' || role === 'Server';
     return false;
 }
 
@@ -2751,16 +4089,21 @@ function renderKPIs() {
     const lastMonth = thisMonth === 0 ? 11 : thisMonth - 1;
     const lastMonthYear = thisMonth === 0 ? thisYear - 1 : thisYear;
 
-    const allEjos = (state.ejos || []).concat(getVisibleGeneralEjos());
+    const allEjos = getVisibleOverviewEjos();
+    const allDrawings = getVisibleDrawings();
 
-    const total = allEjos.length;
-    const pending = allEjos.filter(isApprovalPendingForCurrentUser).length;
-    // ponytail: align progress KPI count to represent Phase 2 (On Progress) statuses only (exclude Phase 1 Schedule/Checking)
-    const progress = allEjos.filter(e => e.status.startsWith('In Progress') || (e.status.startsWith('Pending') && e.status !== 'Pending Revision') || e.status.startsWith('Waiting')).length;
+    const total = allEjos.length + allDrawings.length;
+    const pendingEjos = allEjos.filter(isApprovalPendingForCurrentUser).length;
+    const pendingDrawings = allDrawings.filter(isDrawingApprovalPendingForCurrentUser).length;
+    const pending = pendingEjos + pendingDrawings;
 
-    // ponytail: Completed THIS MONTH only (by targetDate or last log date)
+    const progressEjos = allEjos.filter(e => e.status.startsWith('In Progress') || (e.status.startsWith('Pending') && e.status !== 'Pending Revision')).length;
+    const progressDrawings = allDrawings.filter(d => d.status === 'On Progress' || d.status.startsWith('Pending')).length;
+    const progress = progressEjos + progressDrawings;
+
+    // ponytail: Completed THIS MONTH only (by targetDate or last log date, including Completed and Cancelled)
     const completedThisMonth = allEjos.filter(e => {
-        if (e.status !== 'Completed') return false;
+        if (e.status !== 'Completed' && e.status !== 'Cancelled') return false;
         // Use last log date if available, else targetDate
         const logs = parseLogs(e.logs);
         const dateStr = logs.length > 0 ? logs[logs.length - 1].date : e.targetDate;
@@ -2827,48 +4170,37 @@ function renderKPIs() {
 
     let gejoLimitHtml = "";
     if (state.currentUser) {
-        const isLimited = state.currentUser.role === 'User';
+        const isLimited = isUserLimited(state.currentUser);
         if (!isLimited) {
             gejoLimitHtml = `<i data-lucide="shield" style="width:12px; height:12px; color: var(--color-green);"></i> <span style="color: var(--color-green);">Limit: Unlimited</span>`;
         } else {
-            const myGejosCount = (state.generalEjos || []).filter(e => {
-                const isOwner = e.requester === state.currentUser.fullname || e.requester === state.currentUser.username;
-                if (!isOwner) return false;
-                if (e.is_archived) return false;
-                const status = e.status || '';
-                if (status === 'Completed' || status === 'Cancelled' || status === 'Pending Revision') return false;
-                return true;
-            }).length;
-            const sisa = Math.max(0, 2 - myGejosCount);
-            if (sisa === 0) {
-                gejoLimitHtml = `<i data-lucide="shield-alert" style="width:12px; height:12px; color: var(--color-red);"></i> <span style="color: var(--color-red);">Limit: ${myGejosCount}/2 (Penuh)</span>`;
-            } else {
-                gejoLimitHtml = `<i data-lucide="shield-alert" style="width:12px; height:12px; color: var(--color-cyan);"></i> <span style="color: var(--color-cyan);">Limit: ${myGejosCount}/2 (Sisa ${sisa})</span>`;
-            }
+            gejoLimitHtml = `<i data-lucide="shield-alert" style="width:12px; height:12px; color: var(--color-cyan);"></i> <span style="color: var(--color-cyan);">Limit: 2 / Kategori</span>`;
         }
     }
 
     const gejoSchedule = visibleGejos.filter(e => e.status === 'Requested' || e.status === 'Approved' || (e.status || '').startsWith('Checking') || e.status === 'Pending Revision' || ((e.status || '').startsWith('In Progress') && (e.status || '').includes('(Revisi'))).length;
     const gejoProgress = visibleGejos.filter(e => ((e.status || '').startsWith('In Progress') && !(e.status || '').includes('(Revisi')) || ((e.status || '').startsWith('Pending') && e.status !== 'Pending Revision')).length;
-    const gejoDone = visibleGejos.filter(e => e.status === 'Completed' && e.is_archived !== 1 && e.is_archived !== '1').length;
-    const gejoArchive = visibleGejos.filter(e => e.status === 'Cancelled' || e.is_archived === 1 || e.is_archived === '1' || e.status === 'Archived').length;
+    const gejoDone = visibleGejos.filter(e => (e.status === 'Completed' || e.status === 'Cancelled') && e.is_archived !== 1 && e.is_archived !== '1').length;
+    const gejoArchive = visibleGejos.filter(e => e.is_archived === 1 || e.is_archived === '1' || e.status === 'Archived').length;
+
+    const isStaffUserRole = state.currentUser && (state.currentUser.role === 'User' || (state.currentUser.role || '').includes('Staff'));
 
     const gejoBreakdownHtml = `
-        <span class="badge" style="background: rgba(234, 179, 8, 0.08); color: var(--color-yellow); border: 1px solid rgba(234, 179, 8, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-schedule" style="background: rgba(234, 179, 8, 0.08); color: var(--color-yellow); border: 1px solid rgba(234, 179, 8, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-yellow);"></span>
             Schedule: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${gejoSchedule}</strong>
         </span>
-        <span class="badge" style="background: rgba(6, 182, 212, 0.08); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-progress" style="background: rgba(6, 182, 212, 0.08); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-cyan);"></span>
             On Progress: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${gejoProgress}</strong>
         </span>
-        <span class="badge" style="background: rgba(16, 185, 129, 0.08); color: var(--color-green); border: 1px solid rgba(16, 185, 129, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-done" style="background: rgba(16, 185, 129, 0.08); color: var(--color-green); border: 1px solid rgba(16, 185, 129, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-green);"></span>
             Done: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${gejoDone}</strong>
         </span>
-        <span class="badge" style="background: rgba(148, 163, 184, 0.08); color: var(--text-secondary); border: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-history" style="background: rgba(148, 163, 184, 0.08); color: var(--text-secondary); border: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: #94a3b8;"></span>
-            Arsip: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${gejoArchive}</strong>
+            History: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${gejoArchive}</strong>
         </span>
     `;
 
@@ -2877,7 +4209,49 @@ function renderKPIs() {
     const ovGejoBreakdown = document.getElementById("overview-gejo-breakdown");
     if (ovGejoActive) ovGejoActive.textContent = totalGejos;
     if (ovGejoLimit) ovGejoLimit.innerHTML = gejoLimitHtml;
-    if (ovGejoBreakdown) ovGejoBreakdown.innerHTML = gejoBreakdownHtml;
+    if (ovGejoBreakdown) {
+        ovGejoBreakdown.innerHTML = gejoBreakdownHtml;
+        if (typeof applyDashboardWidgetPermissions === "function") applyDashboardWidgetPermissions();
+    }
+
+    // ponytail: Populate General EJO KPI percentage
+    const kpiVal = (state.settings && state.settings.kpi_percentage_gejo) ? state.settings.kpi_percentage_gejo : "0";
+    const kpiValElement = document.getElementById("overview-gejo-kpi-val");
+    if (kpiValElement) {
+        kpiValElement.textContent = kpiVal + "%";
+    }
+
+    // ponytail: Populate General EJO KPI Realisasi percentage
+    const kpiRealisasiVal = (state.settings && state.settings.kpi_realisasi_gejo) ? state.settings.kpi_realisasi_gejo : "0";
+    const kpiRealisasiValElement = document.getElementById("overview-gejo-kpi-realisasi-val");
+    if (kpiRealisasiValElement) {
+        kpiRealisasiValElement.textContent = kpiRealisasiVal + "%";
+    }
+
+    // ponytail: Hide KPI Target & Realisasi container for Staff users and Non-ENG SPV / Manager per dept
+    const userRole = state.currentUser ? (state.currentUser.role || '') : '';
+    const userDept = state.currentUser ? (state.currentUser.dept || '') : '';
+    const normalizedDept = typeof normalizeDepartmentCode === 'function' ? normalizeDepartmentCode(userDept) : String(userDept || '').toUpperCase();
+    const isEngDept = normalizedDept === 'ENG' || / eng$/i.test(userRole) || / eng /i.test(userRole) || ['Supervisor Eng', 'Manager Eng', 'Plant Manager', 'Factory Manager', 'Foreman Eng', 'Admin Eng', 'Server'].includes(userRole) || (state.currentUser && state.currentUser.username === 'server');
+    const isStaffUser = isOrdinaryUser(userRole);
+    const isSpvOrManager = (userRole.includes('Supervisor') || userRole.includes('Manager') || userRole.startsWith('Supervisor ') || userRole.startsWith('Manager '));
+    const hideKpiContainer = isStaffUser || (isSpvOrManager && !isEngDept);
+
+    const gejoKpiContainer = document.getElementById("overview-gejo-kpi-container");
+    if (gejoKpiContainer) {
+        gejoKpiContainer.style.display = hideKpiContainer ? "none" : "flex";
+    }
+
+    // ponytail: Allow authorized users to edit KPIs based on widget_kpi_edit_setting
+    const canEditKpi = typeof canUserEditKpiNumbers === "function" ? canUserEditKpiNumbers() : false;
+    const editKpiBtn = document.getElementById("overview-gejo-kpi-edit-btn");
+    if (editKpiBtn) {
+        editKpiBtn.style.display = canEditKpi ? "inline-flex" : "none";
+    }
+    const editKpiRealisasiBtn = document.getElementById("overview-gejo-kpi-realisasi-edit-btn");
+    if (editKpiRealisasiBtn) {
+        editKpiRealisasiBtn.style.display = canEditKpi ? "inline-flex" : "none";
+    }
 
     // ponytail: Populate Drawing Summary Card on Dashboard
     const visibleDrawings = getVisibleDrawings();
@@ -2885,7 +4259,7 @@ function renderKPIs() {
 
     let drawingLimitHtml = "";
     if (state.currentUser) {
-        const isLimited = state.currentUser.role === 'User';
+        const isLimited = isUserLimited(state.currentUser);
         if (!isLimited) {
             drawingLimitHtml = `<i data-lucide="shield" style="width:12px; height:12px; color: var(--color-green);"></i> <span style="color: var(--color-green);">Limit: Unlimited</span>`;
         } else {
@@ -2902,50 +4276,33 @@ function renderKPIs() {
             if (sisa === 0) {
                 drawingLimitHtml = `<i data-lucide="shield-alert" style="width:12px; height:12px; color: var(--color-red);"></i> <span style="color: var(--color-red);">Limit: ${myDrawingsCount}/2 (Penuh)</span>`;
             } else {
-                drawingLimitHtml = `<i data-lucide="shield-alert" style="width:12px; height:12px; color: var(--color-cyan);"></i> <span style="color: var(--color-cyan);">Limit: ${myDrawingsCount}/2 (Sisa ${sisa})</span>`;
+                drawingLimitHtml = `<i data-lucide="shield-alert" style="width:12px; height:12px; color: var(--color-cyan);"></i> <span style="color: var(--color-cyan);">Limit: ${myDrawingsCount}/2 (Quota ${sisa})</span>`;
             }
         }
     }
 
-    // ponytail: align overview card counts with getDrawingPhase where pending approvals stay in On Progress
-    const drawingSchedule = visibleDrawings.filter(d => {
-        const status = d.status || 'Pending Foreman Approval';
-        const hasFile = !!d.file_path;
-        return status === 'Checking' || (status === 'Pending Foreman Approval' && !hasFile);
-    }).length;
-
-    const drawingProgress = visibleDrawings.filter(d => {
-        const status = d.status || 'Pending Foreman Approval';
-        const hasFile = !!d.file_path;
-        return status === 'On Progress' || status === 'Pending Supervisor Approval' || status === 'Pending Manager Approval' || status === 'Pending Requester Approval' || (status === 'Pending Foreman Approval' && hasFile);
-    }).length;
-
-    const drawingDone = visibleDrawings.filter(d => {
-        const status = d.status || 'Pending Foreman Approval';
-        return status === 'Completed';
-    }).length;
-
-    const drawingArchive = visibleDrawings.filter(d => {
-        const status = d.status || 'Pending Foreman Approval';
-        return status === 'Cancelled' || status === 'Archived' || status === 'Rejected';
-    }).length;
+    // ponytail: align overview card counts with getDrawingPhase
+    const drawingSchedule = visibleDrawings.filter(d => getDrawingPhase(d) === 1).length;
+    const drawingProgress = visibleDrawings.filter(d => getDrawingPhase(d) === 2).length;
+    const drawingDone = visibleDrawings.filter(d => getDrawingPhase(d) === 3).length;
+    const drawingArchive = visibleDrawings.filter(d => getDrawingPhase(d) === 4).length;
 
     const drawingBreakdownHtml = `
-        <span class="badge" style="background: rgba(234, 179, 8, 0.08); color: var(--color-yellow); border: 1px solid rgba(234, 179, 8, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-schedule" style="background: rgba(234, 179, 8, 0.08); color: var(--color-yellow); border: 1px solid rgba(234, 179, 8, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-yellow);"></span>
             Schedule: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${drawingSchedule}</strong>
         </span>
-        <span class="badge" style="background: rgba(6, 182, 212, 0.08); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-progress" style="background: rgba(6, 182, 212, 0.08); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-cyan);"></span>
             On Progress: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${drawingProgress}</strong>
         </span>
-        <span class="badge" style="background: rgba(16, 185, 129, 0.08); color: var(--color-green); border: 1px solid rgba(16, 185, 129, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-done" style="background: rgba(16, 185, 129, 0.08); color: var(--color-green); border: 1px solid rgba(16, 185, 129, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-green);"></span>
             Done: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${drawingDone}</strong>
         </span>
-        <span class="badge" style="background: rgba(148, 163, 184, 0.08); color: var(--text-secondary); border: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+        <span class="badge bdg-status-history" style="background: rgba(148, 163, 184, 0.08); color: var(--text-secondary); border: 1px solid rgba(148, 163, 184, 0.2); font-size: 0.8rem; padding: 6px 12px; font-weight: 600; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
             <span style="width: 6px; height: 6px; border-radius: 50%; background: #94a3b8;"></span>
-            Arsip: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${drawingArchive}</strong>
+            History: <strong style="font-size: 0.9rem; margin-left: 2px; color: var(--text-primary); font-weight: 700;">${drawingArchive}</strong>
         </span>
     `;
 
@@ -2954,7 +4311,38 @@ function renderKPIs() {
     const ovDrawingBreakdown = document.getElementById("overview-drawing-breakdown");
     if (ovDrawingActive) ovDrawingActive.textContent = totalDrawings;
     if (ovDrawingLimit) ovDrawingLimit.innerHTML = drawingLimitHtml;
-    if (ovDrawingBreakdown) ovDrawingBreakdown.innerHTML = drawingBreakdownHtml;
+    if (ovDrawingBreakdown) {
+        ovDrawingBreakdown.innerHTML = drawingBreakdownHtml;
+        if (typeof applyDashboardWidgetPermissions === "function") applyDashboardWidgetPermissions();
+    }
+
+    // ponytail: Populate Drawing KPI percentage
+    const drawingKpiVal = (state.settings && state.settings.kpi_percentage_drawing) ? state.settings.kpi_percentage_drawing : "0";
+    const drawingKpiValElement = document.getElementById("overview-drawing-kpi-val");
+    if (drawingKpiValElement) {
+        drawingKpiValElement.textContent = drawingKpiVal + "%";
+    }
+
+    // ponytail: Populate Drawing KPI Realisasi percentage
+    const drawingKpiRealisasiVal = (state.settings && state.settings.kpi_realisasi_drawing) ? state.settings.kpi_realisasi_drawing : "0";
+    const drawingKpiRealisasiValElement = document.getElementById("overview-drawing-kpi-realisasi-val");
+    if (drawingKpiRealisasiValElement) {
+        drawingKpiRealisasiValElement.textContent = drawingKpiRealisasiVal + "%";
+    }
+
+    const drawingKpiContainer = document.getElementById("overview-drawing-kpi-container");
+    if (drawingKpiContainer) {
+        drawingKpiContainer.style.display = hideKpiContainer ? "none" : "flex";
+    }
+
+    const editDrawingKpiBtn = document.getElementById("overview-drawing-kpi-edit-btn");
+    if (editDrawingKpiBtn) {
+        editDrawingKpiBtn.style.display = canEditKpi ? "inline-flex" : "none";
+    }
+    const editDrawingKpiRealisasiBtn = document.getElementById("overview-drawing-kpi-realisasi-edit-btn");
+    if (editDrawingKpiRealisasiBtn) {
+        editDrawingKpiRealisasiBtn.style.display = canEditKpi ? "inline-flex" : "none";
+    }
 
     lucide.createIcons({
         attrs: {
@@ -2996,13 +4384,85 @@ function renderNotifications() {
     }).join('');
 }
 
-// ponytail: Buka detail EJO dari klik notifikasi, hapus notifikasi di server dan local state agar hilang, dan tutup panel
+// ponytail: Buka detail EJO/Drawing/Project dari klik notifikasi, hapus notifikasi di server dan local state agar hilang, dan tutup panel
 async function openEjoFromNotification(ejoId, notifId) {
+    return openNotificationItem(ejoId, notifId);
+}
+// ponytail: helper to navigate directly to Drawing EJO tab and automatically apply search filter for a specific DEJO ID
+function navigateAndFilterDrawing(drawingId) {
+    if (!drawingId) return;
+
+    // Close detail modal if currently active
+    closeDrawingModal();
+
+    // Switch active tab to Drawing EJO
+    switchTab("drawing");
+
+    // Reset active drawing phase if in history mode
+    state.activeDrawingPhase = null;
+
+    // Reset dropdown filters to 'all' to prevent hiding target item
+    const statusSelect = document.getElementById("drawing-filter-status");
+    if (statusSelect) statusSelect.value = "all";
+    const categorySelect = document.getElementById("drawing-filter-category");
+    if (categorySelect) categorySelect.value = "all";
+    const prioritySelect = document.getElementById("drawing-filter-priority");
+    if (prioritySelect) prioritySelect.value = "all";
+    const deptSelect = document.getElementById("drawing-filter-dept");
+    if (deptSelect) deptSelect.value = "all";
+    const uploaderSelect = document.getElementById("drawing-filter-uploader");
+    if (uploaderSelect) uploaderSelect.value = "all";
+
+    // Set search input to the DEJO ID
+    const searchInput = document.getElementById("drawing-search-input");
+    if (searchInput) {
+        searchInput.value = drawingId;
+    }
+
+    // Re-render drawings Kanban board with the filter
+    renderDrawings();
+
+    // Scroll control bar into view
+    const controlBar = document.getElementById("drawing-control-bar");
+    if (controlBar) {
+        controlBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+async function openNotificationItem(idStr, notifId) {
     const notifyPanel = document.getElementById("notify-panel");
     if (notifyPanel) {
         notifyPanel.style.display = 'none';
     }
-    openEJODetails(ejoId);
+    if (idStr) {
+        // ponytail: Ensure drawings and generalEjos are loaded before opening notification details
+        if (!state.drawings || state.drawings.length === 0) {
+            try {
+                const res = await fetch("/api/drawings");
+                if (res.ok) state.drawings = await res.json();
+            } catch (e) {}
+        }
+        if (!state.generalEjos || state.generalEjos.length === 0) {
+            try {
+                const res = await fetch("/api/general-ejos");
+                if (res.ok) state.generalEjos = await res.json();
+            } catch (e) {}
+        }
+
+        const isDrawing = idStr.startsWith("DEJO-") || idStr.startsWith("DRW-") || idStr.startsWith("DWG-") || 
+                          (state.drawings && state.drawings.some(d => d.id === idStr));
+        
+        const isProject = idStr.startsWith("PRJ-") || idStr.startsWith("PROJ-") || 
+                         (state.projects && state.projects.some(p => p.id === idStr));
+
+        if (isDrawing) {
+            openDrawingDetails(idStr, true);
+        } else if (isProject) {
+            openProjectDetails(null, idStr);
+        } else {
+            openEJODetails(idStr);
+        }
+    }
 
     if (notifId) {
         try {
@@ -3022,8 +4482,8 @@ async function refreshDataBackground() {
     if (!state.currentUser) return;
     try {
         state.ejos = [];
-        const resGejos = await fetch("/api/general-ejos");
-        if (resGejos.ok) {
+        const resGejos = await fetch("/api/general-ejos").catch(() => null);
+        if (resGejos && resGejos.ok) {
             const newGejos = await resGejos.json();
             const hasChanged = JSON.stringify(newGejos) !== JSON.stringify(state.generalEjos);
 
@@ -3053,8 +4513,8 @@ async function refreshDataBackground() {
         }
         // ponytail: refresh drawings data in background every 4 seconds
         try {
-            const resDrawings = await fetch("/api/drawings");
-            if (resDrawings.ok) {
+            const resDrawings = await fetch("/api/drawings").catch(() => null);
+            if (resDrawings && resDrawings.ok) {
                 const newDrawings = await resDrawings.json();
                 const hasDrawingsChanged = JSON.stringify(newDrawings) !== JSON.stringify(state.drawings);
 
@@ -3127,22 +4587,12 @@ async function refreshDataBackground() {
                                             </div>
                                         `;
                                     } else {
-                                        const isPdf = (updatedDrawing.file_path || '').toLowerCase().endsWith('.pdf');
-                                        const isDwg = (updatedDrawing.file_path || '').toLowerCase().endsWith('.dwg');
+                                        // ponytail: strip query parameters when checking extension to support cache busting
+                                        const cleanPath = (updatedDrawing.file_path || '').split('?')[0];
+                                        const isPdf = cleanPath.toLowerCase().endsWith('.pdf');
+                                        const isDwg = cleanPath.toLowerCase().endsWith('.dwg');
                                         if (isPdf) {
-                                            previewContainer.innerHTML = `
-                                                <object data="${updatedDrawing.file_path}" type="application/pdf" style="width: 100%; height: 100%; min-height: 400px; border-radius: 8px;">
-                                                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 2rem; text-align: center; width: 100%;">
-                                                        <i data-lucide="file-text" style="width: 48px; height: 48px; color: var(--color-cyan);"></i>
-                                                        <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">Dokumen PDF: ${updatedDrawing.title}</div>
-                                                        <div style="font-size: 0.75rem; color: var(--text-secondary); max-width: 250px;">Pratinjau PDF tidak didukung oleh browser Anda secara langsung.</div>
-                                                        <a href="${updatedDrawing.file_path}" target="_blank" class="btn btn-primary" style="margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; padding: 6px 16px; font-size: 0.8rem;">
-                                                            <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
-                                                            Buka di Tab Baru
-                                                        </a>
-                                                    </div>
-                                                </object>
-                                            `;
+                                            renderDrawingPreview(updatedDrawing.file_path, updatedDrawing.title, previewContainer);
                                         } else if (isDwg) {
                                             previewContainer.innerHTML = `
                                                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 2.5rem 1.5rem; text-align: center; width: 100%; height: 100%; min-height: 400px; background: radial-gradient(circle, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.95) 100%); border-radius: 8px; border: 2px dashed rgba(2, 132, 199, 0.3); box-sizing: border-box;">
@@ -3167,7 +4617,7 @@ async function refreshDataBackground() {
                                                 </div>
                                             `;
                                         } else {
-                                            previewContainer.innerHTML = `<img src="${updatedDrawing.file_path}" style="max-width: 100%; max-height: 400px; object-fit: contain; cursor: zoom-in; border-radius: 8px;" onclick="window.open('${updatedDrawing.file_path}', '_blank')">`;
+                                            renderDrawingPreview(updatedDrawing.file_path, updatedDrawing.title, previewContainer);
                                         }
                                     }
                                     lucide.createIcons();
@@ -3227,11 +4677,29 @@ async function refreshDataBackground() {
                     }
                 }
             }
-        } catch (err) {
-            console.warn("Gagal refresh drawings data background:", err);
+        } catch (dErr) {
+            console.warn("Gagal refresh drawings background:", dErr);
+        }
+
+        // ponytail: refresh users list in background when admin panel is active or to keep online/offline status fresh (filter out Server account to prevent infinite flicker)
+        if (state.activeTab === 'admin') {
+            try {
+                const resUsers = await fetch(`/api/users?requester=${encodeURIComponent(state.currentUser.username)}`).catch(() => null);
+                if (resUsers && resUsers.ok) {
+                    const rawUsers = await resUsers.json();
+                    const newUsers = rawUsers.filter(u => u.role !== 'Server' && u.username !== 'server');
+                    const hasUsersChanged = JSON.stringify(newUsers) !== JSON.stringify(state.users);
+                    if (hasUsersChanged) {
+                        state.users = newUsers;
+                        renderUsers(newUsers);
+                    }
+                }
+            } catch (uErr) {
+                console.warn("Gagal refresh users background:", uErr);
+            }
         }
     } catch (err) {
-        console.error("Gagal refresh data background:", err);
+        console.warn("Gagal refresh data background:", err);
     }
 }
 
@@ -3239,8 +4707,8 @@ async function refreshDataBackground() {
 async function fetchNotifications() {
     if (!state.currentUser) return;
     try {
-        const res = await fetch(`/api/notifications?username=${encodeURIComponent(state.currentUser.username)}`);
-        if (!res.ok) return;
+        const res = await fetch(`/api/notifications?username=${encodeURIComponent(state.currentUser.username)}`).catch(() => null);
+        if (!res || !res.ok) return;
         const data = await res.json();
 
         // ponytail: detect ada notif baru (id belum ada di state) → toast alert
@@ -3255,7 +4723,7 @@ async function fetchNotifications() {
         state.notifications = data;
         renderNotifications();
     } catch (err) {
-        console.error("Gagal fetch notifikasi:", err);
+        // Suppress network fetch errors in standalone/offline mode to avoid cluttering console
     }
 }
 
@@ -3270,7 +4738,7 @@ async function markNotificationsRead() {
             renderNotifications();
         }
     } catch (err) {
-        console.error("Gagal mark read:", err);
+        // Suppress network fetch errors in standalone/offline mode to avoid cluttering console
     }
 }
 
@@ -3296,18 +4764,29 @@ function openGeneralEjoScheduleFromOverview() {
 
 function renderCriticalList() {
     const container = document.getElementById("critical-ejo-list");
-    const allItems = (state.ejos || []).concat(getVisibleGeneralEjos());
+    const pulseDot = document.getElementById("urgent-pulse-dot");
+    const countBadge = document.getElementById("urgent-count-badge");
+    const allItems = getVisibleOverviewEjos();
     const criticalEjos = allItems.filter(e =>
-        (e.priority === 'Emergency' || e.priority === 'High') && e.status !== 'Completed' && e.status !== 'Cancelled'
+        getPriorityInfo(e.priority).code === '1' && e.status !== 'Completed' && e.status !== 'Cancelled'
     );
     const previewCriticalEjos = criticalEjos.slice(0, 3);
     const hiddenCount = Math.max(0, criticalEjos.length - previewCriticalEjos.length);
 
+    // ponytail: update header indicators
+    if (pulseDot) pulseDot.classList.toggle('hidden', criticalEjos.length === 0);
+    if (countBadge) {
+        countBadge.textContent = criticalEjos.length;
+        countBadge.style.display = criticalEjos.length > 0 ? '' : 'none';
+    }
+
     if (criticalEjos.length === 0) {
         container.innerHTML = `
-            <div class="text-center text-secondary text-xs py-4">
-                <i data-lucide="shield-check" style="width: 24px; height: 24px; color: var(--color-green); margin: 0 auto 6px;"></i>
-                Aman! Tidak ada EJO urgent.
+            <div class="urgent-empty-state">
+                <div class="urgent-empty-icon">
+                    <i data-lucide="shield-check"></i>
+                </div>
+                <span class="urgent-empty-text">Aman! Tidak ada EJO urgent.</span>
             </div>
         `;
         lucide.createIcons();
@@ -3317,7 +4796,7 @@ function renderCriticalList() {
     container.innerHTML = previewCriticalEjos.map(e => `
         <div class="recent-item cursor-pointer" onclick="openEJODetails('${e.id}')">
             <div class="recent-item-left">
-                <div class="priority-bar pbar-${e.priority.toLowerCase()}"></div>
+                <div class="priority-bar ${getPriorityInfo(e.priority).barClass}"></div>
                 <div class="item-info">
                     <div class="item-title-wrapper">
                         <span class="ejo-id-badge">${e.id}</span>
@@ -3328,7 +4807,7 @@ function renderCriticalList() {
             </div>
             <div class="recent-item-right">
                 <span class="badge-status status-${getStatusClass(e.status)}">${getFriendlyStatusText(e.status, e)}</span>
-                <span class="text-xs text-rose" style="font-weight: 600;">${e.priority}</span>
+                <span class="text-xs text-rose" style="font-weight: 600;">${formatPriorityDisplay(e.priority)}</span>
             </div>
         </div>
     `).join('') + (hiddenCount > 0 ? `
@@ -3375,16 +4854,86 @@ function checkIsRequester(requester) {
     if (userNickLower && reqLower.split(/\s+/).includes(userNickLower)) return true;
     if (userFullLower && reqLower.split(/\s+/).includes(userFullLower)) return true;
 
+}
+
+// ponytail: helper to check if the current logged-in user matches the Requester by identity OR by Jabatan/Otoritas across ALL DEPARTMENTS (e.g. user_EPR, user_PRD, user_QA, Staff [DEPT], or same dept staff)
+function checkIsRequesterOrRole(d) {
+    if (!state.currentUser || !d) return false;
+    const userRole = (state.currentUser.role || '').trim();
+    const userRoleUpper = userRole.toUpperCase();
+    const userDept = normalizeDepartmentCode(state.currentUser.dept);
+    const drawDept = normalizeDepartmentCode(d.dept);
+
+    // System Admins
+    if (userRole === 'Admin Eng' || userRole === 'Server' || state.currentUser.username === 'admin' || state.currentUser.username === 'server') {
+        return true;
+    }
+
+    // 1. Direct identity match on requester or uploader
+    if (checkIsRequester(d.requester) || checkIsRequester(d.uploader)) {
+        return true;
+    }
+
+    // 2. Dynamic Jabatan / Otoritas & Department match for ANY department (EPR, PRD, QA, QC, LOG, WH, HRD, FIN, MKT, ENG, etc.)
+    if (drawDept) {
+        if (userRoleUpper === `USER_${drawDept}` || userRoleUpper === `STAFF_${drawDept}` || userRoleUpper.endsWith(`_${drawDept}`) || userRoleUpper.includes(drawDept)) {
+            return true;
+        }
+    }
+
+    // 3. Same department staff/user fallback
+    const isSameDeptStaff = (userDept && drawDept && userDept === drawDept) && (userRole.toLowerCase().includes('user') || userRole.toLowerCase().includes('staff') || userRole === 'User');
+
+    if (isSameDeptStaff) {
+        return true;
+    }
+
     return false;
 }
 
-// ponytail: helper to get General EJOs visible to the current user (only own requested or assigned tickets for ordinary users/drafters, all for Lead/Admin)
+// ponytail: helper to check if current user is a global cross-department lead (Server, Plant/Factory Manager, ENG team)
+function isGlobalLeadUser() {
+    if (!state.currentUser) return false;
+    const role = state.currentUser.role || '';
+    const userDept = getUserDepartmentCode();
+    const isServer = role === 'Server' || state.currentUser.username === 'server';
+    return isServer || role === 'Plant Manager' || role === 'Factory Manager' || userDept === 'ENG';
+}
+
+// ponytail: helper to get Drawings visible to the current user (department SPV/Manager only see items from their own department)
 function getVisibleDrawings() {
     if (!state.drawings) return [];
     if (!state.currentUser) return [];
-    if (isDrafterRole(state.currentUser.role)) {
+
+    const role = state.currentUser.role || '';
+    const userDept = getUserDepartmentCode();
+    const isServer = role === 'Server' || state.currentUser.username === 'server';
+
+    // 1. Filter based on role type
+    let allowedDrawings = state.drawings;
+
+    if (isServer) {
+        return allowedDrawings;
+    }
+
+    // 2. Hide "Pending Dept Approval" from engineering team unless authorized as department approver for d.dept or uploaded it
+    const isEngineeringTeam = ['Foreman Eng', 'Admin Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager',
+                               'Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Otomotif'].includes(role) && userDept === 'ENG';
+    if (isEngineeringTeam) {
+        allowedDrawings = allowedDrawings.filter(d => {
+            if (d.status === 'Pending Dept Approval') {
+                const isDeptApprover = isDepartmentApprover(state.currentUser, d.dept);
+                const isRequester = checkIsRequester(d.requester) || checkIsRequester(d.uploader);
+                return isDeptApprover || isRequester;
+            }
+            return true;
+        });
+    }
+
+    // 3. Apply standard visibility filtering for Drafter role
+    if (isDrafterRole(role)) {
         const userFullname = state.currentUser.fullname;
-        return state.drawings.filter(d => {
+        return allowedDrawings.filter(d => {
             if (d.engineer) {
                 return d.engineer === userFullname;
             }
@@ -3397,21 +4946,121 @@ function getVisibleDrawings() {
             return false;
         });
     }
-    return state.drawings;
+
+    // 4. Global roles (Server, Plant Manager, Factory Manager, ENG team) see all drawings
+    if (isGlobalLeadUser()) {
+        return allowedDrawings;
+    }
+
+    // 5. Department Supervisors & Managers see drawings in their department (or requested/uploaded by them)
+    const isDeptLeader = role.includes('Supervisor') || role.includes('Manager') || isDepartmentApprover(state.currentUser, userDept);
+    if (isDeptLeader) {
+        return allowedDrawings.filter(d => normalizeDepartmentCode(d.dept) === userDept || checkIsRequester(d.requester) || checkIsRequester(d.uploader));
+    }
+
+    // 6. Ordinary users / Staff see their OWN requested/uploaded drawings AND drawings belonging to their department
+    return allowedDrawings.filter(d => {
+        const isRequester = checkIsRequester(d.requester) || checkIsRequester(d.uploader);
+        const isSameDept = userDept && userDept === normalizeDepartmentCode(d.dept);
+        return isRequester || isSameDept;
+    });
 }
 
 function getVisibleGeneralEjos() {
     if (!state.generalEjos) return [];
     if (!state.currentUser) return [];
-    const isLead = isLeadRole(state.currentUser.role);
-    if (isLead) return state.generalEjos;
+
+    const allowedGejos = state.generalEjos;
+    const role = state.currentUser.role || '';
+    const userDept = getUserDepartmentCode();
+
+    // Global cross-department roles (Server, Plant Manager, Factory Manager, ENG team) see all General EJOs
+    if (isGlobalLeadUser()) {
+        return allowedGejos;
+    }
 
     const userFull = (state.currentUser.fullname || '').toLowerCase().trim();
-    return state.generalEjos.filter(e => {
+    const userName = (state.currentUser.username || '').toLowerCase().trim();
+    const isDeptLeader = role.includes('Supervisor') || role.includes('Manager') || isDepartmentApprover(state.currentUser, userDept);
+
+    return allowedGejos.filter(e => {
         const isRequester = checkIsRequester(e.requester);
-        const isAssigned = e.engineer && e.engineer.split(',').map(name => name.trim().toLowerCase()).includes(userFull);
+        const engineers = (e.engineer || '').split(',').map(name => name.trim().toLowerCase());
+        const isAssigned = engineers.includes(userFull) || (userName && engineers.includes(userName));
+        
+        // Supervisor & Manager of specific department ONLY see items in their department
+        if (isDeptLeader) {
+            const reqUser = (state.users || []).find(u => u.username === e.requester || u.fullname === e.requester);
+            const isReqSameDept = reqUser && normalizeDepartmentCode(reqUser.dept) === userDept;
+            const isSameDept = userDept && (normalizeDepartmentCode(e.dept) === userDept || isReqSameDept);
+            return isRequester || isAssigned || isSameDept;
+        }
+
+        // Ordinary Staff/User: ONLY see their OWN requested or assigned items
         return isRequester || isAssigned;
     });
+}
+
+function getVisibleStandardEjos() {
+    if (!state.ejos) return [];
+    if (!state.currentUser) return [];
+
+    const role = state.currentUser.role || '';
+    const userDept = getUserDepartmentCode();
+
+    const allowedEjos = state.ejos.filter(e => {
+        if (e.status === 'Waiting Dept Approval') {
+            const isRequester = checkIsRequester(e.requester);
+            const isDeptApprover = isDepartmentApprover(state.currentUser, e.dept);
+            return isRequester || isDeptApprover;
+        }
+        return true;
+    });
+
+    if (isGlobalLeadUser()) return allowedEjos;
+
+    const userFull = (state.currentUser.fullname || '').toLowerCase().trim();
+    const userName = (state.currentUser.username || '').toLowerCase().trim();
+    const isDeptLeader = role.includes('Supervisor') || role.includes('Manager') || isDepartmentApprover(state.currentUser, userDept);
+
+    return allowedEjos.filter(e => {
+        const isRequester = checkIsRequester(e.requester);
+        const engineers = (e.engineer || '').split(',').map(name => name.trim().toLowerCase());
+        const isAssigned = engineers.includes(userFull) || (userName && engineers.includes(userName));
+        const isDeptApprover = isDepartmentApprover(state.currentUser, e.dept);
+
+        if (isDeptLeader) {
+            const isSameDept = userDept && normalizeDepartmentCode(e.dept) === userDept;
+            return isRequester || isAssigned || isSameDept || isDeptApprover;
+        }
+
+        return isRequester || isAssigned || isDeptApprover;
+    });
+}
+
+function getVisibleProjects() {
+    if (!state.projects) return [];
+    if (!state.currentUser) return [];
+
+    const role = state.currentUser.role || '';
+    const userDept = getUserDepartmentCode();
+
+    if (isGlobalLeadUser()) return state.projects;
+
+    const isDeptLeader = role.includes('Supervisor') || role.includes('Manager') || isDepartmentApprover(state.currentUser, userDept);
+
+    return state.projects.filter(p => {
+        const isRequester = checkIsRequester(p.pic) || checkIsRequester(p.requester);
+        if (isDeptLeader) {
+            const isSameDept = userDept && normalizeDepartmentCode(p.dept) === userDept;
+            return isRequester || isSameDept;
+        }
+        return isRequester;
+    });
+}
+
+function getVisibleOverviewEjos() {
+    return getVisibleStandardEjos().concat(getVisibleGeneralEjos());
 }
 
 // filterAndRenderJobOrders yang exclude Completed/Cancelled. Pola grid/table
@@ -3440,7 +5089,7 @@ function renderGeneralEJO() {
             if (controlBarEl) controlBarEl.style.gridTemplateColumns = '1.5fr 2fr auto';
 
             if (limitInfoEl) {
-                const isLimited = state.currentUser.role === 'User';
+                const isLimited = isUserLimited(state.currentUser);
                 if (!isLimited) {
                     limitInfoEl.innerHTML = `<i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit EJO: Unlimited`;
                     limitInfoEl.style.background = "rgba(6, 182, 212, 0.15)";
@@ -3454,33 +5103,41 @@ function renderGeneralEJO() {
                     const btn = document.getElementById("gejo-btn-quick-new");
                     if (btn) btn.style.display = 'flex';
                 } else {
-                    const sisa = Math.max(0, 2 - myGejosCount);
-                    limitInfoEl.innerHTML = `<i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit EJO: ${myGejosCount}/2 (Sisa ${sisa})`;
-                    if (sisa === 0) {
-                        limitInfoEl.style.background = "rgba(244, 63, 94, 0.15)";
-                        limitInfoEl.style.borderColor = "rgba(244, 63, 94, 0.3)";
-                        limitInfoEl.style.color = "#f43f5e";
-                        limitInfoEl.style.padding = "8px 16px";
-                        limitInfoEl.style.borderRadius = "8px";
-                        limitInfoEl.style.fontSize = "0.8rem";
-                        limitInfoEl.style.height = "38px";
-                        limitInfoEl.style.display = "inline-flex";
-                        limitInfoEl.style.alignItems = "center";
-                        limitInfoEl.style.justifyContent = "center";
-                        const btn = document.getElementById("gejo-btn-quick-new");
-                        if (btn) btn.style.display = 'none';
+                    const catFilterEl = document.getElementById("gejo-filter-category");
+                    const selectedCat = (catFilterEl && catFilterEl.value && catFilterEl.value !== 'all') ? catFilterEl.value : '';
+                    
+                    if (selectedCat) {
+                        const myCatGejosCount = (state.generalEjos || []).filter(e => {
+                            const isOwner = e.requester === state.currentUser.fullname || e.requester === state.currentUser.username;
+                            if (!isOwner || e.is_archived) return false;
+                            const status = e.status || '';
+                            if (status === 'Completed' || status === 'Cancelled' || status === 'Pending Revision') return false;
+                            return e.category === selectedCat;
+                        }).length;
+                        const sisa = Math.max(0, 2 - myCatGejosCount);
+                        limitInfoEl.innerHTML = `<i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit EJO (${selectedCat}): ${myCatGejosCount}/2 (Quota ${sisa})`;
+                        if (sisa === 0) {
+                            limitInfoEl.style.background = "rgba(244, 63, 94, 0.15)";
+                            limitInfoEl.style.borderColor = "rgba(244, 63, 94, 0.3)";
+                            limitInfoEl.style.color = "#f43f5e";
+                        } else {
+                            limitInfoEl.style.background = "rgba(6, 182, 212, 0.15)";
+                            limitInfoEl.style.borderColor = "rgba(6, 182, 212, 0.3)";
+                            limitInfoEl.style.color = "#22d3ee";
+                        }
                     } else {
+                        limitInfoEl.innerHTML = `<i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit EJO: 2 / Kategori`;
                         limitInfoEl.style.background = "rgba(6, 182, 212, 0.15)";
                         limitInfoEl.style.borderColor = "rgba(6, 182, 212, 0.3)";
                         limitInfoEl.style.color = "#22d3ee";
-                        limitInfoEl.style.padding = "6px 12px";
-                        limitInfoEl.style.borderRadius = "99px";
-                        limitInfoEl.style.fontSize = "0.75rem";
-                        limitInfoEl.style.height = "auto";
-                        limitInfoEl.style.display = "inline-flex";
-                        const btn = document.getElementById("gejo-btn-quick-new");
-                        if (btn) btn.style.display = 'flex';
                     }
+                    limitInfoEl.style.padding = "6px 12px";
+                    limitInfoEl.style.borderRadius = "99px";
+                    limitInfoEl.style.fontSize = "0.75rem";
+                    limitInfoEl.style.height = "auto";
+                    limitInfoEl.style.display = "inline-flex";
+                    const btn = document.getElementById("gejo-btn-quick-new");
+                    if (btn) btn.style.display = checkGeneralEjoLimit() ? 'none' : 'flex';
                 }
             }
         }
@@ -3505,13 +5162,14 @@ function renderGeneralEJO() {
         // ponytail: filter by phase (Fase 1: Schedule, Fase 2: On Progress, Fase 3: Done, Fase 4: Archive)
         let matchesPhase = true;
         if (state.activeGeneralEjoPhase === 1) {
-            matchesPhase = e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Pending Revision' || (e.status.startsWith('In Progress') && e.status.includes('(Revisi'));
+            matchesPhase = e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Pending Revision' || (e.status.startsWith('In Progress') && e.status.includes('(Revisi')) || e.status === 'Waiting Dept Approval';
         } else if (state.activeGeneralEjoPhase === 2) {
             matchesPhase = (e.status.startsWith('In Progress') && !e.status.includes('(Revisi')) || (e.status.startsWith('Pending') && e.status !== 'Pending Revision');
         } else if (state.activeGeneralEjoPhase === 3) {
-            matchesPhase = (e.status === 'Completed' && e.is_archived !== 1 && e.is_archived !== '1');
+            // ponytail: group Completed and Cancelled under Done (Fase 3)
+            matchesPhase = (e.status === 'Completed' || e.status === 'Cancelled') && e.is_archived !== 1 && e.is_archived !== '1';
         } else if (state.activeGeneralEjoPhase === 4) {
-            matchesPhase = e.status === 'Cancelled' || e.is_archived === 1 || e.is_archived === '1';
+            matchesPhase = e.is_archived === 1 || e.is_archived === '1';
         }
 
         const matchesStatus = statusVal === 'all' ||
@@ -3520,7 +5178,7 @@ function renderGeneralEJO() {
             (statusVal === 'In Progress' && (e.status.startsWith('In Progress') || (e.status.startsWith('Pending') && e.status !== 'Pending Revision') || e.status.startsWith('Waiting'))) ||
             (statusVal === 'Checking' && (e.status === 'Approved' || e.status.startsWith('Checking'))) ||
             (statusVal === 'Pending Approval' && e.status.startsWith('Pending') && e.status !== 'Pending Revision');
-        const matchesPriority = priorityVal === 'all' || e.priority === priorityVal;
+        const matchesPriority = priorityVal === 'all' || getPriorityInfo(e.priority).code === priorityVal || e.priority === priorityVal;
         const matchesDept = departmentMatchesFilter(e.dept, deptVal);
         const matchesCategory = categoryVal === 'all' || e.category === categoryVal; // ponytail: filter kategori
 
@@ -3560,21 +5218,21 @@ function renderGeneralEJO() {
     const emptyState = document.getElementById("gejo-empty-state");
 
     if (filtered.length === 0) {
-        if (gridContainer) gridContainer.style.display = 'none';
-        tableWrapper.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'flex';
+        if (gridContainer) gridContainer.style.setProperty('display', 'none', 'important');
+        if (tableWrapper) tableWrapper.style.setProperty('display', 'none', 'important');
+        if (emptyState) emptyState.style.setProperty('display', 'flex', 'important');
     } else {
-        if (emptyState) emptyState.style.display = 'none';
+        if (emptyState) emptyState.style.setProperty('display', 'none', 'important');
         const gridBtn = document.getElementById("gejo-view-grid-btn");
         const tableBtn = document.getElementById("gejo-view-table-btn");
         if (state.viewMode === 'table') {
-            if (gridContainer) gridContainer.style.display = 'none';
-            tableWrapper.style.display = 'block';
+            if (gridContainer) gridContainer.style.setProperty('display', 'none', 'important');
+            if (tableWrapper) tableWrapper.style.setProperty('display', 'block', 'important');
             if (gridBtn) gridBtn.classList.remove("active");
             if (tableBtn) tableBtn.classList.add("active");
         } else {
-            if (gridContainer) gridContainer.style.display = 'grid';
-            tableWrapper.style.display = 'none';
+            if (gridContainer) gridContainer.style.removeProperty('display');
+            if (tableWrapper) tableWrapper.style.setProperty('display', 'none', 'important');
             if (gridBtn) gridBtn.classList.add("active");
             if (tableBtn) tableBtn.classList.remove("active");
         }
@@ -3598,15 +5256,16 @@ function renderGeneralEJO() {
 
         filtered.forEach(e => {
             const engObj = engineersList.find(eng => eng.name === e.engineer) || { avatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80', skill: 'Admin' };
+            const prioInfo = getPriorityInfo(e.priority);
 
             const cardHtml = `
-                <div class="job-card card-glass glow-${e.priority === 'Emergency' ? 'rose' : (e.priority === 'High' ? 'yellow' : 'blue')}" style="margin: 0; width: 100%; box-sizing: border-box;">
+                <div class="job-card card-glass glow-${prioInfo.glow}" style="margin: 0; width: 100%; box-sizing: border-box;">
                     <div>
                         <div class="job-card-top">
                             <span class="ejo-id-badge">${e.id}</span>
                             <div class="priority-dot">
-                                <span class="p-dot p-dot-${e.priority.toLowerCase()}"></span>
-                                <span class="text-xs" style="color: ${getPriorityColor(e.priority)};">${e.priority}</span>
+                                <span class="p-dot ${prioInfo.dotClass}"></span>
+                                <span class="text-xs" style="color: ${prioInfo.color}; font-weight: 600;">${prioInfo.label}</span>
                             </div>
                         </div>
                         <h4 class="job-card-title" onclick="openEJODetails('${e.id}')">${e.title}</h4>
@@ -3638,10 +5297,10 @@ function renderGeneralEJO() {
             `;
 
             const isArchived = e.is_archived === 1 || e.is_archived === '1';
-            if (e.status === 'Cancelled' || isArchived) {
+            if (isArchived) {
                 if (container4) container4.insertAdjacentHTML('beforeend', cardHtml);
                 count4++;
-            } else if (e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Pending Revision' || (e.status.startsWith('In Progress') && e.status.includes('(Revisi'))) {
+            } else if (e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Pending Revision' || (e.status.startsWith('In Progress') && e.status.includes('(Revisi')) || e.status === 'Waiting Dept Approval') {
                 if (container1 && (!shouldLimitPreviewCards || count1 < previewLimit)) {
                     container1.insertAdjacentHTML('beforeend', cardHtml);
                 } else if (shouldLimitPreviewCards) {
@@ -3655,7 +5314,8 @@ function renderGeneralEJO() {
                     hiddenProgressCount++;
                 }
                 count2++;
-            } else if (e.status === 'Completed') {
+            } else if (e.status === 'Completed' || e.status === 'Cancelled') {
+                // ponytail: both Completed and Cancelled go to Done (Fase 3)
                 if (container3 && (!shouldLimitPreviewCards || count3 < previewLimit)) {
                     container3.insertAdjacentHTML('beforeend', cardHtml);
                 } else if (shouldLimitPreviewCards) {
@@ -3707,6 +5367,20 @@ function renderGeneralEJO() {
             `);
         }
 
+        // ponytail: after card placement, if all visible columns are empty, show empty state instead of empty board
+        const visibleCount = (() => {
+            const p = state.activeGeneralEjoPhase;
+            if (p === 1) return count1;
+            if (p === 2) return count2;
+            if (p === 3) return count3;
+            if (p === 4) return count4;
+            return count1 + count2 + count3; // all phases (archive hidden by default)
+        })();
+        if (visibleCount === 0) {
+            if (gridContainer) gridContainer.style.setProperty('display', 'none', 'important');
+            if (emptyState) emptyState.style.setProperty('display', 'flex', 'important');
+        }
+
         // ponytail: apply General EJO phase column visibility
         filterGeneralEjosByPhase();
 
@@ -3720,7 +5394,7 @@ function renderGeneralEJO() {
                     <div class="text-muted text-xs"><i data-lucide="map-pin" style="width: 10px; height: 10px; display:inline;"></i> ${e.location}</div>
                 </td>
                 <td data-label="Departemen">${e.dept}</td>
-                <td data-label="Prioritas"><span class="text-xs" style="font-weight:700; color: ${getPriorityColor(e.priority)};">${e.priority}</span></td>
+                <td data-label="Prioritas"><span class="text-xs" style="font-weight:700; color: ${getPriorityColor(e.priority)};">${formatPriorityDisplay(e.priority)}</span></td>
                 <td data-label="Engineer">${e.engineer}</td>
                 <td data-label="Target">${formatDisplayDate(e.targetDate)}</td>
                 <td data-label="Status"><span class="badge-status status-${getStatusClass(e.status)}">${getFriendlyStatusText(e.status, e)}</span></td>
@@ -3746,6 +5420,9 @@ function filterGeneralEjosByPhase() {
     const outstandingGroup = document.getElementById("gejo-outstanding-group");
 
     if (!col1 || !col2 || !col3 || !col4 || !board) return;
+
+    // ponytail: retrieve status dropdown value to handle Cancelled phase
+    const statusVal = document.getElementById("gejo-filter-status")?.value || "all";
 
     if (state.activeGeneralEjoPhase === 1) {
         col1.style.display = "flex";
@@ -3822,15 +5499,24 @@ function renderDrawings() {
         if (isDrafterRole(state.currentUser.role)) {
             if (limitInfoEl) limitInfoEl.style.display = 'none';
             if (btnRequest) btnRequest.style.display = 'none';
-            if (btnImport) btnImport.style.display = 'none';
+            if (btnImport) btnImport.style.setProperty('display', 'none', 'important');
             if (actionsContainerEl) actionsContainerEl.style.display = 'none';
-            if (controlBarEl) controlBarEl.style.gridTemplateColumns = '1fr 2fr';
+            if (controlBarEl) controlBarEl.style.gridTemplateColumns = '';
         } else {
             if (actionsContainerEl) actionsContainerEl.style.display = 'flex';
-            if (controlBarEl) controlBarEl.style.gridTemplateColumns = '1.5fr 2fr auto';
+            if (controlBarEl) controlBarEl.style.gridTemplateColumns = '';
+
+            const isLimited = isUserLimited(state.currentUser);
+
+            if (btnImport) {
+                if (isLimited) {
+                    btnImport.style.setProperty('display', 'none', 'important');
+                } else {
+                    btnImport.style.display = 'inline-flex';
+                }
+            }
 
             if (limitInfoEl) {
-                const isLimited = state.currentUser.role === 'User';
                 if (!isLimited) {
                     limitInfoEl.innerHTML = `<i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit Drawing: Unlimited`;
                     limitInfoEl.style.background = "rgba(6, 182, 212, 0.15)";
@@ -3842,10 +5528,9 @@ function renderDrawings() {
                     limitInfoEl.style.height = "auto";
                     limitInfoEl.style.display = "inline-flex";
                     if (btnRequest) btnRequest.style.display = 'inline-flex';
-                    if (btnImport) btnImport.style.display = 'inline-flex';
                 } else {
                     const sisa = Math.max(0, 2 - myDrawingsCount);
-                    limitInfoEl.innerHTML = `<i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit Drawing: ${myDrawingsCount}/2 (Sisa ${sisa})`;
+                    limitInfoEl.innerHTML = `<i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit Drawing: ${myDrawingsCount}/2 (Quota ${sisa})`;
                     if (sisa === 0) {
                         limitInfoEl.style.background = "rgba(244, 63, 94, 0.15)";
                         limitInfoEl.style.borderColor = "rgba(244, 63, 94, 0.3)";
@@ -3858,7 +5543,6 @@ function renderDrawings() {
                         limitInfoEl.style.alignItems = "center";
                         limitInfoEl.style.justifyContent = "center";
                         if (btnRequest) btnRequest.style.display = 'none';
-                        if (btnImport) btnImport.style.display = 'none';
                     } else {
                         limitInfoEl.style.background = "rgba(6, 182, 212, 0.15)";
                         limitInfoEl.style.borderColor = "rgba(6, 182, 212, 0.3)";
@@ -3869,7 +5553,6 @@ function renderDrawings() {
                         limitInfoEl.style.height = "auto";
                         limitInfoEl.style.display = "inline-flex";
                         if (btnRequest) btnRequest.style.display = 'inline-flex';
-                        if (btnImport) btnImport.style.display = 'inline-flex';
                     }
                 }
             }
@@ -3883,24 +5566,6 @@ function renderDrawings() {
 
     // ponytail: use getVisibleDrawings() so that drafter users only see drawings assigned to them
     let drawings = getVisibleDrawings();
-
-    // ponytail: both imported drawings (hasFile = true) and requested drawings (hasFile = false) with Pending Foreman Approval go to Schedule (Phase 1)
-    const getDrawingPhase = (d) => {
-        const status = d.status || 'Pending Foreman Approval';
-        const hasFile = !!d.file_path;
-        if (status === 'Archived' || status === 'Cancelled' || status === 'Rejected') {
-            return 4;
-        } else if (status === 'Completed') {
-            return 3;
-        } else if (status === 'On Progress' || status === 'Pending Supervisor Approval' || status === 'Pending Manager Approval' || status === 'Pending Requester Approval') {
-            return 2;
-        } else if (status === 'Checking') {
-            return 1;
-        } else if (status === 'Pending Foreman Approval') {
-            return hasFile ? 2 : 1;
-        }
-        return 1;
-    };
 
     // ponytail: show history table if activeDrawingPhase is 'history'
     if (state.activeDrawingPhase === 'history') {
@@ -3954,14 +5619,15 @@ function renderDrawings() {
             if (completedDrawings.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-secondary);">Tidak ada drawing yang sesuai filter.</td></tr>`;
             } else {
+                // ponytail: add data-label attributes for mobile table stacking responsiveness
                 tbody.innerHTML = completedDrawings.map(d => `
                     <tr>
-                        <td><span class="ejo-id-badge" style="cursor: pointer;" onclick="openDrawingDetails('${d.id}')">${d.id}</span></td>
-                        <td style="font-weight: 600; color: var(--text-primary); cursor: pointer;" onclick="openDrawingDetails('${d.id}')">${d.title}</td>
-                        <td>${d.uploader || '-'}</td>
-                        <td>${d.uploaded_at || '-'}</td>
-                        <td><span class="badge-status status-completed">${d.status}</span></td>
-                        <td style="text-align: right;">
+                        <td data-label="ID Drawing"><span class="ejo-id-badge" style="cursor: pointer;" onclick="openDrawingDetails('${d.id}')">${d.id}</span></td>
+                        <td data-label="Judul Drawing" style="font-weight: 600; color: var(--text-primary); cursor: pointer;" onclick="openDrawingDetails('${d.id}')">${d.title}</td>
+                        <td data-label="Uploader">${d.uploader || '-'} (${d.dept || '-'})</td>
+                        <td data-label="Tanggal Upload">${d.uploaded_at || '-'}</td>
+                        <td data-label="Status"><span class="badge-status status-completed">${getDrawingStatusDisplay(d.status, d.dept)}</span></td>
+                        <td data-label="Aksi" style="text-align: right;">
                             <button class="btn btn-outline btn-xs" onclick="openDrawingDetails('${d.id}')" style="padding: 4px 8px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;">
                                 <i data-lucide="eye" style="width: 12px; height: 12px;"></i> Detail
                             </button>
@@ -3984,7 +5650,8 @@ function renderDrawings() {
         }
     }
     if (importBtn) {
-        if (state.currentUser && isDrafterRole(state.currentUser.role)) {
+        const isLimited = state.currentUser && isUserLimited(state.currentUser);
+        if (isLimited || (state.currentUser && isDrafterRole(state.currentUser.role))) {
             importBtn.style.display = 'none';
         } else {
             importBtn.style.display = checkDrawingLimit() ? 'none' : 'inline-flex';
@@ -3995,29 +5662,95 @@ function renderDrawings() {
         drawings = drawings.filter(d => getDrawingPhase(d) === state.activeDrawingPhase);
     }
 
-    // ponytail: apply filter dropdowns to drawing Kanban view
+    // ponytail: apply search input query filter & filter dropdowns to drawing Kanban view
+    const drawingSearchInput = document.getElementById("drawing-search-input");
+    const searchQuery = drawingSearchInput ? drawingSearchInput.value.trim().toLowerCase() : "";
+    if (searchQuery) {
+        drawings = drawings.filter(d =>
+            (d.id && d.id.toLowerCase().includes(searchQuery)) ||
+            (d.title && d.title.toLowerCase().includes(searchQuery)) ||
+            (d.uploader && d.uploader.toLowerCase().includes(searchQuery)) ||
+            (d.requester && d.requester.toLowerCase().includes(searchQuery)) ||
+            (d.engineer && d.engineer.toLowerCase().includes(searchQuery)) ||
+            (d.ejo_id && d.ejo_id.toLowerCase().includes(searchQuery))
+        );
+    }
+
     const categoryVal = document.getElementById("drawing-filter-category")?.value || 'all';
     const priorityVal = document.getElementById("drawing-filter-priority")?.value || 'all';
     const deptVal = document.getElementById("drawing-filter-dept")?.value || 'all';
     const statusVal = document.getElementById("drawing-filter-status")?.value || 'all';
+    const uploaderVal = document.getElementById("drawing-filter-uploader")?.value || 'all';
     if (categoryVal !== 'all') drawings = drawings.filter(d => d.category === categoryVal);
-    if (priorityVal !== 'all') drawings = drawings.filter(d => d.priority === priorityVal);
+    if (priorityVal !== 'all') drawings = drawings.filter(d => getPriorityInfo(d.priority).code === priorityVal || d.priority === priorityVal);
     if (deptVal !== 'all') drawings = drawings.filter(d => departmentMatchesFilter(d.dept, deptVal));
     if (statusVal !== 'all') drawings = drawings.filter(d => d.status === statusVal);
+    if (uploaderVal !== 'all') drawings = drawings.filter(d => (d.uploader || d.requester) === uploaderVal);
+
+    // Populate uploader select options dynamically based on available drawings
+    const uploaderSelect = document.getElementById("drawing-filter-uploader");
+    if (uploaderSelect) {
+        const uploaders = [...new Set(drawings.map(d => d.uploader || d.requester).filter(Boolean))];
+        const currentVal = uploaderSelect.value;
+        if (uploaderSelect.options.length !== uploaders.length + 1) {
+            uploaderSelect.innerHTML = `<option value="all">Semua Uploader</option>` +
+                uploaders.map(u => `<option value="${u}">${u}</option>`).join('');
+            if (uploaders.includes(currentVal)) {
+                uploaderSelect.value = currentVal;
+            } else {
+                uploaderSelect.value = 'all';
+            }
+        }
+    }
 
     // ponytail: update results count
     const resultsCount = document.getElementById("drawing-results-count");
     if (resultsCount) resultsCount.textContent = `Ditemukan ${drawings.length} Drawing`;
 
+    const tableWrapper = document.getElementById("drawing-table-wrapper");
     if (!drawings.length) {
-        if (board) board.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'flex';
+        if (board) board.style.setProperty('display', 'none', 'important');
+        if (tableWrapper) tableWrapper.style.setProperty('display', 'none', 'important');
+        if (emptyState) emptyState.style.setProperty('display', 'flex', 'important');
         lucide.createIcons();
         return;
     }
 
-    if (board) board.style.display = 'grid';
-    if (emptyState) emptyState.style.display = 'none';
+    if (emptyState) emptyState.style.setProperty('display', 'none', 'important');
+
+    // ponytail: handle drawing view modes (grid vs table)
+    const gridBtn = document.getElementById("drawing-view-grid-btn");
+    const tableBtn = document.getElementById("drawing-view-table-btn");
+    if (state.drawingViewMode === 'table') {
+        if (board) board.style.setProperty('display', 'none', 'important');
+        if (tableWrapper) tableWrapper.style.setProperty('display', 'block', 'important');
+        if (gridBtn) gridBtn.classList.remove("active");
+        if (tableBtn) tableBtn.classList.add("active");
+    } else {
+        if (board) board.style.removeProperty('display');
+        if (tableWrapper) tableWrapper.style.setProperty('display', 'none', 'important');
+        if (gridBtn) gridBtn.classList.add("active");
+        if (tableBtn) tableBtn.classList.remove("active");
+    }
+
+    // ponytail: render Table layout rows
+    const tableBody = document.getElementById("drawing-table-body");
+    if (tableBody) {
+        tableBody.innerHTML = drawings.map(d => `
+            <tr>
+                <td data-label="ID Drawing"><span class="ejo-id-badge" onclick="openDrawingDetails('${d.id}')">${d.id}</span></td>
+                <td data-label="Judul Drawing" style="font-weight: 600; color: var(--text-primary); cursor: pointer;" onclick="openDrawingDetails('${d.id}')">${d.title}</td>
+                <td data-label="Uploader">${d.uploader || '-'} (${d.dept || '-'})</td>
+                <td data-label="Tanggal Upload">${d.uploaded_at || '-'}</td>
+                <td data-label="Status"><span class="badge-status status-${getStatusClass(d.status)}">${getDrawingStatusDisplay(d.status, d.dept)}</span></td>
+                <td data-label="Aksi" style="text-align: right;">
+                    <button class="btn btn-outline btn-xs" onclick="openDrawingDetails('${d.id}')" style="padding: 4px 8px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;">
+                        <i data-lucide="eye" style="width: 12px; height: 12px;"></i> Detail
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
 
     const container1 = document.getElementById("drawing-container-phase1");
     const container2 = document.getElementById("drawing-container-phase2");
@@ -4032,28 +5765,30 @@ function renderDrawings() {
     let count1 = 0, count2 = 0, count3 = 0, count4 = 0;
 
     drawings.forEach(d => {
-        const isPdf = (d.file_path || '').toLowerCase().endsWith('.pdf');
-        const isDwg = (d.file_path || '').toLowerCase().endsWith('.dwg');
+        // ponytail: strip query parameters when checking extension to support cache busting
+        const cleanPath = (d.file_path || '').split('?')[0];
+        const isPdf = cleanPath.toLowerCase().endsWith('.pdf');
+        const isDwg = cleanPath.toLowerCase().endsWith('.dwg');
         let previewHtml = '';
         if (!d.file_path) {
             previewHtml = `
                 <div style="height: 140px; border-radius: 10px; background: rgba(255,255,255,0.02); border: 1px dashed var(--card-border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
                     <i data-lucide="image-off" style="width: 32px; height: 32px; color: var(--text-muted);"></i>
-                    <span class="text-muted text-xs" style="font-style: italic;">Belum ada file drawing</span>
+                    <span class="text-muted" style="font-size: 0.88rem; font-style: italic;">Belum ada file drawing</span>
                 </div>
             `;
         } else if (isPdf) {
             previewHtml = `
                 <div style="height: 140px; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
-                    <i data-lucide="file-text" style="width: 36px; height: 36px; color: var(--color-cyan);"></i>
-                    <span class="text-secondary text-xs">Preview PDF</span>
+                    <i data-lucide="file-text" style="width: 38px; height: 38px; color: var(--color-cyan);"></i>
+                    <span class="text-secondary" style="font-size: 0.88rem; font-weight: 600;">Preview PDF</span>
                 </div>
             `;
         } else if (isDwg) {
             previewHtml = `
                 <div style="height: 140px; border-radius: 10px; background: rgba(2, 132, 199, 0.05); border: 1px solid var(--card-border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
-                    <i data-lucide="pen-tool" style="width: 36px; height: 36px; color: var(--color-blue);"></i>
-                    <span class="text-secondary text-xs" style="color: var(--color-blue);">CAD Drawing (DWG)</span>
+                    <i data-lucide="pen-tool" style="width: 38px; height: 38px; color: var(--color-blue);"></i>
+                    <span class="text-secondary" style="color: var(--color-blue); font-size: 0.88rem; font-weight: 600;">CAD Drawing (DWG)</span>
                 </div>
             `;
         } else {
@@ -4063,39 +5798,49 @@ function renderDrawings() {
         }
 
         const statusClass = `status-${getStatusClass(d.status)}`;
+        const linkedProject = state.projects ? state.projects.find(p => p.drawing_id === d.id) : null;
+        const projectInfoHtml = linkedProject ? `
+            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.25); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; color: var(--color-cyan); margin-top: 4px; cursor: pointer;" onclick="event.stopPropagation(); flexToProjectTab('${d.id}')" title="Klik untuk membuka Project Monitoring (${linkedProject.id})">
+                <span style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                    <i data-lucide="folder-check" style="width: 15px; height: 15px;"></i> Terhubung ke Project: ${linkedProject.id}
+                </span>
+                <span style="font-size: 0.75rem; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 7px; border-radius: 4px; font-weight: 600;">Review Only</span>
+            </div>
+        ` : '';
 
         const cardHtml = `
-            <div class="job-card card-glass" onclick="openDrawingDetails('${d.id}')" style="margin: 0; width: 100%; box-sizing: border-box; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; cursor: pointer;">
+            <div class="job-card card-glass" onclick="openDrawingDetails('${d.id}')" style="margin: 0; width: 100%; box-sizing: border-box; padding: 1.15rem; display: flex; flex-direction: column; gap: 0.85rem; cursor: pointer;">
                 <div>
                     ${previewHtml}
                 </div>
                 <div class="job-card-top" style="margin-top: 0.25rem; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                    <span class="ejo-id-badge">${d.id}</span>
-                    <span class="badge-status ${statusClass}" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px;" title="Status Drawing">${d.status}</span>
+                    <span class="ejo-id-badge" style="font-size: 0.92rem; font-weight: 700;">${d.id}</span>
+                    <span class="badge-status ${statusClass}" style="font-size: 0.82rem; padding: 3px 10px; border-radius: 4px; white-space: nowrap; text-align: center; font-weight: 600;" title="Status Drawing">${getDrawingStatusDisplay(d.status, d.dept)}</span>
                 </div>
-                <div class="job-card-title" style="font-weight: 600; font-size: 0.85rem; color: var(--text-primary); margin: 0; line-height: 1.3;">
+                <div class="job-card-title" style="font-weight: 600; font-size: 1.05rem; color: var(--text-primary); margin: 0; line-height: 1.4;">
                     ${d.title}
                 </div>
-                <div class="job-card-mid" style="font-size: 0.75rem; display: flex; flex-direction: column; gap: 4px;">
+                <div class="job-card-mid" style="font-size: 0.9rem; display: flex; flex-direction: column; gap: 6px;">
                     <div style="display: flex; align-items: center; gap: 6px; color: var(--text-secondary);">
-                        <i data-lucide="user" style="width: 12px; height: 12px;"></i>
-                        <span>Uploader: ${d.uploader || '-'}</span>
+                        <i data-lucide="user" style="width: 15px; height: 15px;"></i>
+                        <span>Uploader: ${d.uploader || '-'} (${d.dept || '-'})</span>
                     </div>
                     ${d.engineer && d.engineer !== 'Unassigned' ? `
                     <div style="display: flex; align-items: center; gap: 6px; color: var(--text-secondary);">
-                        <i data-lucide="user-check" style="width: 12px; height: 12px; color: var(--color-cyan);"></i>
+                        <i data-lucide="user-check" style="width: 15px; height: 15px; color: var(--color-cyan);"></i>
                         <span>Drafter: <strong>${d.engineer}</strong></span>
                     </div>
                     ` : ''}
                     <div style="display: flex; align-items: center; gap: 6px; color: var(--text-secondary);">
-                        <i data-lucide="clock-3" style="width: 12px; height: 12px;"></i>
+                        <i data-lucide="clock-3" style="width: 15px; height: 15px;"></i>
                         <span>Upload: ${d.uploaded_at || '-'}</span>
                     </div>
-                    ${d.targetDate ? `<div style="display: flex; align-items: center; gap: 6px; color: var(--color-cyan); font-weight: 500;"><i data-lucide="calendar" style="width: 12px; height: 12px;"></i><span>Target: ${formatDisplayDate(d.targetDate)}</span></div>` : ''}
+                    ${d.targetDate ? `<div style="display: flex; align-items: center; gap: 6px; color: var(--color-cyan); font-weight: 500;"><i data-lucide="calendar" style="width: 15px; height: 15px;"></i><span>Target: ${formatDisplayDate(d.targetDate)}</span></div>` : ''}
                     <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                        <i data-lucide="info" style="width: 12px; height: 12px; color: var(--color-yellow);"></i>
-                        <span style="color: var(--text-secondary);">Status: <span class="badge-status ${statusClass}" style="padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; display: inline-block;">${getFriendlyStatusText(d.status)}</span></span>
+                        <i data-lucide="info" style="width: 15px; height: 15px; color: var(--color-yellow);"></i>
+                        <span style="color: var(--text-secondary);">Status: <span class="badge-status ${statusClass}" style="padding: 3px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: 600; display: inline-block;">${getFriendlyStatusText(d.status, d)}</span></span>
                     </div>
+                    ${projectInfoHtml}
                 </div>
                 <div class="project-card-actions" style="margin-top: 0.25rem; display: flex; justify-content: flex-end; gap: 6px;">
                     ${getDrawingCardActions(d)}
@@ -4128,6 +5873,9 @@ function renderDrawings() {
     if (countEl2) countEl2.textContent = count2;
     if (countEl3) countEl3.textContent = count3;
     if (countEl4) countEl4.textContent = count4;
+    // ponytail: update drawing outstanding total (Schedule + On Progress)
+    const drawingOutstandingTotal = document.getElementById("drawing-outstanding-total");
+    if (drawingOutstandingTotal) drawingOutstandingTotal.textContent = count1 + count2;
 
     const col1 = document.getElementById("drawing-col-phase1");
     const col2 = document.getElementById("drawing-col-phase2");
@@ -4176,30 +5924,121 @@ function resetGeneralEJOFilters() {
     document.getElementById("gejo-search-input").value = '';
     document.getElementById("gejo-filter-status").value = 'all';
     document.getElementById("gejo-filter-priority").value = 'all';
-    document.getElementById("gejo-filter-dept").value = 'all';
+    const userDeptCode = getUserDepartmentCode();
+    const isGlobalLead = isGlobalLeadUser();
+    const gejoDeptEl = document.getElementById("gejo-filter-dept");
+    if (gejoDeptEl) {
+        gejoDeptEl.value = isGlobalLead ? 'all' : (userDeptCode || 'all');
+    }
     document.getElementById("gejo-filter-category").value = 'all'; // ponytail: reset kategori juga
     renderGeneralEJO();
 }
+window.resetGeneralEJOFilters = resetGeneralEJOFilters;
+
+// ponytail: reset filter Drawing EJO (dipanggil dari tombol empty state)
+function resetDrawingFilters() {
+    const searchInput = document.getElementById("drawing-search-input");
+    if (searchInput) searchInput.value = '';
+    const statusSelect = document.getElementById("drawing-filter-status");
+    if (statusSelect) statusSelect.value = 'all';
+    const prioritySelect = document.getElementById("drawing-filter-priority");
+    if (prioritySelect) prioritySelect.value = 'all';
+    const deptSelect = document.getElementById("drawing-filter-dept");
+    const userDeptCode = getUserDepartmentCode();
+    const isGlobalLead = isGlobalLeadUser();
+    if (deptSelect) deptSelect.value = isGlobalLead ? 'all' : (userDeptCode || 'all');
+    const categorySelect = document.getElementById("drawing-filter-category");
+    if (categorySelect) categorySelect.value = 'all';
+    const uploaderSelect = document.getElementById("drawing-filter-uploader");
+    if (uploaderSelect) uploaderSelect.value = 'all';
+
+    state.activeDrawingPhase = null;
+    renderDrawings();
+}
+window.resetDrawingFilters = resetDrawingFilters;
 
 function renderHistory() {
     const tbody = document.getElementById('history-table-body');
-    const historyEjos = (state.ejos || []).filter(e => e.status === 'Completed' || e.status === 'Cancelled')
-        .concat(getVisibleGeneralEjos().filter(e => e.is_archived === 1 || e.is_archived === '1' || e.status === 'Archived'))
-        .concat(getVisibleDrawings().filter(d => d.status === 'Archived' || d.status === 'Cancelled' || d.status === 'Rejected'))
-        .concat((state.projects || []).filter(p => p.phase === 4 || p.phase === 'archive'));
+    if (!tbody) return;
 
-    // ponytail: Show/hide action header and render delete button if user is Lead and NOT restricted
-    const isLead = state.currentUser && (isLeadRole(state.currentUser.role));
-    const isRestrictedRole = state.currentUser && ['Foreman', 'Supervisor', 'Manager', 'Plant Manager'].includes(state.currentUser.role);
-    const showDeleteAction = isLead && !isRestrictedRole;
+    let historyEjos = getVisibleStandardEjos().filter(e => e.status === 'Completed' || e.status === 'Cancelled')
+        // ponytail: include Completed & Cancelled general EJOs, drawings, and completed Projects (Fase 4 & 5) in history
+        .concat(getVisibleGeneralEjos().filter(e => e.is_archived === 1 || e.is_archived === '1' || e.status === 'Archived' || e.status === 'Completed' || e.status === 'Cancelled'))
+        .concat(getVisibleDrawings().filter(d => d.status === 'Archived' || d.status === 'Cancelled' || d.status === 'Rejected' || d.status === 'Completed' || d.status === 'Done'))
+        .concat(getVisibleProjects().filter(p => p.phase === 4 || p.phase === 5 || p.phase === '4' || p.phase === '5' || p.phase === 'archive' || p.status === 'Archived' || p.status === 'Completed' || p.status === 'Selesai'));
+
+    // ponytail: Filter by state.activeHistoryType ('all', 'general-ejo', 'drawing', 'project')
+    const typeFilter = state.activeHistoryType || 'all';
+    const cardTitleEl = document.getElementById('history-card-title');
+    const cardSubEl = document.getElementById('history-card-subtitle');
+
+    if (typeFilter === 'drawing') {
+        historyEjos = historyEjos.filter(item => item.id && item.id.startsWith('DRW'));
+        const span = cardTitleEl ? cardTitleEl.querySelector('span') : null;
+        if (span) span.textContent = "Riwayat Drawing EJO Selesai";
+        else if (cardTitleEl) cardTitleEl.textContent = "Riwayat Drawing EJO Selesai";
+        if (cardSubEl) cardSubEl.textContent = "Daftar Drawing EJO yang sudah selesai dikerjakan atau dibatalkan.";
+    } else if (typeFilter === 'general-ejo') {
+        historyEjos = historyEjos.filter(item => item.id && (item.id.startsWith('EJO') || item.id.startsWith('GEJO')));
+        const span = cardTitleEl ? cardTitleEl.querySelector('span') : null;
+        if (span) span.textContent = "Riwayat General EJO Selesai";
+        else if (cardTitleEl) cardTitleEl.textContent = "Riwayat General EJO Selesai";
+        if (cardSubEl) cardSubEl.textContent = "Daftar General EJO yang sudah selesai dikerjakan atau dibatalkan.";
+    } else if (typeFilter === 'project') {
+        historyEjos = historyEjos.filter(item => item.id && item.id.startsWith('PRJ'));
+        const span = cardTitleEl ? cardTitleEl.querySelector('span') : null;
+        if (span) span.textContent = "Riwayat Project Monitoring Selesai";
+        else if (cardTitleEl) cardTitleEl.textContent = "Riwayat Project Monitoring Selesai";
+        if (cardSubEl) cardSubEl.textContent = "Daftar Project Monitoring yang sudah selesai serah terima atau diarsipkan.";
+    } else {
+        const span = cardTitleEl ? cardTitleEl.querySelector('span') : null;
+        if (span) span.textContent = "Riwayat EJO & Project Selesai";
+        else if (cardTitleEl) cardTitleEl.textContent = "Riwayat EJO & Project Selesai";
+        if (cardSubEl) cardSubEl.textContent = "Daftar Engineering Job Order dan Project yang sudah selesai dikerjakan atau dibatalkan.";
+    }
+
+    // ponytail: Apply History Date Range Filter if start/end dates are selected
+    const startDateInput = document.getElementById('history-start-date');
+    const endDateInput = document.getElementById('history-end-date');
+    const startDateVal = startDateInput ? startDateInput.value : '';
+    const endDateVal = endDateInput ? endDateInput.value : '';
+
+    if (startDateVal || endDateVal) {
+        historyEjos = historyEjos.filter(item => {
+            const logs = parseLogs(item.logs);
+            const rawDate = logs.length > 0 ? logs[logs.length - 1].date : (item.completed_at || item.updated_at || item.created_at || item.targetDate || '');
+            if (!rawDate) return true;
+            let dateStr = '';
+            if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+                dateStr = rawDate.substring(0, 10);
+            } else {
+                const parsed = new Date(rawDate);
+                if (!isNaN(parsed.getTime())) {
+                    dateStr = parsed.toISOString().substring(0, 10);
+                }
+            }
+            if (!dateStr) return true;
+            if (startDateVal && dateStr < startDateVal) return false;
+            if (endDateVal && dateStr > endDateVal) return false;
+            return true;
+        });
+    }
+
+    // ponytail: Show action header and render action buttons (Kembalikan / Revisi & Hapus) for history items
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const showDeleteAction = ['Admin Eng', 'Foreman Eng', 'Server'].includes(userRole) || (state.currentUser && state.currentUser.username === 'server');
     const actionHeader = document.getElementById('history-header-action');
     if (actionHeader) {
-        actionHeader.style.display = showDeleteAction ? 'table-cell' : 'none';
+        actionHeader.style.display = 'table-cell';
     }
 
     if (historyEjos.length === 0) {
-        const cols = showDeleteAction ? 7 : 6;
-        tbody.innerHTML = `<tr><td colspan="${cols}" style="text-align:center; padding:2rem; color:var(--text-muted);">Belum ada EJO yang selesai.</td></tr>`;
+        const cols = 7;
+        let emptyLabel = 'EJO';
+        if (typeFilter === 'drawing') emptyLabel = 'Drawing EJO';
+        else if (typeFilter === 'general-ejo') emptyLabel = 'General EJO';
+        else if (typeFilter === 'project') emptyLabel = 'Project Monitoring';
+        tbody.innerHTML = `<tr><td colspan="${cols}" style="text-align:center; padding:2rem; color:var(--text-muted);">Belum ada ${emptyLabel} yang selesai.</td></tr>`;
         return;
     }
 
@@ -4207,11 +6046,11 @@ function renderHistory() {
         // Get last log date as completion date
         const logs = parseLogs(e.logs);
         const lastLog = logs.length > 0 ? logs[logs.length - 1].date : (e.targetDate || '-');
-        const actionCell = showDeleteAction
-            ? `<td data-label="Aksi" style="text-align: right;"><button class="btn btn-danger-outline btn-xs" onclick="deleteHistoryEJO('${e.id}')"><i data-lucide="trash-2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i> Hapus</button></td>`
-            : '';
+        const restoreBtn = `<button class="btn btn-warning-outline btn-xs" style="margin-right: 4px; border-color: rgba(245, 158, 11, 0.4); color: var(--color-yellow);" onclick="restoreHistoryEJO('${e.id}')" title="Kembalikan ke Daftar Aktif / Revisi"><i data-lucide="rotate-ccw" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i> Kembalikan</button>`;
+        const deleteBtn = showDeleteAction ? `<button class="btn btn-danger-outline btn-xs" onclick="deleteHistoryEJO('${e.id}')"><i data-lucide="trash-2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i> Hapus</button>` : '';
+        const actionCell = `<td data-label="Aksi" style="text-align: right; white-space: nowrap;">${restoreBtn}${deleteBtn}</td>`;
         const clickAction = e.id.startsWith('DRW') ? `openDrawingDetails('${e.id}')` : (e.id.startsWith('PRJ') ? `openProjectDetails(null, '${e.id}')` : `openEJODetails('${e.id}')`);
-        const statusText = e.status || (e.phase === 4 ? 'Archived' : 'Active');
+        const statusText = e.status || (e.phase === 5 || e.phase === '5' ? 'Completed' : (e.phase === 4 ? 'Commissioning & Serah Terima' : 'Completed'));
         return `
             <tr>
                 <td data-label="ID"><span class="ejo-id-badge">${e.id}</span></td>
@@ -4225,9 +6064,7 @@ function renderHistory() {
         `;
     }).join('');
 
-    if (isLead) {
-        lucide.createIcons();
-    }
+    lucide.createIcons();
 }
 
 // ponytail: removed renderEngineersView as part of YAGNI for the removed engineers tab feature
@@ -4236,11 +6073,11 @@ function renderHistory() {
 // Chart JS Configurations
 // ==========================================
 function renderOverviewCharts() {
-    // 1. Line Chart: Monthly Trend — ponytail: aggregate real EJO data by targetDate month
+    // 1. Line Chart: Monthly Trend — ponytail: aggregate real EJO data by createdDate/completed date
     const ctxTrend = document.getElementById('trendChart').getContext('2d');
     if (state.charts.trend) state.charts.trend.destroy();
 
-    const allEjos = (state.ejos || []).concat(getVisibleGeneralEjos());
+    const allEjos = getVisibleOverviewEjos();
     const period = state.trendPeriod || 'year';
     const filterEl = document.getElementById("trend-time-filter");
     if (filterEl) {
@@ -4250,6 +6087,29 @@ function renderOverviewCharts() {
     let sliceLabels = [];
     let sliceMasuk = [];
     let sliceSelesai = [];
+
+    // ponytail: helpers to extract creation date and actual completion date
+    const getCreatedDate = (e) => {
+        if (e.createdDate) return e.createdDate;
+        if (e.logs && e.logs.length > 0) {
+            const firstLog = e.logs[0];
+            if (firstLog && firstLog.date) {
+                return firstLog.date.split(' ')[0];
+            }
+        }
+        return e.targetDate || '';
+    };
+
+    const getCompletedDate = (e) => {
+        if (e.status !== 'Completed') return '';
+        if (e.logs && e.logs.length > 0) {
+            const compLog = e.logs.find(l => l.message && (l.message.toLowerCase().includes('selesai') || l.message.toLowerCase().includes('completed'))) || e.logs[e.logs.length - 1];
+            if (compLog && compLog.date) {
+                return compLog.date.split(' ')[0];
+            }
+        }
+        return e.targetDate || '';
+    };
 
     if (period === 'week') {
         // ponytail: get dates for current week (Monday to Sunday)
@@ -4271,11 +6131,16 @@ function renderOverviewCharts() {
         const masukPerDay = new Array(7).fill(0);
         const selesaiPerDay = new Array(7).fill(0);
         allEjos.forEach(e => {
-            if (e.targetDate) {
-                const idx = weekDates.indexOf(e.targetDate);
-                if (idx !== -1) {
-                    masukPerDay[idx]++;
-                    if (e.status === 'Completed') selesaiPerDay[idx]++;
+            const cDate = getCreatedDate(e);
+            if (cDate) {
+                const idx = weekDates.indexOf(cDate);
+                if (idx !== -1) masukPerDay[idx]++;
+            }
+            if (e.status === 'Completed') {
+                const compDate = getCompletedDate(e);
+                if (compDate) {
+                    const idx = weekDates.indexOf(compDate);
+                    if (idx !== -1) selesaiPerDay[idx]++;
                 }
             }
         });
@@ -4283,38 +6148,61 @@ function renderOverviewCharts() {
         sliceMasuk = masukPerDay;
         sliceSelesai = selesaiPerDay;
     } else if (period === 'month') {
-        // ponytail: get daily trend of the current month
+        // ponytail: get weekly trend of the current month (Minggu 1, 2, 3, 4)
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth();
         const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
-        sliceLabels = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
-        const masukPerDay = new Array(daysInMonth).fill(0);
-        const selesaiPerDay = new Array(daysInMonth).fill(0);
+        sliceLabels = ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'];
+        const masukPerWeek = new Array(4).fill(0);
+        const selesaiPerWeek = new Array(4).fill(0);
         allEjos.forEach(e => {
-            if (e.targetDate) {
-                const parts = e.targetDate.split('-');
+            const cDate = getCreatedDate(e);
+            if (cDate) {
+                const parts = cDate.split('-');
                 const y = parseInt(parts[0]);
                 const m = parseInt(parts[1]) - 1;
                 const d = parseInt(parts[2]);
                 if (y === currentYear && m === currentMonth && d >= 1 && d <= daysInMonth) {
-                    masukPerDay[d - 1]++;
-                    if (e.status === 'Completed') selesaiPerDay[d - 1]++;
+                    // ponytail: divide day of month into 4 weeks (1-7 = W1, 8-14 = W2, 15-21 = W3, 22+ = W4)
+                    const wIdx = Math.min(3, Math.floor((d - 1) / 7));
+                    masukPerWeek[wIdx]++;
+                }
+            }
+            if (e.status === 'Completed') {
+                const compDate = getCompletedDate(e);
+                if (compDate) {
+                    const parts = compDate.split('-');
+                    const y = parseInt(parts[0]);
+                    const m = parseInt(parts[1]) - 1;
+                    const d = parseInt(parts[2]);
+                    if (y === currentYear && m === currentMonth && d >= 1 && d <= daysInMonth) {
+                        // ponytail: divide day of month into 4 weeks (1-7 = W1, 8-14 = W2, 15-21 = W3, 22+ = W4)
+                        const wIdx = Math.min(3, Math.floor((d - 1) / 7));
+                        selesaiPerWeek[wIdx]++;
+                    }
                 }
             }
         });
-        sliceMasuk = masukPerDay;
-        sliceSelesai = selesaiPerDay;
+        sliceMasuk = masukPerWeek;
+        sliceSelesai = selesaiPerWeek;
     } else {
         // ponytail: default 'year' trend (monthly aggregation)
         const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
         const masukPerMonth = new Array(12).fill(0);
         const selesaiPerMonth = new Array(12).fill(0);
         allEjos.forEach(e => {
-            const m = e.targetDate ? parseInt(e.targetDate.split('-')[1]) - 1 : -1;
-            if (m >= 0 && m < 12) {
-                masukPerMonth[m]++;
-                if (e.status === 'Completed') selesaiPerMonth[m]++;
+            const cDate = getCreatedDate(e);
+            if (cDate) {
+                const m = parseInt(cDate.split('-')[1]) - 1;
+                if (m >= 0 && m < 12) masukPerMonth[m]++;
+            }
+            if (e.status === 'Completed') {
+                const compDate = getCompletedDate(e);
+                if (compDate) {
+                    const m = parseInt(compDate.split('-')[1]) - 1;
+                    if (m >= 0 && m < 12) selesaiPerMonth[m]++;
+                }
             }
         });
         const firstMonth = Math.max(0, masukPerMonth.findIndex(v => v > 0) - 1);
@@ -4325,37 +6213,172 @@ function renderOverviewCharts() {
         sliceSelesai = selesaiPerMonth.slice(firstMonth, endIdx + 1);
     }
 
+    // ponytail: compute Outstanding (OS) = cumulative masuk - cumulative selesai per slice
+    const sliceOS = sliceMasuk.map((m, i) => Math.max(0, m - sliceSelesai[i]));
+
+    // ponytail: custom plugin to draw data labels inside badge-like boxes
+    const dataLabelsPlugin = {
+        id: 'trendDataLabels',
+        afterDatasetsDraw(chart) {
+            const { ctx } = chart;
+            ctx.save();
+            chart.data.datasets.forEach((dataset, dIdx) => {
+                const meta = chart.getDatasetMeta(dIdx);
+                if (!meta.hidden) {
+                    meta.data.forEach((el, idx) => {
+                        const val = dataset.data[idx];
+                        if (val === 0) return;
+
+                        // Calculate badge coordinates
+                        const x = el.x;
+                        let y = el.y - 12; // default above element
+                        let bgColor = '#ef4444';
+                        let textColor = '#ffffff';
+
+                        if (dataset.label === 'Masuk') {
+                            bgColor = '#b91c1c';
+                            textColor = '#ffffff';
+                        } else if (dataset.label === 'Selesai') {
+                            bgColor = '#15803d';
+                            textColor = '#ffffff';
+                        } else if (dataset.label === 'OS') {
+                            y = el.y - 16;
+                            bgColor = '#f59e0b';
+                            textColor = '#1e293b';
+                        }
+
+                        // Draw rounded rect badge
+                        const textStr = String(val);
+                        ctx.font = 'bold 11px Outfit';
+                        const textWidth = ctx.measureText(textStr).width;
+                        const paddingX = 6;
+                        const paddingY = 4;
+                        const width = textWidth + paddingX * 2;
+                        const height = 12 + paddingY * 2;
+                        
+                        ctx.fillStyle = bgColor;
+                        const rx = x - width / 2;
+                        const ry = y - height / 2;
+                        const radius = 3;
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(rx + radius, ry);
+                        ctx.lineTo(rx + width - radius, ry);
+                        ctx.quadraticCurveTo(rx + width, ry, rx + width, ry + radius);
+                        ctx.lineTo(rx + width, ry + height - radius);
+                        ctx.quadraticCurveTo(rx + width, ry + height, rx + width - radius, ry + height);
+                        ctx.lineTo(rx + radius, ry + height);
+                        ctx.quadraticCurveTo(rx, ry + height, rx, ry + height - radius);
+                        ctx.lineTo(rx, ry + radius);
+                        ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // Draw text centered in the badge
+                        ctx.fillStyle = textColor;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(textStr, x, y + 1);
+                    });
+                }
+            });
+            ctx.restore();
+        }
+    };
+
     state.charts.trend = new Chart(ctxTrend, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels: sliceLabels,
             datasets: [
                 {
-                    label: 'EJO Masuk',
+                    label: 'Masuk',
                     data: sliceMasuk,
-                    borderColor: '#06b6d4',
-                    backgroundColor: 'rgba(6, 182, 212, 0.05)',
-                    tension: 0.4,
-                    fill: true
+                    backgroundColor: 'rgba(239, 68, 68, 0.85)',
+                    borderColor: '#ef4444',
+                    borderWidth: 1.5,
+                    borderRadius: 4,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7,
+                    order: 2
                 },
                 {
-                    label: 'EJO Selesai',
+                    label: 'Selesai',
                     data: sliceSelesai,
-                    borderColor: '#10b981',
-                    backgroundColor: 'transparent',
-                    tension: 0.4
+                    backgroundColor: 'rgba(34, 197, 94, 0.85)',
+                    borderColor: '#22c55e',
+                    borderWidth: 1.5,
+                    borderRadius: 4,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7,
+                    order: 3
+                },
+                {
+                    label: 'OS',
+                    type: 'line',
+                    data: sliceOS,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderWidth: 2.5,
+                    pointBackgroundColor: '#f59e0b',
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    tension: 0.35,
+                    fill: false,
+                    order: 1
                 }
             ]
         },
-        options: getChartBaseOptions()
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    top: 15
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: {
+                        color: '#94a3b8',
+                        font: { family: 'Outfit', size: 11 },
+                        boxWidth: 14,
+                        usePointStyle: true,
+                        pointStyle: 'rectRounded'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return ` ${context.dataset.label}: ${context.raw}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grace: '15%',
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#94a3b8', font: { family: 'Outfit' }, stepSize: 10 }
+                }
+            }
+        },
+        plugins: [dataLabelsPlugin]
     });
 
     // 2. Doughnut Chart: Proporsi Status EJO
     const ctxStatus = document.getElementById('statusChart').getContext('2d');
     if (state.charts.status) state.charts.status.destroy();
 
-    const requested = allEjos.filter(e => e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking')).length;
-    const progress = allEjos.filter(e => e.status.startsWith('In Progress') || (e.status.startsWith('Pending') && e.status !== 'Pending Revision') || e.status.startsWith('Waiting')).length;
+    const requested = allEjos.filter(e => e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Waiting Dept Approval').length;
+    const progress = allEjos.filter(e => e.status.startsWith('In Progress') || (e.status.startsWith('Pending') && e.status !== 'Pending Revision')).length;
     const completed = allEjos.filter(e => e.status === 'Completed').length;
     const cancelled = allEjos.filter(e => e.status === 'Cancelled').length;
 
@@ -4495,16 +6518,84 @@ function openEJODetails(id) {
     document.getElementById("modal-ejo-id").textContent = ejo.id;
 
     const priorityBadge = document.getElementById("modal-ejo-priority");
-    priorityBadge.className = 'badge';
-    priorityBadge.style.backgroundColor = getPriorityColor(ejo.priority);
-    priorityBadge.style.color = '#ffffff';
-    priorityBadge.textContent = ejo.priority;
+    if (priorityBadge) {
+        const prioInfo = getPriorityInfo(ejo.priority);
+        priorityBadge.className = 'badge';
+        priorityBadge.style.backgroundColor = prioInfo.color;
+        priorityBadge.style.color = '#ffffff';
+        priorityBadge.textContent = prioInfo.label;
+    }
 
     document.getElementById("modal-ejo-title").textContent = ejo.title;
     document.getElementById("modal-ejo-location").textContent = ejo.location;
     document.getElementById("modal-ejo-dept").textContent = getDepartmentDisplayLabel(ejo.dept);
+
+    // ponytail: populate Machine ID (MID) in detail modal
+    const midField = document.getElementById("modal-ejo-mid-field");
+    const midVal = document.getElementById("modal-ejo-mid");
+    if (midField && midVal) {
+        if (ejo.mid) {
+            midField.style.display = "flex";
+            midVal.textContent = ejo.mid;
+        } else {
+            midField.style.display = "none";
+        }
+    }
+
+    // ponytail: populate Quantity in detail modal
+    const qtyField = document.getElementById("modal-ejo-quantity-field");
+    const qtyVal = document.getElementById("modal-ejo-quantity");
+    if (qtyField && qtyVal) {
+        if (ejo.quantity || ejo.category === "Repair Part") {
+            qtyField.style.display = "flex";
+            qtyVal.textContent = (ejo.quantity || 1) + " Pcs";
+        } else {
+            qtyField.style.display = "none";
+        }
+    }
+
+    // ponytail: populate cost analysis fields for Repair Parts
+    const costField = document.getElementById("modal-ejo-cost-field");
+    if (costField) {
+        if (ejo.category === "Repair Part") {
+            costField.style.display = "flex";
+            const priceNew = parseFloat(ejo.part_price_new) || 0.0;
+            const duration = parseInt(ejo.repair_duration) || 0;
+            const costPerDay = parseFloat(ejo.repair_cost_per_day) || 0.0;
+            const totalCost = duration * costPerDay;
+            const costSaving = priceNew - totalCost;
+
+            const formatRupiah = (val) => {
+                return "Rp " + val.toLocaleString('id-ID');
+            };
+
+            document.getElementById("modal-ejo-price-new").textContent = formatRupiah(priceNew);
+            document.getElementById("modal-ejo-duration").textContent = duration + " Hari";
+            const costPerDayEl = document.getElementById("modal-ejo-cost-per-day");
+            if (costPerDayEl) costPerDayEl.textContent = formatRupiah(costPerDay);
+            document.getElementById("modal-ejo-cost-total").textContent = formatRupiah(totalCost);
+            
+            const savingVal = document.getElementById("modal-ejo-saving");
+            savingVal.textContent = formatRupiah(costSaving);
+            if (costSaving > 0) {
+                savingVal.style.color = "var(--color-green)";
+            } else if (costSaving < 0) {
+                savingVal.style.color = "var(--color-rose)";
+            } else {
+                savingVal.style.color = "var(--text-muted)";
+            }
+        } else {
+            costField.style.display = "none";
+        }
+    }
     document.getElementById("modal-ejo-requester").textContent = ejo.requester || "System Seeder";
-    document.getElementById("modal-ejo-category").textContent = ejo.category;
+    let displayCategory = ejo.category || "Mekanik";
+    if (displayCategory.toUpperCase().includes("BQM-REPAIR") || displayCategory.toUpperCase().includes("BQM_REPAIR")) {
+        displayCategory = "Repair Part";
+    } else if (displayCategory.toUpperCase() === "BQM") {
+        displayCategory = "Mekanik";
+    }
+    document.getElementById("modal-ejo-category").textContent = displayCategory;
     // ponytail: fallback to first log entry's date if createdDate is not present in the DB
     let createdDateVal = ejo.createdDate;
     if (!createdDateVal && ejo.logs && ejo.logs.length > 0) {
@@ -4548,7 +6639,58 @@ function openEJODetails(id) {
     statusBadge.textContent = getFriendlyStatusText(ejo.status, ejo);
 
     const parsed = parseEjoDescription(ejo.description);
-    document.getElementById("modal-ejo-desc").textContent = parsed.descText;
+    const descBox = document.getElementById("modal-ejo-desc");
+    const urgentSection = document.getElementById("modal-ejo-urgent-section");
+    const urgentReasonBox = document.getElementById("modal-ejo-urgent-reason");
+    const rawDesc = parsed.descText || "";
+    const wspMatch = rawDesc.match(/\[WSP\s+([^\]]+)\]/i);
+
+    if (descBox) {
+        let textToDisplay = rawDesc;
+        if (rawDesc.includes("[JUSTIFIKASI URGENT / PRIORITY 1]:")) {
+            const descParts = rawDesc.split("⚠️ [JUSTIFIKASI URGENT / PRIORITY 1]:");
+            textToDisplay = (descParts[0] || "").trim();
+            const urgentReason = (descParts[1] || "").trim();
+
+            if (urgentSection && urgentReasonBox && urgentReason) {
+                urgentReasonBox.innerHTML = renderFormattedText(urgentReason);
+                urgentSection.style.display = "block";
+            } else if (urgentSection) {
+                urgentSection.style.display = "none";
+            }
+        } else if (urgentSection) {
+            urgentSection.style.display = "none";
+        }
+
+        // ponytail: render styled WSP badge if present in description
+        if (wspMatch) {
+            const tagStr = wspMatch[0];
+            const cleanText = textToDisplay.replace(tagStr, "").trim();
+            const badgeHtml = `<div style="margin-bottom: 8px;"><span class="badge" style="background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); font-weight: 600; border: 1px solid rgba(6, 182, 212, 0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px;"><i data-lucide="package" style="width: 14px; height: 14px;"></i> WSP Master: ${escapeHtml(wspMatch[1])}</span></div>`;
+            descBox.innerHTML = badgeHtml + (cleanText ? renderFormattedText(cleanText) : '');
+        } else {
+            descBox.innerHTML = renderFormattedText(textToDisplay);
+        }
+    }
+
+    // Populate Foto Before section in details modal
+    const photoBeforeSection = document.getElementById("modal-ejo-photo-before-section");
+    const photoBeforeLink = document.getElementById("modal-ejo-photo-before-link");
+    const photoBeforeImg = document.getElementById("modal-ejo-photo-before-img");
+
+    if (photoBeforeSection && photoBeforeLink && photoBeforeImg) {
+        if (ejo.photo_before) {
+            photoBeforeImg.src = ejo.photo_before;
+            photoBeforeLink.href = ejo.photo_before;
+            photoBeforeLink.onclick = (ev) => {
+                ev.preventDefault();
+                openImagePreviewModal(ejo.photo_before, 'Foto Sebelum Pekerjaan (' + ejo.id + ')');
+            };
+            photoBeforeSection.style.display = "block";
+        } else {
+            photoBeforeSection.style.display = "none";
+        }
+    }
 
     // Show/hide completion report section in details modal
     let completionReport = parsed.completionReportText || "";
@@ -4577,10 +6719,10 @@ function openEJODetails(id) {
     if (completionReportSection && completionReportBox) {
         if (completionReport.trim() !== "") {
             completionReportSection.style.display = "block";
-            completionReportBox.textContent = completionReport;
+            completionReportBox.innerHTML = renderFormattedText(completionReport);
         } else {
             completionReportSection.style.display = "none";
-            completionReportBox.textContent = "";
+            completionReportBox.innerHTML = "";
         }
     }
 
@@ -4649,7 +6791,9 @@ function openEJODetails(id) {
             if (matchAttachment) {
                 displayText = matchAttachment[1].trim();
                 const attachmentUrl = matchAttachment[2].trim();
-                const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(attachmentUrl);
+                // ponytail: strip query parameters when checking extension to support cache busting
+                const cleanAttachmentUrl = attachmentUrl.split('?')[0];
+                const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(cleanAttachmentUrl);
                 if (isImage) {
                     attachmentHtml = `
                         <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start;">
@@ -4676,7 +6820,7 @@ function openEJODetails(id) {
             }
             
             const cleanDisplayText = displayText.replace(/<img\s+/gi, '<img decoding="async" ');
-            const formattedText = `<div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-primary); font-weight: 500; word-break: break-word;"><strong>Instruksi/Alasan:</strong> ${cleanDisplayText}</div>`;
+            const formattedText = `<div style="margin-bottom: 6px;"><strong>Instruksi/Alasan:</strong></div>` + renderFormattedText(cleanDisplayText);
             revisionBox.innerHTML = `${formattedText}${attachmentHtml}`;
             if (revisionRoleSpan) {
                 revisionRoleSpan.textContent = revisionRoleText;
@@ -4690,7 +6834,67 @@ function openEJODetails(id) {
     // ponytail: Populate attachment state for editing in details modal
     state.currentModalAttachments = parsed.attachments;
 
-    // ponytail: populate dynamic assignee checkboxes
+    // ponytail: populate checkbox container for EJO details modal assignee dynamically based on EJO category
+    const container = document.getElementById("modal-assignee-container");
+    if (container) {
+        let html = `
+            <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; font-size: 0.8rem; margin: 0;">
+                <input type="checkbox" id="assignee-unassigned" value="Unassigned"> Unassigned (Belum ditunjuk)
+            </label>
+        `;
+
+        const allowedRoles = getAllowedAssigneeRoles(state.currentUser ? state.currentUser.role : "");
+        const targetCategory = (ejo.category || "").trim().toLowerCase();
+        
+        // ponytail: Repair Part is cross-disciplinary, show all allowed roles; others filter strictly by category first
+        let filteredEngs;
+        if (targetCategory === "repair part") {
+            filteredEngs = engineersList.filter(eng => allowedRoles.includes(eng.role));
+        } else {
+            filteredEngs = engineersList.filter(eng => allowedRoles.includes(eng.role) && eng.role.toLowerCase() === targetCategory);
+            if (filteredEngs.length === 0) {
+                // ponytail: fallback first to generic Drafter role
+                filteredEngs = engineersList.filter(eng => allowedRoles.includes(eng.role) && eng.role.toLowerCase() === "drafter");
+                if (filteredEngs.length === 0) {
+                    // ponytail: fallback to all allowed roles
+                    filteredEngs = engineersList.filter(eng => allowedRoles.includes(eng.role));
+                }
+            }
+        }
+
+        html += filteredEngs.map(eng => {
+            return `
+                <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer; font-size: 0.8rem; margin: 0;">
+                    <input type="checkbox" class="assignee-check" value="${eng.name}"> ${eng.name} (${eng.role})
+                </label>
+            `;
+        }).join('');
+
+        container.innerHTML = html;
+
+        // ponytail: re-attach event listeners since checkboxes were rebuilt
+        const unassignedCheck = document.getElementById("assignee-unassigned");
+        if (unassignedCheck) {
+            unassignedCheck.addEventListener("change", () => {
+                if (unassignedCheck.checked) {
+                    document.querySelectorAll(".assignee-check").forEach(cb => cb.checked = false);
+                }
+            });
+        }
+
+        document.querySelectorAll(".assignee-check").forEach(cb => {
+            cb.addEventListener("change", () => {
+                if (cb.checked && unassignedCheck) {
+                    unassignedCheck.checked = false;
+                }
+                const checkedCount = document.querySelectorAll(".assignee-check:checked").length;
+                if (checkedCount === 0 && unassignedCheck) {
+                    unassignedCheck.checked = true;
+                }
+            });
+        });
+    }
+
     const engineers = (ejo.engineer || 'Unassigned').split(',').map(e => e.trim());
     const isUnassigned = engineers.includes('Unassigned') || engineers.length === 0 || (engineers.length === 1 && !engineers[0]);
 
@@ -4715,14 +6919,14 @@ function openEJODetails(id) {
     const isGeneral = state.generalEjos && state.generalEjos.some(ge => ge.id === id);
 
     // ponytail: Hide assignment/finance and work report logs for ordinary user role and restricted roles
-    const isUserRole = state.currentUser && state.currentUser.role === 'User';
+    const isUserRole = state.currentUser && isOrdinaryUser(state.currentUser.role);
     const isDrafter = state.currentUser && isDrafterRole(state.currentUser.role);
     const isLead = state.currentUser && (isLeadRole(state.currentUser.role));
-    const isRestrictedRole = state.currentUser && ['Foreman', 'Supervisor', 'Manager', 'Plant Manager'].includes(state.currentUser.role);
+    const isRestrictedRole = state.currentUser && ['Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager'].includes(state.currentUser.role);
     const isAssignedEngineer = state.currentUser && (ejo.engineer || '').split(',').map(e => e.trim()).includes(state.currentUser.fullname);
     const isRequester = checkIsRequester(ejo.requester);
     // ponytail: hide assignment, reports, and status forms for Admin role per user request
-    const isAdmin = state.currentUser && state.currentUser.role === 'Admin';
+    const isAdmin = state.currentUser && state.currentUser.role === 'Admin Eng';
 
     const cardAssign = document.getElementById("card-assignment-finance");
     if (cardAssign) {
@@ -4863,7 +7067,7 @@ function openEJODetails(id) {
         if (isGeneral || isAdmin) {
             saveBtn.style.display = 'none';
         } else {
-            const isUserRole = state.currentUser && state.currentUser.role === 'User';
+            const isUserRole = state.currentUser && isOrdinaryUser(state.currentUser.role);
             const isDrafter = state.currentUser && isDrafterRole(state.currentUser.role);
             if (isUserRole || isDrafter || isRestrictedRole) {
                 saveBtn.style.display = 'none';
@@ -4883,7 +7087,7 @@ function openEJODetails(id) {
             completeBtn.style.display = 'none';
         } else {
             const isInProgress = ejo.status.startsWith('In Progress');
-            const isForeman = state.currentUser && state.currentUser.role === 'Foreman';
+            const isForeman = state.currentUser && state.currentUser.role === 'Foreman Eng';
             const canComplete = isInProgress && (isLead || isAssignedEngineer) && (!isForeman || isGeneral);
             completeBtn.style.display = canComplete ? 'block' : 'none';
         }
@@ -4917,6 +7121,31 @@ function openEJODetails(id) {
             } else {
                 revBtn.style.display = 'none';
                 revSpan.textContent = "Pekerjaan ini telah dibatalkan.";
+            }
+        } else if (ejo.status === 'Waiting Dept Approval') {
+            statusBtnGroup.style.display = 'none';
+            revisionWrapper.style.display = 'flex';
+            if (saveBtn) saveBtn.style.display = 'none'; // Lock saving
+            if (completeBtn) completeBtn.style.display = 'none';
+
+            const revBtn = document.getElementById("btn-request-revision");
+            const revSpan = revisionWrapper.querySelector("span");
+            revBtn.style.display = 'none';
+
+            const isDeptApprover = isDepartmentApprover(state.currentUser, ejo.dept);
+
+            if (isDeptApprover) {
+                revSpan.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                        <div style="font-weight: 600; font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px; text-align: center;">Persetujuan Manager/Supervisor Departemen:</div>
+                        <div style="display: flex; gap: 8px; width: 100%;">
+                            <button class="btn btn-outline btn-xs full-width" style="padding: 0.6rem; font-size: 0.8rem; border-color: var(--color-rose); color: var(--color-rose);" onclick="moveGeneralEjoStatus('${ejo.id}', 'Cancelled').then(() => { if (state.selectedEJO && state.selectedEJO.id === '${ejo.id}') openEJODetails('${ejo.id}'); })">Tolak EJO</button>
+                            <button class="btn btn-primary btn-xs full-width glow-button" style="padding: 0.6rem; font-size: 0.8rem;" onclick="moveGeneralEjoStatus('${ejo.id}', 'Requested').then(() => { if (state.selectedEJO && state.selectedEJO.id === '${ejo.id}') openEJODetails('${ejo.id}'); })">Setujui EJO &rarr;</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                revSpan.textContent = `Menunggu persetujuan SPV / Manager departemen pemohon (${ejo.dept}).`;
             }
         } else if (ejo.status === 'Pending Revision') {
             statusBtnGroup.style.display = 'none';
@@ -5249,7 +7478,7 @@ async function saveModalChanges() {
     if (!state.selectedEJO) return;
 
     // ponytail: restrict save for restricted roles and Admin per user request
-    const isRestrictedRole = state.currentUser && ['Foreman', 'Supervisor', 'Manager', 'Plant Manager', 'Admin'].includes(state.currentUser.role);
+    const isRestrictedRole = state.currentUser && ['Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager', 'Admin Eng'].includes(state.currentUser.role);
     if (isRestrictedRole) {
         showToast("Jabatan Anda tidak berhak menyimpan perubahan!", "error");
         return;
@@ -5454,7 +7683,7 @@ async function deleteSelectedEJO() {
     if (!state.selectedEJO) return;
 
     // ponytail: restrict delete for restricted roles and Admin per user request
-    const isRestrictedRole = state.currentUser && ['Foreman', 'Supervisor', 'Manager', 'Plant Manager', 'Admin'].includes(state.currentUser.role);
+    const isRestrictedRole = state.currentUser && ['Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager', 'Admin Eng'].includes(state.currentUser.role);
     if (isRestrictedRole) {
         showToast("Jabatan Anda tidak berhak menghapus EJO!", "error");
         return;
@@ -5499,10 +7728,7 @@ function openRepairPartDetails(partId) {
     document.getElementById("modal-part-id").textContent = part.id;
     document.getElementById("modal-part-name").textContent = part.name;
     document.getElementById("modal-part-code").textContent = part.code || '--';
-    document.getElementById("modal-part-stock").textContent = part.stock;
-    document.getElementById("modal-part-stock-badge").textContent = `Stok: ${part.stock}`;
-    document.getElementById("modal-part-location").textContent = part.location || '--';
-    document.getElementById("modal-part-desc").textContent = part.description || 'Tidak ada keterangan.';
+    document.getElementById("modal-part-desc").innerHTML = renderFormattedText(part.description || 'Tidak ada keterangan.');
 
     // Image preview
     const imgContainer = document.getElementById("modal-part-image-container");
@@ -5515,52 +7741,138 @@ function openRepairPartDetails(partId) {
         imgContainer.style.display = "none";
     }
 
-    // EJO Link setup
-    const ejoLink = document.getElementById("modal-part-ejo-link");
-    if (part.ejo_id) {
-        ejoLink.textContent = part.ejo_id;
-        ejoLink.style.display = "inline";
-        ejoLink.style.cursor = "pointer";
-        ejoLink.style.color = "var(--text-link)";
-        ejoLink.onclick = () => {
-            closePartModal();
-            openEJODetails(part.ejo_id);
-        };
-    } else {
-        ejoLink.textContent = '-';
-        ejoLink.onclick = null;
-        ejoLink.style.cursor = "default";
-        ejoLink.style.color = "var(--text-secondary)";
-    }
-
     document.getElementById("part-detail-modal").classList.add("active");
     lucide.createIcons();
 }
 
 
 
-// ponytail: helper to check General EJO limit of 2 active per user (excluding Completed/Cancelled and Pending Revision)
-function checkGeneralEjoLimit() {
+// ponytail: helper to check General EJO limit of 2 active per category per user (excluding Completed/Cancelled and Pending Revision)
+function checkGeneralEjoLimit(category, excludeId) {
     if (!state.currentUser) return false;
-    // ponytail: only User role has limitation
-    if (state.currentUser.role !== 'User') return false;
-    const myGejos = (state.generalEjos || []).filter(e => {
-        const isOwner = e.requester === state.currentUser.fullname || e.requester === state.currentUser.username;
-        if (!isOwner) return false;
-        if (e.is_archived) return false;
-        const status = e.status || '';
-        // Exclude Completed/Cancelled (Phase 3) and Pending Revision (Rejected EJO)
-        if (status === 'Completed' || status === 'Cancelled' || status === 'Pending Revision') return false;
-        return true;
+    // ponytail: User role and non-ENG Supervisor/Manager have 2 active General EJO limit per category
+    if (!isUserLimited(state.currentUser)) return false;
+    const categories = ['Sipil', 'Elektrik', 'Kalibrasi', 'Mekanik', 'Otomotif', 'Program', 'Repair Part'];
+    const currentEditingId = excludeId || state.editingGejoId || null;
+
+    if (category) {
+        const myGejosCount = (state.generalEjos || []).filter(e => {
+            if (currentEditingId && e.id === currentEditingId) return false;
+            const isOwner = e.requester === state.currentUser.fullname || e.requester === state.currentUser.username;
+            if (!isOwner || e.is_archived) return false;
+            const status = e.status || '';
+            if (status === 'Completed' || status === 'Cancelled' || status === 'Pending Revision') return false;
+            return e.category === category;
+        }).length;
+        return myGejosCount >= 2;
+    } else {
+        // Without specific category, returns true only if ALL categories are full (>= 2)
+        return categories.every(cat => checkGeneralEjoLimit(cat, currentEditingId));
+    }
+}
+
+// ponytail: helper to update category dropdown option labels with limit status
+function updateGejoCategoryOptionsLimit() {
+    const select = document.getElementById("gejo-form-category");
+    if (!select || !state.currentUser) return;
+    const isLimited = isUserLimited(state.currentUser);
+    const currentEditingId = state.editingGejoId || null;
+    Array.from(select.options).forEach(opt => {
+        if (!opt.value) return;
+        const baseName = opt.value.split(' — ')[0];
+        if (!isLimited) {
+            opt.textContent = baseName;
+        } else {
+            const count = (state.generalEjos || []).filter(e => {
+                if (currentEditingId && e.id === currentEditingId) return false;
+                const isOwner = e.requester === state.currentUser.fullname || e.requester === state.currentUser.username;
+                if (!isOwner || e.is_archived) return false;
+                const status = e.status || '';
+                if (status === 'Completed' || status === 'Cancelled' || status === 'Pending Revision') return false;
+                return e.category === baseName;
+            }).length;
+            const sisa = Math.max(0, 2 - count);
+            if (sisa === 0) {
+                opt.textContent = `${baseName} — (Quota Habis: 2/2)`;
+            } else {
+                opt.textContent = `${baseName} — (Quota ${sisa})`;
+            }
+        }
     });
-    return myGejos.length >= 2;
+}
+
+// ponytail: helper to render inline notice banner under gejo-form-category select box & toggle submit button state
+function updateGejoFormCategoryLimitNotice(cat) {
+    const noticeEl = document.getElementById("gejo-form-category-limit-notice");
+    const submitBtn = document.getElementById("gejo-form-submit-btn") || document.querySelector('#gejo-form button[type="submit"]');
+
+    if (!cat || !state.currentUser || !isUserLimited(state.currentUser)) {
+        if (noticeEl) noticeEl.style.display = "none";
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '1';
+            submitBtn.style.cursor = 'pointer';
+            submitBtn.removeAttribute('title');
+        }
+        return;
+    }
+    const currentEditingId = state.editingGejoId || null;
+    const isFull = checkGeneralEjoLimit(cat, currentEditingId);
+    const myCatGejosCount = (state.generalEjos || []).filter(e => {
+        if (currentEditingId && e.id === currentEditingId) return false;
+        const isOwner = e.requester === state.currentUser.fullname || e.requester === state.currentUser.username;
+        if (!isOwner || e.is_archived) return false;
+        const status = e.status || '';
+        if (status === 'Completed' || status === 'Cancelled' || status === 'Pending Revision') return false;
+        return e.category === cat;
+    }).length;
+    const sisa = Math.max(0, 2 - myCatGejosCount);
+
+    if (noticeEl) {
+        if (isFull) {
+            noticeEl.style.display = "flex";
+            noticeEl.style.alignItems = "center";
+            noticeEl.style.gap = "6px";
+            noticeEl.style.padding = "8px 12px";
+            noticeEl.style.borderRadius = "6px";
+            noticeEl.style.background = "rgba(244, 63, 94, 0.15)";
+            noticeEl.style.border = "1px solid rgba(244, 63, 94, 0.3)";
+            noticeEl.style.color = "#f43f5e";
+            noticeEl.innerHTML = `<i data-lucide="alert-triangle" style="width:15px; height:15px; flex-shrink:0;"></i> <span>Quota EJO kategori <strong>${cat}</strong> Anda sudah habis! (${myCatGejosCount}/2 Aktif)</span>`;
+        } else {
+            noticeEl.style.display = "flex";
+            noticeEl.style.alignItems = "center";
+            noticeEl.style.gap = "6px";
+            noticeEl.style.padding = "6px 12px";
+            noticeEl.style.borderRadius = "6px";
+            noticeEl.style.background = "rgba(6, 182, 212, 0.1)";
+            noticeEl.style.border = "1px solid rgba(6, 182, 212, 0.25)";
+            noticeEl.style.color = "#22d3ee";
+            noticeEl.innerHTML = `<i data-lucide="shield-check" style="width:15px; height:15px; flex-shrink:0;"></i> <span>Sisa Quota EJO ${cat}: ${sisa} EJO lagi (${myCatGejosCount}/2 Aktif)</span>`;
+        }
+        if (window.lucide) lucide.createIcons();
+    }
+
+    if (submitBtn) {
+        if (isFull) {
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.5';
+            submitBtn.style.cursor = 'not-allowed';
+            submitBtn.title = `Quota EJO kategori '${cat}' Anda telah habis (Maksimal 2 EJO Aktif per kategori)`;
+        } else {
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '1';
+            submitBtn.style.cursor = 'pointer';
+            submitBtn.removeAttribute('title');
+        }
+    }
 }
 
 // ponytail: helper to check Drawing limit of 2 active per user (excluding Completed/Cancelled/Archived and Rejected drawings)
 function checkDrawingLimit() {
     if (!state.currentUser) return false;
-    // ponytail: only User role has limitation
-    if (state.currentUser.role !== 'User') return false;
+    // ponytail: User role and non-ENG Supervisor/Manager have 2 active Drawing limit
+    if (!isUserLimited(state.currentUser)) return false;
     const myDrawings = (state.drawings || []).filter(d => {
         const isOwner = d.uploader === state.currentUser.fullname || d.uploader === state.currentUser.username ||
             d.requester === state.currentUser.fullname || d.requester === state.currentUser.username;
@@ -5575,14 +7887,130 @@ function checkDrawingLimit() {
 }
 
 // ponytail: General EJO — pekerjaan langsung (pasang lampu, ganti kran). DB terpisah, reuse pola createNewEJO.
+// ponytail: calculate Quantity Stok = Quantity Barang - Quantity Diperlukan Mesin with limit clamping
+function calcGejoQtyStock() {
+    const qtyBarangInput = document.getElementById("gejo-form-quantity");
+    const qtyNeededInput = document.getElementById("gejo-form-qty-needed");
+    const stockInput = document.getElementById("gejo-form-qty-stock");
+
+    let qtyBarang = parseInt(qtyBarangInput?.value) || 0;
+    if (qtyBarang < 0) {
+        qtyBarang = 0;
+        if (qtyBarangInput) qtyBarangInput.value = 0;
+    }
+
+    let qtyNeeded = parseInt(qtyNeededInput?.value) || 0;
+    if (qtyNeeded < 0) {
+        qtyNeeded = 0;
+        if (qtyNeededInput) qtyNeededInput.value = 0;
+    }
+
+    if (qtyNeededInput) {
+        qtyNeededInput.max = qtyBarang;
+    }
+
+    if (qtyNeeded > qtyBarang) {
+        qtyNeeded = qtyBarang;
+        if (qtyNeededInput) qtyNeededInput.value = qtyBarang;
+    }
+
+    if (stockInput) {
+        stockInput.value = Math.max(0, qtyBarang - qtyNeeded);
+    }
+}
+
+// ponytail: helper to show/hide Repair Part fields in General EJO form
+function toggleGejoRepairFields(categoryValue) {
+    const fields = document.querySelectorAll(".gejo-repair-field");
+    const isRepairPart = (categoryValue === "Repair Part");
+    fields.forEach(el => {
+        el.style.display = isRepairPart ? "flex" : "none";
+        const inputs = el.querySelectorAll("input");
+        inputs.forEach(input => {
+            if (isRepairPart) {
+                if (input.id !== "gejo-form-qty-stock" && input.id !== "gejo-form-wsp-search" && input.id !== "gejo-wsp-file-input") {
+                    input.setAttribute("required", "");
+                }
+            } else {
+                input.removeAttribute("required");
+                if (input.id === "gejo-form-quantity") input.value = "0";
+                else if (input.id === "gejo-form-qty-needed") input.value = "0";
+                else if (input.id === "gejo-form-qty-stock") input.value = "0";
+                else input.value = "";
+            }
+        });
+    });
+    calcGejoQtyStock();
+}
+
+// ponytail: General EJO — pekerjaan langsung (pasang lampu, ganti kran). DB terpisah, reuse pola createNewEJO.
 async function createNewGeneralEJO() {
-    const title = document.getElementById("gejo-form-title").value;
-    const dept = document.getElementById("gejo-form-dept").value;
-    const category = document.getElementById("gejo-form-category").value;
-    const priority = document.getElementById("gejo-form-priority").value;
-    const targetDate = document.getElementById("gejo-form-target-date").value;
-    const location = document.getElementById("gejo-form-location").value;
-    const description = document.getElementById("gejo-form-description").value;
+    const category = document.getElementById("gejo-form-category")?.value || "";
+    if (!state.editingGejoId && checkGeneralEjoLimit(category)) {
+        showToast(`Batas pembuatan General EJO kategori '${category || 'ini'}' tercapai! Anda hanya dapat membuat maksimal 2 General EJO aktif per kategori.`, "warning");
+        return;
+    }
+
+    const title = (document.getElementById("gejo-form-title")?.value || "").trim();
+    const deptSelect = document.getElementById("gejo-form-dept");
+    const dept = (deptSelect && deptSelect.value) ? deptSelect.value : getUserDepartmentCode();
+    const prioritySelect = document.getElementById("gejo-form-priority");
+    const priority = prioritySelect ? prioritySelect.value : "3";
+    let urgentReason = prioritySelect ? (prioritySelect.dataset.urgentReason || '').trim() : '';
+
+    const targetDate = document.getElementById("gejo-form-target-date")?.value || "";
+    const location = (document.getElementById("gejo-form-location")?.value || "").trim();
+    const wspSearchVal = (document.getElementById("gejo-form-wsp-search")?.value || "").trim();
+    let description = (document.getElementById("gejo-form-description")?.value || "").trim();
+
+    if (!title || !category || !location || !description) {
+        showToast("Mohon lengkapi semua kolom wajib (Judul Pekerjaan, Kategori Pekerjaan, Lokasi, Detail Pekerjaan)!", "warning");
+        return;
+    }
+
+    if (priority === '1' && !urgentReason) {
+        openUrgentReasonModal("gejo-form-priority");
+        showToast("Mohon isi alasan / justifikasi prioritas urgent pada popup!", "warning");
+        return;
+    }
+
+    if (priority === '1' && urgentReason && !description.includes("[JUSTIFIKASI URGENT / PRIORITY 1]:")) {
+        description += `\n\n⚠️ [JUSTIFIKASI URGENT / PRIORITY 1]: ${urgentReason}`;
+    }
+
+    // ponytail: embed selected WSP Master Material tag into description for detail modal rendering
+    if (wspSearchVal) {
+        if (/\[WSP\s+([^\]]+)\]/i.test(description)) {
+            description = description.replace(/\[WSP\s+([^\]]+)\]/i, `[WSP ${wspSearchVal}]`);
+        } else {
+            description = `[WSP ${wspSearchVal}]\n${description}`;
+        }
+    } else {
+        description = description.replace(/\[WSP\s+([^\]]+)\]/i, "").trim();
+    }
+
+    let mid = null;
+    let partPriceNew = 0.0;
+    let repairDuration = 0;
+    let repairCostPerDay = 0.0;
+    let quantity = 1;
+    let qtyNeeded = 0;
+    let qtyStock = 1;
+
+    if (category === "Repair Part") {
+        mid = document.getElementById("gejo-form-mid")?.value?.trim() || "";
+        partPriceNew = parseFloat(document.getElementById("gejo-form-price-new").value) || 0.0;
+        quantity = parseInt(document.getElementById("gejo-form-quantity")?.value) || 1;
+        qtyNeeded = parseInt(document.getElementById("gejo-form-qty-needed")?.value) || 0;
+        if (qtyNeeded > quantity) {
+            qtyNeeded = quantity;
+            const qtyNeededInput = document.getElementById("gejo-form-qty-needed");
+            if (qtyNeededInput) qtyNeededInput.value = quantity;
+        }
+        qtyStock = Math.max(0, quantity - qtyNeeded);
+        repairDuration = 0;
+        repairCostPerDay = parseFloat(document.getElementById("gejo-form-cost-per-day").value) || 0.0;
+    }
 
     const submitBtn = document.querySelector('#gejo-form button[type="submit"]');
     let originalHtml = "";
@@ -5590,6 +8018,46 @@ async function createNewGeneralEJO() {
         originalHtml = submitBtn.innerHTML;
         submitBtn.disabled = true;
         submitBtn.textContent = "Mengirim...";
+    }
+
+    // ponytail: validate mandatory Foto Before upload for new General EJO
+    const fileBeforeInput = document.getElementById("gejo-file-before");
+    let photoBeforeUrl = "";
+
+    if (!state.editingGejoId) {
+        if (!fileBeforeInput || !fileBeforeInput.files || fileBeforeInput.files.length === 0) {
+            showToast("Foto Before wajib diunggah! Silakan pilih foto kondisi awal terlebih dahulu.", "warning");
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalHtml;
+                if (window.lucide) lucide.createIcons();
+            }
+            return;
+        }
+    }
+
+    // Upload Foto Before file if present
+    if (fileBeforeInput && fileBeforeInput.files && fileBeforeInput.files.length > 0) {
+        try {
+            const uploadFd = new FormData();
+            uploadFd.append("file", fileBeforeInput.files[0]);
+            const uploadRes = await fetch("/api/upload", {
+                method: "POST",
+                body: uploadFd
+            });
+            if (!uploadRes.ok) throw new Error("Gagal mengunggah Foto Before!");
+            const uploadData = await uploadRes.json();
+            photoBeforeUrl = uploadData.file_url || "";
+        } catch (err) {
+            console.error(err);
+            showToast("Gagal mengunggah Foto Before!", "error");
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalHtml;
+                if (window.lucide) lucide.createIcons();
+            }
+            return;
+        }
     }
 
     if (state.editingGejoId) {
@@ -5606,7 +8074,15 @@ async function createNewGeneralEJO() {
             estDate: ejo.estDate || "",
             // ponytail: preserve the original creation date when editing
             createdDate: ejo.createdDate || "",
-            title, dept, category, priority, location, targetDate, description
+            title, dept, category, priority, location, targetDate, description,
+            mid,
+            part_price_new: partPriceNew,
+            repair_duration: repairDuration,
+            repair_cost_per_day: repairCostPerDay,
+            quantity,
+            qty_needed: qtyNeeded,
+            qty_stock: qtyStock,
+            photo_before: photoBeforeUrl || ejo.photo_before || ""
         };
 
         try {
@@ -5619,6 +8095,8 @@ async function createNewGeneralEJO() {
 
             await initData();
             document.getElementById("gejo-form").reset();
+            resetGejoImagePreview();
+            toggleGejoRepairFields("");
             document.getElementById("gejo-form-container").style.display = 'none';
             state.editingGejoId = null;
 
@@ -5639,15 +8117,7 @@ async function createNewGeneralEJO() {
         return;
     }
 
-    if (checkGeneralEjoLimit()) {
-        showToast("Batas pembuatan General EJO tercapai! Anda hanya dapat membuat maksimal 2 General EJO aktif.", "warning");
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = originalHtml;
-            lucide.createIcons();
-        }
-        return;
-    }
+
 
     const now = new Date();
     const timestamp = now.getFullYear() + "-" +
@@ -5656,19 +8126,30 @@ async function createNewGeneralEJO() {
         String(now.getHours()).padStart(2, '0') + ":" +
         String(now.getMinutes()).padStart(2, '0');
 
+    const initialStatus = "Requested";
+    const initialLogMsg = `General EJO dibuat oleh ${state.currentUser ? state.currentUser.fullname : 'user'}.`;
+
     const newGejo = {
         title, dept, category, priority, location, targetDate,
-        status: "Requested",
+        status: initialStatus,
         engineer: "Unassigned",
         estCost: 0,
         actCost: 0,
         description,
         requester: state.currentUser ? state.currentUser.fullname : "System User",
         logs: [
-            { date: timestamp, message: `General EJO dibuat oleh ${state.currentUser ? state.currentUser.fullname : 'user'}.` }
+            { date: timestamp, message: initialLogMsg }
         ],
         // ponytail: set the creation date based on client system local time
-        createdDate: now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0')
+        createdDate: now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0'),
+        mid,
+        part_price_new: partPriceNew,
+        repair_duration: repairDuration,
+        repair_cost_per_day: repairCostPerDay,
+        quantity,
+        qty_needed: qtyNeeded,
+        qty_stock: qtyStock,
+        photo_before: photoBeforeUrl
     };
 
     try {
@@ -5677,18 +8158,20 @@ async function createNewGeneralEJO() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(newGejo)
         });
-        if (!res.ok) throw new Error("Gagal menyimpan General EJO");
         const resData = await res.json();
+        if (!res.ok) throw new Error(resData.message || "Gagal membuat General EJO");
         const savedId = resData.id;
 
         await initData();
         document.getElementById("gejo-form").reset();
+        resetGejoImagePreview();
+        toggleGejoRepairFields("");
         document.getElementById("gejo-form-container").style.display = 'none';
         renderGeneralEJO();
         showToast(`General EJO ${savedId} berhasil dibuat`, "success");
     } catch (err) {
         console.error(err);
-        showToast("Gagal menyimpan General EJO ke server!", "error");
+        showToast(err.message || "Gagal menyimpan General EJO ke server!", "error");
     } finally {
         if (submitBtn) {
             submitBtn.disabled = false;
@@ -5707,10 +8190,46 @@ window.editGeneralEjoByUser = function (ejoId) {
     document.getElementById("gejo-form-title").value = ejo.title || "";
     document.getElementById("gejo-form-dept").value = normalizeDepartmentCode(ejo.dept) || "";
     document.getElementById("gejo-form-category").value = ejo.category || "";
-    document.getElementById("gejo-form-priority").value = ejo.priority || "Low";
+    document.getElementById("gejo-form-priority").value = getPriorityInfo(ejo.priority).code;
     document.getElementById("gejo-form-target-date").value = ejo.targetDate || "";
     document.getElementById("gejo-form-location").value = ejo.location || "";
-    document.getElementById("gejo-form-description").value = parseEjoDescription(ejo.description).descText || "";
+    
+    // ponytail: extract WSP tag to populate gejo-form-wsp-search field when editing
+    const rawDesc = parseEjoDescription(ejo.description).descText || "";
+    const wspMatch = rawDesc.match(/\[WSP\s+([^\]]+)\]/i);
+    const wspSearchInput = document.getElementById("gejo-form-wsp-search");
+    if (wspSearchInput) {
+        wspSearchInput.value = wspMatch ? wspMatch[1] : "";
+    }
+
+    const cleanDesc = rawDesc.replace(/\[WSP\s+([^\]]+)\]/i, "").trim();
+    document.getElementById("gejo-form-description").value = cleanDesc;
+
+    const filenameEl = document.getElementById("gejo-file-before-filename");
+    const previewEl = document.getElementById("gejo-file-before-preview");
+    const previewImg = document.getElementById("gejo-file-before-preview-img");
+    if (ejo.photo_before) {
+        if (filenameEl) filenameEl.textContent = ejo.photo_before.split('/').pop();
+        if (previewImg) previewImg.src = ejo.photo_before;
+        if (previewEl) previewEl.style.display = "flex";
+    } else {
+        resetGejoImagePreview();
+    }
+
+    // Toggle and populate fields if Repair Part
+    toggleGejoRepairFields(ejo.category);
+    if (ejo.category === "Repair Part") {
+        const midEl = document.getElementById("gejo-form-mid");
+        if (midEl) midEl.value = ejo.mid || "";
+        document.getElementById("gejo-form-price-new").value = ejo.part_price_new || 0;
+        const qtyInput = document.getElementById("gejo-form-quantity");
+        if (qtyInput) qtyInput.value = ejo.quantity || 1;
+        const qtyNeededInput = document.getElementById("gejo-form-qty-needed");
+        if (qtyNeededInput) qtyNeededInput.value = (ejo.qty_needed !== undefined) ? ejo.qty_needed : 0;
+        const qtyStockInput = document.getElementById("gejo-form-qty-stock");
+        if (qtyStockInput) qtyStockInput.value = (ejo.qty_stock !== undefined) ? ejo.qty_stock : ((ejo.quantity || 1) - (ejo.qty_needed || 0));
+        document.getElementById("gejo-form-cost-per-day").value = ejo.repair_cost_per_day || 0;
+    }
 
     const submitBtn = document.querySelector('#gejo-form button[type="submit"]');
     if (submitBtn) {
@@ -5719,6 +8238,8 @@ window.editGeneralEjoByUser = function (ejoId) {
 
     document.getElementById("gejo-form-container").style.display = 'block';
     document.getElementById("gejo-form-container").scrollIntoView({ behavior: 'smooth' });
+    updateGejoCategoryOptionsLimit();
+    updateGejoFormCategoryLimitNotice(ejo.category);
     lucide.createIcons();
 };
 
@@ -5740,12 +8261,25 @@ async function uploadDrawing() {
         return;
     }
 
-    const dept = document.getElementById("drawing-form-dept")?.value || '';
+    const dept = document.getElementById("drawing-form-dept")?.value || getUserDepartmentCode() || '';
     const category = document.getElementById("drawing-form-category")?.value || '';
-    const priority = document.getElementById("drawing-form-priority")?.value || 'Low';
+    const prioritySelect = document.getElementById("drawing-form-priority");
+    const priority = prioritySelect ? prioritySelect.value : '3';
+    let urgentReason = prioritySelect ? (prioritySelect.dataset.urgentReason || '').trim() : '';
+
+    if (priority === '1' && !urgentReason) {
+        openUrgentReasonModal("drawing-form-priority");
+        showToast("Mohon isi alasan / justifikasi prioritas urgent pada popup!", "warning");
+        return;
+    }
+
     const targetDate = document.getElementById("drawing-form-target-date")?.value || '';
     const location = document.getElementById("drawing-form-location")?.value?.trim() || '';
-    const description = document.getElementById("drawing-form-description")?.value?.trim() || '';
+    let description = document.getElementById("drawing-form-description")?.value?.trim() || '';
+
+    if (priority === '1' && urgentReason && !description.includes("[JUSTIFIKASI URGENT / PRIORITY 1]:")) {
+        description += `\n\n⚠️ [JUSTIFIKASI URGENT / PRIORITY 1]: ${urgentReason}`;
+    }
     const ejoId = document.getElementById("drawing-form-ejo-id")?.value || '';
 
     const submitBtn = document.querySelector('#drawing-form button[type="submit"]');
@@ -5847,8 +8381,9 @@ async function uploadDrawing() {
         }
         fd.append("file", file);
     }
-    if (customId) {
-        fd.append("drawing_id", customId);
+    const finalCustomId = customId || generateDrawingId();
+    if (finalCustomId) {
+        fd.append("drawing_id", finalCustomId);
     }
     fd.append("title", title);
     fd.append("uploader", state.currentUser ? state.currentUser.fullname : "");
@@ -5905,14 +8440,18 @@ window.editDrawingByUser = function (drawingId) {
 
     state.editingDrawingId = drawingId;
 
+    const customIdInput = document.getElementById("drawing-custom-id");
+    if (customIdInput) {
+        customIdInput.value = drawing.id || "";
+    }
     document.getElementById("drawing-title").value = drawing.title || "";
     document.getElementById("drawing-form-dept").value = normalizeDepartmentCode(drawing.dept) || "";
     document.getElementById("drawing-form-category").value = drawing.category || "";
-    document.getElementById("drawing-form-priority").value = drawing.priority || "Low";
+    document.getElementById("drawing-form-priority").value = getPriorityInfo(drawing.priority).code;
     document.getElementById("drawing-form-target-date").value = drawing.targetDate || "";
     document.getElementById("drawing-form-location").value = drawing.location || "";
-    document.getElementById("drawing-form-description").value = drawing.description || "";
-    document.getElementById("drawing-form-ejo-id").value = drawing.ejo_id || "";
+    const ejoSelect = document.getElementById("drawing-form-ejo-id");
+    if (ejoSelect) ejoSelect.value = drawing.ejo_id || "";
 
     const submitBtn = document.querySelector('#drawing-form button[type="submit"]');
     if (submitBtn) {
@@ -5921,7 +8460,8 @@ window.editDrawingByUser = function (drawingId) {
 
     const fileContainer = document.getElementById("drawing-file-container");
     const requiredStar = document.getElementById("drawing-file-required-star");
-    if (fileContainer) fileContainer.style.display = 'block';
+    // ponytail: change display from block to flex to preserve its flexbox layout and gaps
+    if (fileContainer) fileContainer.style.display = 'flex';
     if (requiredStar) requiredStar.style.display = 'none';
 
     document.getElementById("drawing-form-container").style.display = 'block';
@@ -5934,12 +8474,18 @@ async function deleteDrawing(drawingId) {
     const drawing = (state.drawings || []).find(d => d.id === drawingId);
     if (!drawing) return;
 
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const username = state.currentUser ? state.currentUser.username : '';
     const userLevel = state.currentUser ? getRoleLevel(state.currentUser.role) : 0;
-    const isSchedulePhase = drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected' || drawing.status === 'Checking';
+    const isServerUser = userRole === 'Server' || username === 'server' || userLevel === 100;
+
+    const isSchedulePhase = drawing.status === 'Pending Dept Approval' || drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected' || drawing.status === 'Checking';
     const isUploader = state.currentUser && (drawing.uploader === state.currentUser.fullname || drawing.uploader === state.currentUser.username || drawing.requester === state.currentUser.fullname || drawing.requester === state.currentUser.username);
 
     let canDelete = false;
-    if (isSchedulePhase) {
+    if (isServerUser) {
+        canDelete = true;
+    } else if (isSchedulePhase) {
         canDelete = (userLevel >= 40) || isUploader;
     } else {
         canDelete = (userLevel === 100);
@@ -5963,34 +8509,145 @@ async function deleteDrawing(drawingId) {
     }
 }
 
-// ponytail: auto-generate next drawing ID like DRW-005 based on state.drawings
+// ponytail: auto-generate next drawing ID like EJO00230072026 based on state.drawings and state.generalEjos
 function generateDrawingId() {
-    const drawings = state.drawings || [];
+    const allItems = [...(state.drawings || []), ...(state.generalEjos || [])];
     const nums = [];
-    drawings.forEach(d => {
-        const m = (d.id || '').match(/^DRW-(\d+)$/i);
+    allItems.forEach(d => {
+        const m = (d.id || '').match(/EJO(\d{3})/i) || (d.id || '').match(/(\d+)/);
         if (m) {
             nums.push(parseInt(m[1], 10));
         }
     });
     const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
     const padded = String(nextNum).padStart(3, '0');
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const dateStr = `${dd}${mm}${yyyy}`;
+    const generatedId = `EJO${padded}${dateStr}`;
     const input = document.getElementById("drawing-custom-id");
     if (input) {
-        input.value = `DRW-${padded}`;
+        input.value = generatedId;
     }
+    return generatedId;
 }
 
 // ponytail: Open Drawing Detail Modal with details, signatures, and timeline logs
-function openDrawingDetails(drawingId) {
+function openDrawingDetails(drawingId, fromNotification = false) {
     const drawing = (state.drawings || []).find(d => d.id === drawingId);
     if (!drawing) return;
 
     state.selectedDrawing = drawing;
 
+    const locateBtn = document.getElementById("modal-drawing-locate-btn");
+    if (locateBtn) {
+        if (fromNotification) {
+            locateBtn.style.display = 'inline-flex';
+            locateBtn.onclick = () => {
+                navigateAndFilterDrawing(drawing.id);
+            };
+        } else {
+            locateBtn.style.display = 'none';
+        }
+    }
+
     document.getElementById("modal-drawing-id").textContent = drawing.id;
+
+    // ponytail: populate project notification banner if drawing is transferred to Project Monitoring
+    const linkedProject = state.projects ? state.projects.find(p => p.drawing_id === drawing.id) : null;
+    const projectBanner = document.getElementById("modal-drawing-project-banner");
+    if (projectBanner) {
+        if (linkedProject) {
+            projectBanner.style.display = "block";
+            projectBanner.innerHTML = `
+                <div style="background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 10px; padding: 0.65rem 0.85rem; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.8rem; color: var(--color-cyan); margin-bottom: 0.85rem;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i data-lucide="folder-check" style="width: 18px; height: 18px; flex-shrink: 0;"></i>
+                        <div>
+                            Drawing ini masuk ke <strong style="color: var(--text-primary);">Project Monitoring (${linkedProject.id})</strong> &bull; <span style="color: #f59e0b; font-weight: 600;">Review Only</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan); padding: 4px 10px; font-size: 0.73rem; border-radius: 6px; white-space: nowrap;" onclick="closeDrawingModal(); flexToProjectTab('${drawing.id}');">
+                        Buka Project &rarr;
+                    </button>
+                </div>
+            `;
+        } else {
+            projectBanner.style.display = "none";
+        }
+    }
+
+    // ponytail: populate rejection banner if drawing has a rejection or return event
+    const rejectionBanner = document.getElementById("modal-drawing-rejection-banner");
+    if (rejectionBanner) {
+        let rejectInfo = null;
+
+        // 1. Check approvals for reject entries (e.g. manager_reject, requester_reject, etc.)
+        const approvalsObj = (typeof drawing.approvals === 'string') ? JSON.parse(drawing.approvals || '{}') : (drawing.approvals || {});
+        const rejectKeys = Object.keys(approvalsObj).filter(k => k.endsWith('_reject'));
+        if (rejectKeys.length > 0) {
+            const latestKey = rejectKeys[rejectKeys.length - 1];
+            const rejectApp = approvalsObj[latestKey];
+            if (rejectApp) {
+                rejectInfo = {
+                    by: `${rejectApp.role || 'Approver'} (${rejectApp.signer || 'User'})`,
+                    reason: rejectApp.reason || rejectApp.message || rejectApp.note || '-',
+                    date: rejectApp.date || ''
+                };
+            }
+        }
+
+        // 2. Fallback to latest rejection/return entry in timeline logs
+        if (!rejectInfo || !rejectInfo.reason || rejectInfo.reason === '-') {
+            const logsArr = (typeof drawing.logs === 'string') ? JSON.parse(drawing.logs || '[]') : (drawing.logs || []);
+            const rejectLogs = logsArr.filter(l => l.message && (l.message.toLowerCase().includes('dikembalikan') || l.message.toLowerCase().includes('ditolak')));
+            if (rejectLogs.length > 0) {
+                const latestLog = rejectLogs[rejectLogs.length - 1];
+                let extractedReason = '-';
+                const reasonMatch = latestLog.message.match(/dengan alasan:\s*["'«]?([^"'\n»]+)["'»]?/i);
+                if (reasonMatch && reasonMatch[1]) {
+                    extractedReason = reasonMatch[1].trim();
+                }
+
+                let extractedBy = 'Approver';
+                const byMatch = latestLog.message.match(/(?:dikembalikan|ditolak)\s+oleh\s+([^(]+(?:\([^)]+\))?)/i);
+                if (byMatch && byMatch[1]) {
+                    extractedBy = byMatch[1].trim();
+                }
+
+                if (!rejectInfo) {
+                    rejectInfo = {
+                        by: extractedBy,
+                        reason: extractedReason,
+                        date: latestLog.date || ''
+                    };
+                } else if (extractedReason !== '-') {
+                    rejectInfo.reason = extractedReason;
+                }
+            }
+        }
+
+        if (rejectInfo && rejectInfo.reason && rejectInfo.reason !== '-') {
+            rejectionBanner.style.display = "block";
+            const rejTitleEl = document.getElementById("modal-drawing-rejection-title");
+            const rejByEl = document.getElementById("modal-drawing-rejection-by");
+            const rejDateEl = document.getElementById("modal-drawing-rejection-date");
+            const rejReasonEl = document.getElementById("modal-drawing-rejection-reason");
+            if (rejTitleEl) rejTitleEl.textContent = "Drawing Dikembalikan / Ditolak";
+            if (rejByEl) rejByEl.textContent = rejectInfo.by;
+            if (rejDateEl) rejDateEl.textContent = rejectInfo.date || '';
+            if (rejReasonEl) rejReasonEl.textContent = `"${rejectInfo.reason}"`;
+        } else {
+            rejectionBanner.style.display = "none";
+        }
+    }
+
     document.getElementById("modal-drawing-title").textContent = drawing.title;
-    document.getElementById("modal-drawing-uploader").textContent = drawing.uploader || '-';
+    document.getElementById("modal-drawing-uploader").textContent = drawing.uploader 
+        ? `${drawing.uploader} (${drawing.dept || '-'})` 
+        : '-';
     document.getElementById("modal-drawing-date").textContent = drawing.uploaded_at || '-';
     const targetDateEl = document.getElementById("modal-drawing-target-date");
     if (targetDateEl) {
@@ -6028,7 +8685,12 @@ function openDrawingDetails(drawingId) {
 
     const statusBadge = document.getElementById("modal-drawing-status-badge");
     if (statusBadge) {
-        statusBadge.textContent = drawing.status;
+        let displayStatus = drawing.status;
+        if (drawing.status === 'Pending Requester Approval') {
+            const deptCode = (drawing.dept || '').trim().toUpperCase();
+            displayStatus = deptCode ? `Pending Staff (${deptCode}) Approval` : 'Pending Staff Approval';
+        }
+        statusBadge.textContent = displayStatus;
         statusBadge.className = "badge";
         if (drawing.status === 'Completed') {
             statusBadge.classList.add("status-completed");
@@ -6055,22 +8717,12 @@ function openDrawingDetails(drawingId) {
                 </div>
             `;
         } else {
-            const isPdf = (drawing.file_path || '').toLowerCase().endsWith('.pdf');
-            const isDwg = (drawing.file_path || '').toLowerCase().endsWith('.dwg');
+            // ponytail: strip query parameters when checking extension to support cache busting
+            const cleanPath = (drawing.file_path || '').split('?')[0];
+            const isPdf = cleanPath.toLowerCase().endsWith('.pdf');
+            const isDwg = cleanPath.toLowerCase().endsWith('.dwg');
             if (isPdf) {
-                previewContainer.innerHTML = `
-                    <object data="${drawing.file_path}" type="application/pdf" style="width: 100%; height: 100%; min-height: 400px; border-radius: 8px;">
-                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 2rem; text-align: center; width: 100%;">
-                            <i data-lucide="file-text" style="width: 48px; height: 48px; color: var(--color-cyan);"></i>
-                            <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">Dokumen PDF: ${drawing.title}</div>
-                            <div style="font-size: 0.75rem; color: var(--text-secondary); max-width: 250px;">Pratinjau PDF tidak didukung oleh browser Anda secara langsung.</div>
-                            <a href="${drawing.file_path}" target="_blank" class="btn btn-primary" style="margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; padding: 6px 16px; font-size: 0.8rem;">
-                                <i data-lucide="external-link" style="width: 14px; height: 14px;"></i>
-                                Buka di Tab Baru
-                            </a>
-                        </div>
-                    </object>
-                `;
+                renderDrawingPreview(drawing.file_path, drawing.title, previewContainer);
             } else if (isDwg) {
                 previewContainer.innerHTML = `
                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 2.5rem 1.5rem; text-align: center; width: 100%; height: 100%; min-height: 400px; background: radial-gradient(circle, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.95) 100%); border-radius: 8px; border: 2px dashed rgba(2, 132, 199, 0.3); box-sizing: border-box;">
@@ -6095,7 +8747,7 @@ function openDrawingDetails(drawingId) {
                     </div>
                 `;
             } else {
-                previewContainer.innerHTML = `<img src="${drawing.file_path}" style="max-width: 100%; max-height: 400px; object-fit: contain; cursor: zoom-in; border-radius: 8px;" onclick="window.open('${drawing.file_path}', '_blank')">`;
+                renderDrawingPreview(drawing.file_path, drawing.title, previewContainer);
             }
         }
     }
@@ -6108,12 +8760,18 @@ function openDrawingDetails(drawingId) {
 
     const deleteBtn = document.getElementById("modal-drawing-delete-btn");
     if (deleteBtn) {
+        const userRole = state.currentUser ? state.currentUser.role : '';
+        const username = state.currentUser ? state.currentUser.username : '';
         const userLevel = state.currentUser ? getRoleLevel(state.currentUser.role) : 0;
-        const isSchedulePhase = drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected';
+        const isServerUser = userRole === 'Server' || username === 'server' || userLevel === 100;
+        const isSchedulePhase = drawing.status === 'Pending Dept Approval' || drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected' || drawing.status === 'Checking';
+        const isUploader = state.currentUser && (drawing.uploader === state.currentUser.fullname || drawing.uploader === state.currentUser.username || drawing.requester === state.currentUser.fullname || drawing.requester === state.currentUser.username);
 
         let canDelete = false;
-        if (isSchedulePhase) {
-            canDelete = (userLevel >= 40);
+        if (isServerUser) {
+            canDelete = true;
+        } else if (isSchedulePhase) {
+            canDelete = (userLevel >= 40) || isUploader;
         } else {
             canDelete = (userLevel === 100); // Only Server account can delete once drawing enters On Progress or Done
         }
@@ -6131,10 +8789,146 @@ function openDrawingDetails(drawingId) {
         cancelBtn.style.display = 'none';
     }
 
-    // ponytail: handle Drafter/Admin/Server file upload section in modal (completely hidden now, upload handled via Kanban card instead)
+    // ponytail: handle Drafter/Admin/Server file upload section in modal (allowed until Drafter submits to Requester)
     const uploadSection = document.getElementById("modal-drawing-upload-section");
+    const fileInput = document.getElementById("modal-drawing-file-input");
+    const uploadBtn = document.getElementById("modal-drawing-upload-file-btn");
+    const deleteFileBtn = document.getElementById("modal-drawing-delete-file-btn");
+
     if (uploadSection) {
-        uploadSection.style.display = 'none';
+        const userRole = state.currentUser ? state.currentUser.role : '';
+        const userName = state.currentUser ? state.currentUser.username : '';
+        const userFull = state.currentUser ? state.currentUser.fullname : '';
+
+        const isDrafterOrLead = (userRole === 'Drafter' || userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server' || (drawing.engineer && (drawing.engineer === userName || drawing.engineer === userFull)));
+
+        // Upload/edit/delete is allowed ONLY BEFORE Drafter submits to Requester
+        const lockedStatuses = ['Pending Requester Approval', 'Pending Dept Approval', 'Pending Supervisor Approval', 'Pending Manager Approval', 'Pending Factory Manager Approval', 'Completed', 'Cancelled'];
+        const isEditablePhase = !lockedStatuses.includes(drawing.status);
+
+        if (isDrafterOrLead && isEditablePhase) {
+            uploadSection.style.display = 'flex';
+
+            // Show delete button if file exists
+            if (deleteFileBtn) {
+                deleteFileBtn.style.display = (drawing.file_path && drawing.file_path.trim() !== '') ? 'inline-flex' : 'none';
+                deleteFileBtn.onclick = async () => {
+                    if (!confirm("Apakah Anda yakin ingin menghapus file drawing ini?")) return;
+                    try {
+                        const now = new Date().toLocaleString('id-ID');
+                        const logsArr = (typeof drawing.logs === 'string') ? JSON.parse(drawing.logs || '[]') : (drawing.logs || []);
+                        logsArr.push({
+                            date: now,
+                            message: `File drawing (${drawing.file_path.split('/').pop()}) dihapus oleh ${userFull || userName}.`
+                        });
+
+                        drawing.file_path = '';
+                        drawing.logs = logsArr;
+
+                        const payload = {
+                            id: drawing.id,
+                            status: drawing.status,
+                            file_path: '',
+                            logs: JSON.stringify(logsArr),
+                            approvals: (typeof drawing.approvals === 'string') ? drawing.approvals : JSON.stringify(drawing.approvals || {}),
+                            engineer: drawing.engineer || ''
+                        };
+
+                        const res = await fetch(`/api/drawings/${drawing.id}?requester=${encodeURIComponent(userName)}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const result = await res.json();
+                        if (result.status === 'success') {
+                            showToast("File drawing berhasil dihapus.", "success");
+                            openDrawingDetails(drawing.id);
+                            if (typeof renderDrawingTable === 'function') renderDrawingTable();
+                            if (typeof renderKanbanBoard === 'function') renderKanbanBoard();
+                        } else {
+                            showToast(result.message || "Gagal menghapus file drawing.", "error");
+                        }
+                    } catch (err) {
+                        console.error("Delete file error:", err);
+                        showToast("Terjadi kesalahan saat menghapus file.", "error");
+                    }
+                };
+            }
+
+            if (uploadBtn && fileInput) {
+                uploadBtn.onclick = async () => {
+                    const file = fileInput.files[0];
+                    if (!file) {
+                        showToast("Silakan pilih file drawing terlebih dahulu.", "warning");
+                        return;
+                    }
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+
+                        uploadBtn.disabled = true;
+                        uploadBtn.innerHTML = `<i data-lucide="loader" class="animate-spin" style="width:14px;height:14px;"></i> Mengunggah...`;
+
+                        const upRes = await fetch('/api/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const upData = await upRes.json();
+
+                        if (upData.status === 'success' && (upData.file_path || upData.url)) {
+                            const uploadedPath = upData.file_path || upData.url;
+                            const now = new Date().toLocaleString('id-ID');
+                            const logsArr = (typeof drawing.logs === 'string') ? JSON.parse(drawing.logs || '[]') : (drawing.logs || []);
+                            logsArr.push({
+                                date: now,
+                                message: `File drawing (${uploadedPath.split('/').pop()}) berhasil diunggah/diperbarui oleh ${userFull || userName}.`
+                            });
+
+                            drawing.file_path = uploadedPath;
+                            drawing.logs = logsArr;
+
+                            const payload = {
+                                id: drawing.id,
+                                status: drawing.status,
+                                file_path: uploadedPath,
+                                logs: JSON.stringify(logsArr),
+                                approvals: (typeof drawing.approvals === 'string') ? drawing.approvals : JSON.stringify(drawing.approvals || {}),
+                                engineer: drawing.engineer || ''
+                            };
+
+                            const res = await fetch(`/api/drawings/${drawing.id}?requester=${encodeURIComponent(userName)}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+
+                            const result = await res.json();
+                            if (result.status === 'success') {
+                                showToast("File drawing berhasil diunggah.", "success");
+                                fileInput.value = '';
+                                openDrawingDetails(drawing.id);
+                                if (typeof renderDrawingTable === 'function') renderDrawingTable();
+                                if (typeof renderKanbanBoard === 'function') renderKanbanBoard();
+                            } else {
+                                showToast(result.message || "Gagal mengunggah file drawing.", "error");
+                            }
+                        } else {
+                            showToast(upData.message || "Gagal mengunggah file.", "error");
+                        }
+                    } catch (err) {
+                        console.error("Upload file error:", err);
+                        showToast("Terjadi kesalahan saat mengunggah file.", "error");
+                    } finally {
+                        uploadBtn.disabled = false;
+                        uploadBtn.innerHTML = `<i data-lucide="upload" style="width:14px;height:14px;"></i><span>Unggah / Ganti</span>`;
+                        if (typeof lucide !== 'undefined') lucide.createIcons();
+                    }
+                };
+            }
+        } else {
+            uploadSection.style.display = 'none';
+        }
     }
 
     // ponytail: handle drawing assignment section
@@ -6155,7 +8949,7 @@ function openDrawingDetails(drawingId) {
         const userRole = state.currentUser ? state.currentUser.role : '';
         const userFullname = state.currentUser ? state.currentUser.fullname : '';
 
-        const isLead = (userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server');
+        const isLead = (userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server');
         const isClosed = drawing.status === 'Completed' || drawing.status === 'Cancelled';
         let canAssign = false; // ponytail: disabled edit mode in sidebar; assignment is handled via popup modal during approval
 
@@ -6183,7 +8977,7 @@ function openDrawingDetails(drawingId) {
                     const isSelected = u.fullname === selectedFullName;
                     const checkedAttr = isSelected ? "checked" : "";
                     const selectedClass = isSelected ? "selected" : "";
-                    const avatarUrl = u.avatar ? (u.avatar.startsWith('http') || u.avatar.startsWith('/') ? u.avatar : '/' + u.avatar) : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+                    const avatarUrl = u.avatar ? (u.avatar.startsWith('http') ? u.avatar : u.avatar.startsWith('photo-') ? 'https://images.unsplash.com/' + u.avatar : u.avatar.startsWith('/') ? u.avatar : '/' + u.avatar) : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
                     const roleClass = 'role-badge-' + u.role.toLowerCase();
 
                     html += `
@@ -6192,7 +8986,11 @@ function openDrawingDetails(drawingId) {
                                 <img src="${avatarUrl}" class="eng-avatar" alt="${u.fullname}" />
                                 <div class="eng-details">
                                     <span class="eng-name">${u.fullname}</span>
-                                    <span class="eng-role-badge ${roleClass}">${u.role}</span>
+                                    <div style="display: flex; align-items: center; gap: 4px;">
+                                        <span class="eng-role-badge ${roleClass}">${u.role}</span>
+                                        <!-- ponytail: show count of active EJO assignments -->
+                                        <span class="eng-role-badge" style="background: var(--color-cyan-glow); color: var(--color-cyan); text-transform: uppercase;">${getActiveEjoCountForUser(u.fullname)} EJO</span>
+                                    </div>
                                 </div>
                             </div>
                             <div style="display: flex; align-items: center;">
@@ -6260,7 +9058,7 @@ function openDrawingDetails(drawingId) {
 
     // Signatures
     const approvals = drawing.approvals || {};
-    const roles = ['drafter', 'requester', 'foreman', 'supervisor', 'manager'];
+    const roles = ['drafter', 'requester', 'dept', 'foreman', 'supervisor', 'manager', 'factory_manager'];
     roles.forEach(r => {
         const infoEl = document.getElementById(`sig-info-${r}`);
         const imgContainer = document.getElementById(`sig-img-container-${r}`);
@@ -6268,14 +9066,25 @@ function openDrawingDetails(drawingId) {
         const app = approvals[r];
         const rejectApp = approvals[r + "_reject"];
 
-        // Dynamically update role title based on who signed (e.g. Admin or Foreman)
+        // Dynamically update role title based on who signed (e.g. Admin Eng or Foreman Eng)
         if (titleEl) {
             if (app && app.role) {
                 titleEl.textContent = app.role.toUpperCase();
             } else if (rejectApp && rejectApp.role) {
                 titleEl.textContent = rejectApp.role.toUpperCase();
             } else {
-                titleEl.textContent = r.toUpperCase();
+                const deptCode = (drawing.dept || '').trim().toUpperCase();
+                const requesterTitle = deptCode ? `STAFF (${deptCode})` : 'STAFF (DEPT)';
+                const deptTitle = deptCode ? `SPV (${deptCode})` : 'SPV (DEPT)';
+                const defaultTitles = {
+                    requester: requesterTitle,
+                    dept: deptTitle,
+                    foreman: 'FOREMAN ENG',
+                    supervisor: 'SUPERVISOR ENG',
+                    manager: 'MANAGER ENG',
+                    factory_manager: 'FACTORY MANAGER'
+                };
+                titleEl.textContent = defaultTitles[r] || r.toUpperCase();
             }
         }
 
@@ -6306,10 +9115,17 @@ function openDrawingDetails(drawingId) {
     if (actionSection && activeRoleLabel && approveBtn && rejectBtn) {
         const userRole = state.currentUser ? state.currentUser.role : '';
         const userFullname = state.currentUser ? state.currentUser.fullname : '';
+        const username = state.currentUser ? state.currentUser.username : '';
         let showActions = false;
         let roleText = '';
 
-        const isAssigned = drawing.engineer === userFullname;
+        const isAssigned = state.currentUser && (
+            (drawing.engineer && userFullname && drawing.engineer.toLowerCase().includes(userFullname.toLowerCase())) ||
+            (drawing.engineer && username && drawing.engineer.toLowerCase().includes(username.toLowerCase())) ||
+            (userFullname && drawing.engineer && userFullname.toLowerCase().includes(drawing.engineer.toLowerCase())) ||
+            (username && drawing.engineer && username.toLowerCase().includes(drawing.engineer.toLowerCase()))
+        );
+        const isDrafter = isDrafterRole(userRole) || userRole === 'Drafter' || userRole === 'Drafter Eng' || userRole === 'Drafter/Engineer';
 
         // Reset elements to default state
         approveBtn.disabled = false;
@@ -6320,15 +9136,15 @@ function openDrawingDetails(drawingId) {
         approveBtn.innerHTML = '<i data-lucide="check" style="width: 14px; height: 14px;"></i><span>Setujui</span>';
         rejectBtn.innerHTML = '<i data-lucide="x" style="width: 14px; height: 14px;"></i><span>Tolak</span>';
 
-        if (drawing.status === 'Pending Foreman Approval' && (userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server')) {
+        if (drawing.status === 'Pending Foreman Approval' && (userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server')) {
             showActions = true;
-            roleText = 'Foreman';
-        } else if (drawing.status === 'Checking' && (userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server')) {
+            roleText = 'Foreman Eng';
+        } else if (drawing.status === 'Checking' && (userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server')) {
             showActions = true;
-            roleText = 'Foreman';
+            roleText = 'Foreman Eng';
             approveBtn.innerHTML = '<i data-lucide="play" style="width: 14px; height: 14px;"></i><span>Mulai Pengerjaan</span>';
             rejectBtn.style.display = 'none';
-        } else if (drawing.status === 'On Progress' && (isAssigned || userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server')) {
+        } else if (drawing.status === 'On Progress' && (isAssigned || isDrafter || userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server')) {
             showActions = true;
             roleText = 'Drafter';
             approveBtn.innerHTML = '<i data-lucide="send" style="width: 14px; height: 14px;"></i><span>Kirim untuk Persetujuan</span>';
@@ -6339,22 +9155,25 @@ function openDrawingDetails(drawingId) {
                 approveBtn.style.opacity = '0.5';
                 approveBtn.style.cursor = 'not-allowed';
             }
-        } else if (drawing.status === 'Pending Supervisor Approval' && (userRole === 'Supervisor' || userRole === 'Server')) {
+        } else if (drawing.status === 'Pending Dept Approval' && isDepartmentApprover(state.currentUser, drawing.dept, drawing)) {
             showActions = true;
-            roleText = 'Supervisor';
-        } else if (drawing.status === 'Pending Manager Approval' && (userRole === 'Manager' || userRole === 'Plant Manager' || userRole === 'Server')) {
+            const deptCode = (drawing.dept || '').trim().toUpperCase();
+            roleText = deptCode ? `SPV (${deptCode})` : 'SPV Dept';
+        } else if (drawing.status === 'Pending Supervisor Approval' && (userRole === 'Supervisor Eng' || userRole === 'Server')) {
             showActions = true;
-            roleText = 'Manager';
+            roleText = 'Supervisor Eng';
+        } else if (drawing.status === 'Pending Manager Approval' && (userRole === 'Manager Eng' || userRole === 'Plant Manager' || userRole === 'Server')) {
+            showActions = true;
+            roleText = 'Manager Eng';
         } else if (drawing.status === 'Pending Requester Approval') {
-            const isRequester = (userFullname === drawing.requester || userFullname === drawing.uploader || userRole === 'Admin' || userRole === 'Server');
-            if (isRequester) {
+            if (checkIsRequesterOrRole(drawing)) {
                 showActions = true;
                 roleText = 'Requester';
             }
         }
 
-        // ponytail: tindakan approval/reject dihilangkan dari detail modal atas permintaan user (cukup lewat tombol di kartu Kanban)
         actionSection.style.display = 'none';
+        if (activeRoleLabel) activeRoleLabel.textContent = roleText;
     }
 
     // ponytail: Archive action logic
@@ -6364,7 +9183,7 @@ function openDrawingDetails(drawingId) {
         const userRole = state.currentUser ? state.currentUser.role : '';
         const userFullname = state.currentUser ? state.currentUser.fullname : '';
         const isUploader = userFullname === drawing.uploader;
-        const isSystemAdmin = (userRole === 'Admin' || userRole === 'Server');
+        const isSystemAdmin = (userRole === 'Admin Eng' || userRole === 'Server');
         const canArchive = isUploader || isSystemAdmin;
 
         if (drawing.status === 'Completed' && canArchive) {
@@ -6440,6 +9259,265 @@ function closeDrawingModal() {
     if (modal) modal.style.display = "none";
     state.selectedDrawing = null;
 }
+window.closeDrawingModal = closeDrawingModal;
+window.closeDrawingDetailsModal = closeDrawingModal;
+
+// ponytail: Helper to render interactive drawing preview (PDF/Image) with pan and zoom support (for desktop and mobile)
+function renderDrawingPreview(fileUrl, title, container) {
+    if (!fileUrl) {
+        container.innerHTML = '';
+        return;
+    }
+
+    // ponytail: strip query parameters when checking extension to support cache busting
+    const cleanUrl = fileUrl.split('?')[0];
+    const isPdf = cleanUrl.toLowerCase().endsWith('.pdf') || fileUrl.startsWith('data:application/pdf');
+
+    // ponytail: append timestamp cache buster if it's a local upload URL to prevent loading outdated cached previews
+    let viewUrl = fileUrl;
+    if (fileUrl.startsWith('/') && !fileUrl.startsWith('data:')) {
+        viewUrl = fileUrl + (fileUrl.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+    }
+
+    let fetchUrl = viewUrl;
+    if (fileUrl.startsWith('/') && !fileUrl.startsWith('data:')) {
+        // ponytail: serve as application/octet-stream if preview=1 to prevent IDM intercepting AJAX requests
+        fetchUrl = viewUrl + '&preview=1';
+    }
+    
+    // Generate viewport wrapper
+    container.innerHTML = `
+        <div class="interactive-preview-viewport" style="position: relative; width: 100%; height: 450px; overflow: hidden; background: rgba(0,0,0,0.15); border-radius: 8px; border: 1px solid var(--card-border); cursor: grab; display: flex; align-items: center; justify-content: center; box-sizing: border-box; user-select: none;">
+            <div class="interactive-preview-content" style="transform-origin: center center; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; transition: transform 0.05s ease-out; box-sizing: border-box;">
+                <!-- Content will be injected here -->
+            </div>
+            
+            <!-- Sleek Glassmorphic Floating controls -->
+            <div style="position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px; z-index: 10; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 4px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.15); align-items: center; justify-content: center;">
+                <button class="zoom-btn zoom-in" style="background: none; border: none; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Perbesar">
+                    <i data-lucide="zoom-in" style="width: 16px; height: 16px;"></i>
+                </button>
+                <button class="zoom-btn zoom-out" style="background: none; border: none; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Perkecil">
+                    <i data-lucide="zoom-out" style="width: 16px; height: 16px;"></i>
+                </button>
+                <button class="zoom-btn zoom-reset" style="background: none; border: none; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Reset Posisi">
+                    <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                </button>
+                <a href="${viewUrl}" target="_blank" style="background: none; border: none; color: var(--color-cyan); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'" title="Buka Tab Baru">
+                    <i data-lucide="external-link" style="width: 16px; height: 16px;"></i>
+                </a>
+            </div>
+            
+            <div class="interactive-preview-loading" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(15,23,42,0.85); z-index: 5; box-sizing: border-box; border-radius: 8px;">
+                <div style="width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--color-cyan); border-radius: 50%; animation: pdf-spin 1s linear infinite;"></div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary);">Memuat gambar teknik...</div>
+            </div>
+        </div>
+    `;
+
+    const viewport = container.querySelector('.interactive-preview-viewport');
+    const content = container.querySelector('.interactive-preview-content');
+    const loadingOverlay = container.querySelector('.interactive-preview-loading');
+
+    // Create style for spinner if needed
+    if (!document.getElementById('pdf-spin-style')) {
+        const style = document.createElement('style');
+        style.id = 'pdf-spin-style';
+        style.innerHTML = `@keyframes pdf-spin { to { transform: rotate(360deg); } }`;
+        document.head.appendChild(style);
+    }
+
+    if (window.lucide) {
+        window.lucide.createIcons({ nodes: [viewport] });
+    }
+
+    if (isPdf) {
+        // PDF loader
+        const loadPdfJs = () => {
+            return new Promise((resolve, reject) => {
+                if (window.pdfjsLib) {
+                    resolve();
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+                script.onload = () => {
+                    const workerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+                    if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+                        window.pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+                    }
+                    resolve();
+                };
+                script.onerror = () => reject(new Error('Gagal memuat library PDF.'));
+                document.head.appendChild(script);
+            });
+        };
+
+        loadPdfJs().then(() => {
+            // ponytail: fetch PDF as ArrayBuffer first to avoid worker CORS/Range request issues causing UnknownErrorException
+            return fetch(fetchUrl)
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.arrayBuffer();
+                })
+                .catch(() => {
+                    return fetch(viewUrl).then(res => {
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        return res.arrayBuffer();
+                    });
+                })
+                .then(arrayBuffer => {
+                    const typedarray = new Uint8Array(arrayBuffer);
+                    return window.pdfjsLib.getDocument({
+                        data: typedarray,
+                        cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+                        cMapPacked: true
+                    }).promise;
+                })
+                .catch(err => {
+                    console.warn('ArrayBuffer PDF load failed, trying URL fallback:', err);
+                    return window.pdfjsLib.getDocument(fetchUrl).promise;
+                })
+                .then(pdf => {
+                    return pdf.getPage(1).then(page => {
+                        const viewportPage = page.getViewport({ scale: 2.0 }); // Render high resolution
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        canvas.height = viewportPage.height;
+                        canvas.width = viewportPage.width;
+                        
+                        // Style to fit properly inside interactive wrapper
+                        canvas.style.maxWidth = '100%';
+                        canvas.style.maxHeight = '100%';
+                        canvas.style.objectFit = 'contain';
+                        canvas.style.borderRadius = '4px';
+
+                        return page.render({ canvasContext: ctx, viewport: viewportPage }).promise.then(() => {
+                            content.appendChild(canvas);
+                            if (loadingOverlay) loadingOverlay.remove();
+                            initPanZoom(viewport, content);
+                        });
+                    });
+                });
+        }).catch(err => {
+            console.error('Interactive PDF error:', err);
+            // Fallback inside content
+            content.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 2rem;">
+                    <i data-lucide="file-text" style="width: 48px; height: 48px; color: var(--color-cyan);"></i>
+                    <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">Dokumen PDF: ${title}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Pratinjau gagal dimuat. Silakan klik tombol di bawah untuk membuka berkas secara langsung.</div>
+                    <a href="${viewUrl}" target="_blank" class="btn btn-primary" style="margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; padding: 6px 16px; font-size: 0.8rem;">
+                        <i data-lucide="external-link" style="width: 14px; height: 14px;"></i> Buka di Tab Baru
+                    </a>
+                </div>
+            `;
+            if (loadingOverlay) loadingOverlay.remove();
+            if (window.lucide) {
+                window.lucide.createIcons({ nodes: [content] });
+            }
+        });
+    } else {
+        // Image loader
+        const img = new Image();
+        img.src = fetchUrl;
+        img.style.maxWidth = '100%';
+        img.style.maxHeight = '100%';
+        img.style.objectFit = 'contain';
+        img.style.borderRadius = '4px';
+        img.style.pointerEvents = 'none'; // Essential so browser drag API doesn't intercept dragging
+        
+        img.onload = () => {
+            content.appendChild(img);
+            if (loadingOverlay) loadingOverlay.remove();
+            initPanZoom(viewport, img);
+        };
+        img.onerror = () => {
+            content.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 2rem;">
+                    <i data-lucide="image-off" style="width: 48px; height: 48px; color: var(--text-muted);"></i>
+                    <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">Gagal Memuat Gambar</div>
+                </div>
+            `;
+            if (loadingOverlay) loadingOverlay.remove();
+            if (window.lucide) {
+                window.lucide.createIcons({ nodes: [content] });
+            }
+        };
+    }
+
+    // Pan & Zoom Engine
+    function initPanZoom(vp, target) {
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        function update() {
+            scale = Math.max(0.5, Math.min(scale, 6)); // Bounds: 0.5x to 6x
+            target.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`;
+        }
+
+        // Set dragging start
+        const start = (e) => {
+            if (e.target.closest('button') || e.target.closest('a')) return;
+            isDragging = true;
+            vp.style.cursor = 'grabbing';
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            startX = clientX - panX;
+            startY = clientY - panY;
+            if (e.cancelable) e.preventDefault();
+        };
+
+        const move = (e) => {
+            if (!isDragging) return;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            panX = clientX - startX;
+            panY = clientY - startY;
+            update();
+            if (e.cancelable) e.preventDefault();
+        };
+
+        const stop = () => {
+            isDragging = false;
+            vp.style.cursor = 'grab';
+        };
+
+        // Event hooks
+        vp.addEventListener('mousedown', start);
+        vp.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', stop);
+        vp.addEventListener('mouseleave', stop);
+
+        vp.addEventListener('touchstart', start, { passive: false });
+        vp.addEventListener('touchmove', move, { passive: false });
+        vp.addEventListener('touchend', stop);
+
+        // Wheel Zoom
+        vp.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 0.15 : -0.15;
+            scale += delta;
+            update();
+        }, { passive: false });
+
+        // Bind control buttons
+        const btnIn = vp.querySelector('.zoom-in');
+        const btnOut = vp.querySelector('.zoom-out');
+        const btnReset = vp.querySelector('.zoom-reset');
+
+        if (btnIn) btnIn.addEventListener('click', () => { scale += 0.3; update(); });
+        if (btnOut) btnOut.addEventListener('click', () => { scale -= 0.3; update(); });
+        if (btnReset) btnReset.addEventListener('click', () => { scale = 1; panX = 0; panY = 0; update(); });
+        
+        // Initial call
+        update();
+    }
+}
 
 // ponytail: Custom popup modal for approving drawing request with engineer and targetDate selection (premium style)
 function showDrawingApprovalModal(drawing) {
@@ -6479,7 +9557,7 @@ function showDrawingApprovalModal(drawing) {
             const isSelected = u.fullname === selectedFullName;
             const checkedAttr = isSelected ? "checked" : "";
             const selectedClass = isSelected ? "selected" : "";
-            const avatarUrl = u.avatar ? (u.avatar.startsWith('http') || u.avatar.startsWith('/') ? u.avatar : '/' + u.avatar) : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+            const avatarUrl = u.avatar ? (u.avatar.startsWith('http') ? u.avatar : u.avatar.startsWith('photo-') ? 'https://images.unsplash.com/' + u.avatar : u.avatar.startsWith('/') ? u.avatar : '/' + u.avatar) : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
             const roleClass = 'role-badge-' + u.role.toLowerCase();
             
             rowsHtml += `
@@ -6494,9 +9572,13 @@ function showDrawingApprovalModal(drawing) {
                 ">
                     <div class="eng-info" style="display: flex; align-items: center; gap: 10px;">
                         <img src="${avatarUrl}" class="eng-avatar" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;" alt="${u.fullname}" />
-                        <div class="eng-details" style="display: flex; flex-direction: column;">
+                        <div class="eng-details" style="display: flex; flex-direction: column; gap: 2px;">
                             <span class="eng-name" style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); text-align: left;">${u.fullname}</span>
-                            <span class="eng-role-badge ${roleClass}" style="font-size: 0.65rem; color: var(--text-secondary); text-align: left;">${u.role}</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <span class="eng-role-badge ${roleClass}">${u.role}</span>
+                                <!-- ponytail: show count of active EJO assignments -->
+                                <span class="eng-role-badge" style="background: var(--color-cyan-glow); color: var(--color-cyan); text-transform: uppercase;">${getActiveEjoCountForUser(u.fullname)} EJO</span>
+                            </div>
                         </div>
                     </div>
                     <div style="display: flex; align-items: center;">
@@ -6531,8 +9613,8 @@ function showDrawingApprovalModal(drawing) {
                     </div>
                 </div>
                 <div style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem; text-align: left;">
-                    <label for="drawing-approve-target-date" style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Estimasi Selesai <span class="required">*</span>:</label>
-                    <input type="date" id="drawing-approve-target-date" value="${currentTargetDate}" style="width: 100%; padding: 0.6rem; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;" required />
+                    <label for="drawing-approve-target-date" style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Estimasi Selesai <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span>:</label>
+                    <input type="date" id="drawing-approve-target-date" value="${currentTargetDate}" style="width: 100%; padding: 0.6rem; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;" />
                 </div>
                 <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.5rem;">
                     <button class="btn btn-outline full-width" id="drawing-approve-btn-cancel" style="padding: 0.6rem;">Batal</button>
@@ -6565,12 +9647,8 @@ function showDrawingApprovalModal(drawing) {
                 return;
             }
             const targetDateInput = document.getElementById("drawing-approve-target-date");
-            if (!targetDateInput || !targetDateInput.value) {
-                showToast("Silakan tentukan estimasi selesai terlebih dahulu!", "warning");
-                return;
-            }
             const engineer = selectedRadio.value;
-            const targetDate = targetDateInput.value;
+            const targetDate = targetDateInput ? targetDateInput.value : '';
             backdrop.remove();
             resolve({ engineer: engineer === 'Unassigned' ? null : engineer, targetDate });
         };
@@ -6579,18 +9657,34 @@ function showDrawingApprovalModal(drawing) {
 
 // ponytail: Handle drawing approval or rejection, requesting signature and logs
 async function moveDrawingStatus(drawingId, action) {
-    const drawing = (state.drawings || []).find(d => d.id === drawingId);
-    if (!drawing) return;
+    const cleanTargetId = String(drawingId || '').replace(/[\/\-_]/g, '').toLowerCase();
+    const drawing = (state.drawings || []).find(d => 
+        String(d.id) === String(drawingId) || 
+        String(d.id).replace(/[\/\-_]/g, '').toLowerCase() === cleanTargetId
+    );
+    if (!drawing) {
+        showToast(`Drawing EJO (${drawingId}) tidak ditemukan`, "error");
+        return;
+    }
 
     const userRole = state.currentUser ? state.currentUser.role : '';
     const userFullname = state.currentUser ? state.currentUser.fullname : '';
+    const username = state.currentUser ? state.currentUser.username : '';
     const now = new Date().toLocaleString('id-ID', { hour12: false }).replace(/\//g, '-');
 
     let nextStatus = '';
     let roleKey = '';
     let roleLabel = '';
 
-    if (drawing.status === 'Pending Foreman Approval' && (userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server')) {
+    if (drawing.status === 'Pending Dept Approval') {
+        const isDeptApprover = isDepartmentApprover(state.currentUser, drawing.dept);
+        const isServer = userRole === 'Server' || (state.currentUser && state.currentUser.username === 'server');
+        if (isDeptApprover || isServer) {
+            roleKey = 'dept_approval';
+            roleLabel = state.currentUser.role;
+            nextStatus = action === 'approve' ? 'Pending Foreman Approval' : 'Rejected';
+        }
+    } else if (drawing.status === 'Pending Foreman Approval' && (isForemanAdminRole(userRole) || userRole === 'Server')) {
         if (!drawing.file_path) {
             roleKey = 'foreman_assign';
             roleLabel = 'Foreman';
@@ -6599,36 +9693,55 @@ async function moveDrawingStatus(drawingId, action) {
         } else {
             roleKey = 'foreman';
             roleLabel = 'Foreman';
-            nextStatus = action === 'approve' ? 'Pending Supervisor Approval' : 'Rejected';
+            nextStatus = action === 'approve' ? 'Pending Supervisor Approval' : 'On Progress';
         }
     } else if (drawing.status === 'Checking') {
-        if (userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server') {
+        if (isForemanAdminRole(userRole) || userRole === 'Server') {
             roleKey = 'start_work';
             roleLabel = 'Foreman';
             nextStatus = action === 'approve' ? 'On Progress' : 'Pending Foreman Approval';
         }
     } else if (drawing.status === 'On Progress') {
-        const isAssigned = drawing.engineer === userFullname;
-        if (isAssigned || userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server') {
+        const isAssigned = state.currentUser && (
+            (drawing.engineer && userFullname && drawing.engineer.toLowerCase().includes(userFullname.toLowerCase())) ||
+            (drawing.engineer && username && drawing.engineer.toLowerCase().includes(username.toLowerCase())) ||
+            (userFullname && drawing.engineer && userFullname.toLowerCase().includes(drawing.engineer.toLowerCase())) ||
+            (username && drawing.engineer && username.toLowerCase().includes(drawing.engineer.toLowerCase()))
+        );
+        const isDrafter = isDrafterRole(userRole) || userRole === 'Drafter' || userRole === 'Drafter Eng' || userRole === 'Drafter/Engineer';
+        if (isAssigned || isDrafter || isForemanAdminRole(userRole) || userRole === 'Server') {
             roleKey = 'submit_work';
             roleLabel = 'Drafter';
-            nextStatus = 'Pending Foreman Approval';
+            nextStatus = 'Pending Requester Approval';
         }
-    } else if (drawing.status === 'Pending Supervisor Approval' && (userRole === 'Supervisor' || userRole === 'Server')) {
+    } else if (drawing.status === 'Pending Requester Approval') {
+        if (checkIsRequesterOrRole(drawing)) {
+            roleKey = 'requester';
+            const deptCode = (drawing.dept || '').trim().toUpperCase();
+            roleLabel = deptCode ? `Staff (${deptCode})` : 'Staff Dept';
+            nextStatus = action === 'approve' ? 'Pending Dept Approval' : 'On Progress';
+        }
+    } else if (drawing.status === 'Pending Dept Approval') {
+        const isDeptApprover = isDepartmentApprover(state.currentUser, drawing.dept);
+        const isServer = userRole === 'Server' || (state.currentUser && state.currentUser.username === 'server');
+        if (isDeptApprover || isServer || isLeadRole(userRole)) {
+            roleKey = 'dept';
+            const deptCode = (drawing.dept || '').trim().toUpperCase();
+            roleLabel = deptCode ? `SPV (${deptCode})` : 'SPV Dept';
+            nextStatus = action === 'approve' ? 'Pending Foreman Approval' : 'On Progress';
+        }
+    } else if (drawing.status === 'Pending Supervisor Approval' && (userRole === 'Supervisor Eng' || userRole === 'Server')) {
         roleKey = 'supervisor';
         roleLabel = 'Supervisor';
-        nextStatus = action === 'approve' ? 'Pending Manager Approval' : 'Rejected';
-    } else if (drawing.status === 'Pending Manager Approval' && (userRole === 'Manager' || userRole === 'Plant Manager' || userRole === 'Server')) {
+        nextStatus = action === 'approve' ? 'Pending Manager Approval' : 'On Progress';
+    } else if (drawing.status === 'Pending Manager Approval' && (userRole === 'Manager Eng' || userRole === 'Plant Manager' || userRole === 'Server')) {
         roleKey = 'manager';
         roleLabel = 'Manager';
-        nextStatus = action === 'approve' ? 'Pending Requester Approval' : 'Rejected';
-    } else if (drawing.status === 'Pending Requester Approval') {
-        const isRequester = (userFullname === drawing.requester || userFullname === drawing.uploader || userRole === 'Admin' || userRole === 'Server');
-        if (isRequester) {
-            roleKey = 'requester';
-            roleLabel = 'Requester / Pemohon';
-            nextStatus = action === 'approve' ? 'Completed' : 'On Progress';
-        }
+        nextStatus = action === 'approve' ? 'Pending Factory Manager Approval' : 'On Progress';
+    } else if (drawing.status === 'Pending Factory Manager Approval' && (userRole === 'Factory Manager' || userRole === 'Server')) {
+        roleKey = 'factory_manager';
+        roleLabel = 'Factory Manager';
+        nextStatus = action === 'approve' ? 'Completed' : 'On Progress';
     }
 
     if (!roleKey) {
@@ -6650,6 +9763,18 @@ async function moveDrawingStatus(drawingId, action) {
     }
 
     let reason = "";
+
+    // Prompt signature only for actual approval steps (Foreman, Supervisor, Manager sign-offs) and Drafter submission
+    let signature = (state.currentUser && state.currentUser.signature) ? state.currentUser.signature : null;
+    const requireSignature = (roleKey !== 'start_work' && roleKey !== 'foreman_assign');
+    if (requireSignature) {
+        const hasSig = await ensureUserProfileSignature(`persetujuan drawing (${roleLabel})`);
+        if (!hasSig) {
+            return;
+        }
+        signature = state.currentUser.signature;
+    }
+
     if (action === 'reject') {
         const promptMsg = isReturn ? "Masukkan alasan pengembalian drawing:" : "Masukkan alasan penolakan drawing:";
         const promptTitle = isReturn ? "Alasan Pengembalian" : "Alasan Penolakan";
@@ -6665,26 +9790,10 @@ async function moveDrawingStatus(drawingId, action) {
             if (roleKey === 'start_work') {
                 confirmMsg = `Apakah Anda yakin ingin memulai pengerjaan untuk drawing ini?`;
             } else if (roleKey === 'submit_work') {
-                confirmMsg = `Apakah Anda yakin ingin mengirimkan file drawing ini untuk persetujuan Foreman?`;
+                confirmMsg = `Apakah Anda yakin ingin menyelesaikan dan mengirimkan file drawing ini untuk persetujuan Requester?`;
             }
             const confirmApprove = await showCustomConfirm(confirmMsg);
             if (!confirmApprove) return;
-        }
-    }
-
-    // Prompt signature only for actual approval steps (Foreman, Supervisor, Manager sign-offs) and Drafter submission
-    let signature = null;
-    const requireSignature = (roleKey !== 'start_work' && roleKey !== 'foreman_assign');
-    if (requireSignature) {
-        const sigTitle = `Tanda Tangan ${action === 'approve' ? 'Persetujuan' : (isReturn ? 'Pengembalian' : 'Penolakan')} ${roleLabel}`;
-        signature = await showSignatureModal(
-            sigTitle,
-            `Silakan konfirmasi tanda tangan Anda.`
-        );
-
-        if (!signature) {
-            showToast("Tanda tangan dibatalkan", "warning");
-            return;
         }
     }
 
@@ -6707,7 +9816,8 @@ async function moveDrawingStatus(drawingId, action) {
         }
     } else if (roleKey === 'submit_work') {
         approvals['drafter'] = {
-            signer: state.currentUser.fullname,
+            signer: (state.currentUser && state.currentUser.fullname && state.currentUser.fullname.trim() !== '') ? state.currentUser.fullname : state.currentUser.username,
+            username: state.currentUser ? state.currentUser.username : '',
             role: actualRole,
             date: now,
             signature: signature
@@ -6723,7 +9833,8 @@ async function moveDrawingStatus(drawingId, action) {
         });
     } else if (action === 'approve') {
         approvals[roleKey] = {
-            signer: state.currentUser.fullname,
+            signer: (state.currentUser && state.currentUser.fullname && state.currentUser.fullname.trim() !== '') ? state.currentUser.fullname : state.currentUser.username,
+            username: state.currentUser ? state.currentUser.username : '',
             role: actualRole,
             date: now,
             signature: signature
@@ -6733,17 +9844,24 @@ async function moveDrawingStatus(drawingId, action) {
             message: `Drawing disetujui oleh ${actualRole} (${state.currentUser.fullname}) dan diteruskan ke status ${nextStatus}.`
         });
     } else {
+        // ponytail: wipe all prior active signatures from etiket upon drawing rejection/return so flow starts fresh
+        ['drafter', 'foreman', 'requester', 'staff_user', 'staff_epr', 'dept', 'dept_approval', 'spv_user', 'spv_dept', 'supervisor_user', 'supervisor', 'spv_eng', 'supervisor_eng', 'manager', 'manager_eng', 'engineer', 'factory_manager'].forEach(k => {
+            delete approvals[k];
+        });
+
         approvals[roleKey + "_reject"] = {
-            signer: state.currentUser.fullname,
+            signer: (state.currentUser && state.currentUser.fullname && state.currentUser.fullname.trim() !== '') ? state.currentUser.fullname : state.currentUser.username,
+            username: state.currentUser ? state.currentUser.username : '',
             role: actualRole,
             date: now,
+            reason: reason || 'Tidak ada alasan',
             signature: signature
         };
         // ponytail: adjust log message based on whether drawing is returned or rejected
         const logAction = isReturn ? 'dikembalikan' : 'ditolak';
         logs.push({
             date: now,
-            message: `Drawing ${logAction} oleh ${actualRole} (${state.currentUser.fullname}) dengan alasan: "${reason}". Status kembali ke ${nextStatus}.`
+            message: `Drawing ${logAction} oleh ${actualRole} (${state.currentUser.fullname || state.currentUser.username}) dengan alasan: "${reason}". Status kembali ke ${nextStatus}.`
         });
     }
 
@@ -6883,9 +10001,11 @@ function getDrawingThumbnailHtml(drawing) {
     if (!drawing || !drawing.file_path) return "";
     const src = drawing.file_path;
     const filename = drawing.title || drawing.id;
-    const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(src);
-    const isPdf = src.toLowerCase().endsWith('.pdf');
-    const isDwg = src.toLowerCase().endsWith('.dwg');
+    // ponytail: strip query parameters when checking extension to support cache busting
+    const cleanSrc = src.split('?')[0];
+    const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(cleanSrc);
+    const isPdf = cleanSrc.toLowerCase().endsWith('.pdf');
+    const isDwg = cleanSrc.toLowerCase().endsWith('.dwg');
 
     if (isImage) {
         return `<img src="${src}" style="width: 100%; height: 100%; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); cursor: pointer; transition: opacity 0.2s; object-fit: cover;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1" title="${filename}">`;
@@ -6941,8 +10061,8 @@ window.downloadAttachmentFile = function (srcsArrayName, idx) {
     document.body.removeChild(link);
 };
 
-// ponytail: Client-side image resize helper to keep DB size small and uploads fast
-function resizeImageBase64(file) {
+// ponytail: Client-side image resize helper supporting optional timestamp overlay and custom compression bypass
+function resizeImageBase64(file, addTimestamp = false, keepOriginalSize = false) {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -6953,21 +10073,55 @@ function resizeImageBase64(file) {
                 const canvas = document.createElement("canvas");
                 let width = img.width;
                 let height = img.height;
-                const maxDim = 800;
-                if (width > maxDim || height > maxDim) {
-                    if (width > height) {
-                        height = Math.round((height * maxDim) / width);
-                        width = maxDim;
-                    } else {
-                        width = Math.round((width * maxDim) / height);
-                        height = maxDim;
+                if (!keepOriginalSize) {
+                    const maxDim = 800;
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round((height * maxDim) / width);
+                            width = maxDim;
+                        } else {
+                            width = Math.round((width * maxDim) / height);
+                            height = maxDim;
+                        }
                     }
                 }
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL("image/jpeg", 0.7)); // JPEG with 70% quality compression
+
+                // ponytail: draw a clean semi-transparent dark box with current date and time on canvas
+                if (addTimestamp) {
+                    const now = new Date();
+                    const day = String(now.getDate()).padStart(2, '0');
+                    const month = String(now.getMonth() + 1).padStart(2, '0');
+                    const year = now.getFullYear();
+                    const hours = String(now.getHours()).padStart(2, '0');
+                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                    const seconds = String(now.getSeconds()).padStart(2, '0');
+                    const timestampStr = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+
+                    const fontSize = Math.max(14, Math.round(width * 0.025));
+                    ctx.font = `bold ${fontSize}px sans-serif`;
+                    
+                    const textWidth = ctx.measureText(timestampStr).width;
+                    const padding = Math.max(6, Math.round(fontSize * 0.4));
+                    const boxWidth = textWidth + padding * 2;
+                    const boxHeight = fontSize + padding * 2;
+                    
+                    const x = width - boxWidth - Math.max(10, Math.round(width * 0.015));
+                    const y = height - boxHeight - Math.max(10, Math.round(height * 0.015));
+
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                    ctx.fillRect(x, y, boxWidth, boxHeight);
+
+                    ctx.fillStyle = "#ffffff";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(timestampStr, x + padding, y + (boxHeight / 2));
+                }
+
+                const quality = keepOriginalSize ? 0.95 : 0.7;
+                resolve(canvas.toDataURL("image/jpeg", quality));
             };
             img.onerror = () => resolve("");
         };
@@ -6992,18 +10146,23 @@ function showCustomConfirm(message, title = "Konfirmasi Tindakan") {
         titleEl.textContent = title;
         msgEl.textContent = message;
         modal.style.display = 'flex';
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
 
-        const cleanUp = (result) => {
+        btnOk.onclick = (e) => {
+            if (e) e.preventDefault();
             modal.style.display = 'none';
-            btnOk.replaceWith(btnOk.cloneNode(true));
-            btnCancel.replaceWith(btnCancel.cloneNode(true));
-            resolve(result);
+            btnOk.onclick = null;
+            btnCancel.onclick = null;
+            resolve(true);
         };
 
-        // Re-get elements after clone replacement logic
-        document.getElementById("confirm-btn-ok").addEventListener("click", () => cleanUp(true));
-        document.getElementById("confirm-btn-cancel").addEventListener("click", () => cleanUp(false));
+        btnCancel.onclick = (e) => {
+            if (e) e.preventDefault();
+            modal.style.display = 'none';
+            btnOk.onclick = null;
+            btnCancel.onclick = null;
+            resolve(false);
+        };
     });
 }
 
@@ -7146,6 +10305,7 @@ window.toggleEngineerRowSelection = function (row) {
     if (cb) {
         cb.checked = !cb.checked;
         row.classList.toggle('selected', cb.checked);
+        if (cb.onchange) cb.onchange();
     }
 };
 
@@ -7222,209 +10382,208 @@ function showCustomAlert(message, title = "Pemberitahuan") {
     });
 }
 
-// ponytail: Modal Helper to upload and compress signature (resized to max 400px width/height)
-// ponytail: Added hideUpload parameter (default true) to support auto-generating a signature.
+// ponytail: Modal Helper for signature validation (uses user profile signature directly)
 function showSignatureModal(title, subtitle, hideUpload = true) {
-    // ponytail: Removed immediate resolve and setting requirement check so signature modal always opens,
-    // allowing the user to review/confirm, use saved, or upload/draw a signature.
-    return new Promise((resolve) => {
-        const modal = document.getElementById("general-ejo-signature-modal");
-        const titleEl = document.getElementById("gejo-sig-title");
-        const subtitleEl = document.getElementById("gejo-sig-subtitle");
-        const fileInput = document.getElementById("gejo-sig-file");
-        const dropZone = document.getElementById("gejo-sig-dropzone");
-        const previewCanvas = document.getElementById("gejo-sig-preview-canvas");
-        const btnConfirm = document.getElementById("gejo-sig-btn-confirm");
-        const btnCancel = document.getElementById("gejo-sig-btn-cancel");
-        const btnClose = document.getElementById("gejo-sig-btn-close");
-
-        if (!modal || !fileInput || !btnConfirm) {
-            resolve(null);
+    return new Promise(async (resolve) => {
+        if (state.currentUser && state.currentUser.signature && state.currentUser.signature.trim().length > 10) {
+            resolve(state.currentUser.signature);
             return;
         }
 
-        titleEl.textContent = title || "Upload Tanda Tangan";
-        subtitleEl.textContent = subtitle || "Pilih atau seret file gambar tanda tangan (JPG atau PNG)";
-
-        // Reset state
-        fileInput.value = "";
-        const ctx = previewCanvas.getContext("2d");
-        ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-        previewCanvas.style.display = "none";
-
-        let signatureBase64 = null;
-        const btnUseSaved = document.getElementById("gejo-sig-btn-use-saved");
-
-        if (hideUpload) {
-            // ponytail: Hide manual signature upload elements
-            if (dropZone) dropZone.style.display = "none";
-            if (btnUseSaved) btnUseSaved.style.display = "none";
-            if (previewCanvas) previewCanvas.style.display = "none";
-
-            if (state.currentUser && state.currentUser.signature) {
-                signatureBase64 = state.currentUser.signature;
-            }
-        } else {
-            // ponytail: Show manual signature upload elements
-            if (dropZone) dropZone.style.display = "flex";
-            if (previewCanvas) previewCanvas.style.display = "none";
-
-            // ponytail: auto-load existing signature if available in user profile
-            if (state.currentUser && state.currentUser.signature) {
-                const img = new Image();
-                img.onload = function () {
-                    previewCanvas.width = img.width;
-                    previewCanvas.height = img.height;
-                    ctx.clearRect(0, 0, img.width, img.height);
-                    ctx.drawImage(img, 0, 0);
-                    previewCanvas.style.display = "block";
-                    signatureBase64 = state.currentUser.signature;
-                };
-                img.src = state.currentUser.signature;
-            }
-
-            if (btnUseSaved) {
-                if (state.currentUser && state.currentUser.signature) {
-                    btnUseSaved.style.display = "flex";
-                    btnUseSaved.onclick = () => {
-                        const img = new Image();
-                        img.onload = function () {
-                            previewCanvas.width = img.width;
-                            previewCanvas.height = img.height;
-                            ctx.clearRect(0, 0, img.width, img.height);
-                            ctx.drawImage(img, 0, 0);
-                            previewCanvas.style.display = "block";
-                            signatureBase64 = state.currentUser.signature;
-                        };
-                        img.src = state.currentUser.signature;
-                    };
-                } else {
-                    btnUseSaved.style.display = "none";
-                }
-            }
-        }
-
-        function handleFile(file) {
-            if (!file || !file.type.startsWith("image/")) {
-                showToast("File harus berupa gambar!", "warning");
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                const img = new Image();
-                img.onload = function () {
-                    // Compress to max 400px
-                    let w = img.width;
-                    let h = img.height;
-                    const maxDim = 400;
-                    if (w > maxDim || h > maxDim) {
-                        if (w > h) {
-                            h = Math.round((h * maxDim) / w);
-                            w = maxDim;
-                        } else {
-                            w = Math.round((w * maxDim) / h);
-                            h = maxDim;
-                        }
-                    }
-
-                    previewCanvas.width = w;
-                    previewCanvas.height = h;
-                    ctx.clearRect(0, 0, w, h);
-                    ctx.drawImage(img, 0, 0, w, h);
-
-                    previewCanvas.style.display = "block";
-                    signatureBase64 = previewCanvas.toDataURL("image/jpeg", 0.85);
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // Setup events
-        const onFileChange = (e) => {
-            if (e.target.files && e.target.files[0]) {
-                handleFile(e.target.files[0]);
-            }
-        };
-
-        const onDragOver = (e) => {
-            e.preventDefault();
-            if (dropZone) dropZone.classList.add("drag-over");
-        };
-
-        const onDragLeave = () => {
-            if (dropZone) dropZone.classList.remove("drag-over");
-        };
-
-        const onDrop = (e) => {
-            e.preventDefault();
-            if (dropZone) dropZone.classList.remove("drag-over");
-            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                handleFile(e.dataTransfer.files[0]);
-            }
-        };
-
-        if (!hideUpload) {
-            // Let clicking on dropzone trigger file dialog
-            if (dropZone) dropZone.onclick = () => fileInput.click();
-
-            fileInput.addEventListener("change", onFileChange);
-            if (dropZone) {
-                dropZone.addEventListener("dragover", onDragOver);
-                dropZone.addEventListener("dragleave", onDragLeave);
-                dropZone.addEventListener("drop", onDrop);
-            }
-        }
-
-        const cleanup = () => {
-            if (!hideUpload) {
-                fileInput.removeEventListener("change", onFileChange);
-                if (dropZone) {
-                    dropZone.removeEventListener("dragover", onDragOver);
-                    dropZone.removeEventListener("dragleave", onDragLeave);
-                    dropZone.removeEventListener("drop", onDrop);
-                }
-                if (btnUseSaved) btnUseSaved.onclick = null;
-            }
-            modal.style.display = "none";
-        };
-
-        btnConfirm.onclick = () => {
-            // ponytail: Check if hideUpload is true and validate signature presence in user profile
-            if (hideUpload) {
-                if (state.currentUser && state.currentUser.signature) {
-                    cleanup();
-                    resolve(state.currentUser.signature);
-                } else {
-                    showToast("Anda belum mengunggah tanda tangan di profil! Silakan unggah tanda tangan di Pengaturan Profil terlebih dahulu.", "warning");
-                }
-                return;
-            }
-
-            if (!signatureBase64) {
-                showToast("Anda harus mengunggah file gambar tanda tangan terlebih dahulu!", "warning");
-                return;
-            }
-            cleanup();
-            resolve(signatureBase64);
-        };
-
-        btnCancel.onclick = () => {
-            cleanup();
+        const valid = await ensureUserProfileSignature(title || "persetujuan");
+        if (!valid) {
             resolve(null);
-        };
-
-        if (btnClose) {
-            btnClose.onclick = () => {
-                cleanup();
-                resolve(null);
-            };
+            return;
         }
-
-        modal.style.display = "flex";
+        resolve(state.currentUser ? state.currentUser.signature : null);
     });
 }
+
+// ponytail: BOQ modal disabled as BOQ upload is no longer required
+window.showProjectBoqUploadModal = function showProjectBoqUploadModal(projId) {
+    return Promise.resolve(true);
+};
+
+
+// ponytail: Modal helper for uploading project execution documentation photos (Phase 3 "Commissioning ->")
+window.showProjectExecDocModal = function showProjectExecDocModal(projId) {
+    return new Promise((resolve) => {
+        try {
+            const modal = document.getElementById("project-execution-doc-modal");
+            if (!modal) {
+                console.error("Critical error: #project-execution-doc-modal element is missing!");
+                showToast("Modal dialog foto eksekusi tidak ditemukan!", "error");
+                resolve(false);
+                return;
+            }
+
+            // Move modal directly to document.body to break out of any parent CSS stacking context
+            if (modal.parentElement !== document.body) {
+                document.body.appendChild(modal);
+            }
+
+            modal.style.setProperty("display", "flex", "important");
+            modal.style.setProperty("z-index", "9999999", "important");
+            modal.style.setProperty("opacity", "1", "important");
+            modal.style.setProperty("visibility", "visible", "important");
+            modal.classList.add("active");
+            if (window.lucide) window.lucide.createIcons();
+
+            const projectIdEl = document.getElementById("proj-exec-modal-project-id");
+            const fileInput = document.getElementById("proj-exec-modal-file-input");
+            const dropzone = document.getElementById("proj-exec-upload-dropzone");
+            const fileLabel = document.getElementById("proj-exec-file-label");
+            const existingSec = document.getElementById("proj-exec-modal-existing-sec");
+            const existingList = document.getElementById("proj-exec-modal-existing-list");
+            const btnConfirm = document.getElementById("proj-exec-btn-confirm");
+            const btnCancel = document.getElementById("proj-exec-btn-cancel");
+            const btnClose = document.getElementById("proj-exec-btn-close");
+            const errorAlert = document.getElementById("proj-exec-error-alert");
+            const previewSec = document.getElementById("proj-exec-file-preview-sec");
+            const previewImg = document.getElementById("proj-exec-file-preview-img");
+
+            if (errorAlert) errorAlert.style.display = "none";
+            if (previewSec) previewSec.style.display = "none";
+            if (previewImg) previewImg.src = "";
+
+            if (!fileInput || !btnConfirm) {
+                console.error("Modal sub-elements missing!", { fileInput, btnConfirm });
+                showToast("Elemen modal foto eksekusi tidak ditemukan!", "error");
+                resolve(false);
+                return;
+            }
+
+            const proj = state.projects ? state.projects.find(p => String(p.id).trim() === String(projId).trim()) : null;
+            const execDocs = proj ? (proj.execution_docs || []) : [];
+
+            if (projectIdEl) projectIdEl.textContent = projId;
+            if (fileLabel) fileLabel.textContent = "Klik atau Ambil Foto via Kamera (Galeri / Kamera HP)";
+            fileInput.value = "";
+            let selectedFile = null;
+
+            // Render existing execution photos if present
+            if (existingSec && existingList) {
+                if (execDocs.length > 0) {
+                    existingSec.style.display = "flex";
+                    existingList.innerHTML = execDocs.map(docUrl => {
+                        return `
+                            <div style="position: relative; width: 80px; height: 60px; border-radius: 6px; overflow: hidden; border: 1px solid var(--card-border);">
+                                <img src="${docUrl}" style="width: 100%; height: 100%; object-fit: cover;" />
+                            </div>
+                        `;
+                    }).join("");
+                } else {
+                    existingSec.style.display = "none";
+                    existingList.innerHTML = "";
+                }
+            }
+
+            btnConfirm.disabled = false;
+            if (execDocs.length > 0) {
+                btnConfirm.textContent = "Konfirmasi Foto & Lanjutkan";
+            } else {
+                btnConfirm.textContent = "Unggah & Lanjutkan";
+            }
+
+            const onDropzoneClick = () => {
+                if (fileInput) fileInput.click();
+            };
+            const onFileChange = () => {
+                if (fileInput && fileInput.files && fileInput.files[0]) {
+                    selectedFile = fileInput.files[0];
+                    if (fileLabel) fileLabel.textContent = `📷 ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`;
+                    btnConfirm.textContent = "Unggah & Lanjutkan";
+                    if (errorAlert) errorAlert.style.display = "none";
+
+                    if (selectedFile.type && selectedFile.type.startsWith("image/")) {
+                        const reader = new FileReader();
+                        reader.onload = function (e) {
+                            if (previewImg) previewImg.src = e.target.result;
+                            if (previewSec) previewSec.style.display = "flex";
+                        };
+                        reader.readAsDataURL(selectedFile);
+                    } else {
+                        if (previewSec) previewSec.style.display = "none";
+                    }
+                }
+            };
+
+            const cleanup = () => {
+                if (dropzone) dropzone.removeEventListener("click", onDropzoneClick);
+                if (fileInput) fileInput.removeEventListener("change", onFileChange);
+                if (errorAlert) errorAlert.style.display = "none";
+                if (previewSec) previewSec.style.display = "none";
+                if (previewImg) previewImg.src = "";
+                modal.style.display = "none";
+                modal.classList.remove("active");
+            };
+
+            if (dropzone) dropzone.addEventListener("click", onDropzoneClick);
+            if (fileInput) fileInput.addEventListener("change", onFileChange);
+
+            btnConfirm.onclick = async () => {
+                if (selectedFile) {
+                    const fd = new FormData();
+                    fd.append("file", selectedFile);
+                    fd.append("project_id", projId);
+                    fd.append("doc_type", "execution");
+
+                    btnConfirm.disabled = true;
+                    btnConfirm.textContent = "Mengunggah Foto...";
+
+                    try {
+                        const res = await fetch("/api/projects/upload-doc", {
+                            method: "POST",
+                            body: fd
+                        });
+                        const data = await res.json();
+                        if (!res.ok || data.status === "error") {
+                            throw new Error(data.message || "Gagal mengunggah foto eksekusi");
+                        }
+
+                        showToast("Foto dokumentasi eksekusi berhasil diunggah!", "success");
+
+                        if (proj) {
+                            proj.execution_docs = data.execution_docs;
+                        }
+
+                        cleanup();
+                        resolve(true);
+                    } catch (err) {
+                        console.error(err);
+                        showToast(err.message || "Gagal mengunggah foto eksekusi", "error");
+                        btnConfirm.disabled = false;
+                        btnConfirm.textContent = "Unggah & Lanjutkan";
+                    }
+                } else if (execDocs.length > 0) {
+                    cleanup();
+                    resolve(true);
+                } else {
+                    if (errorAlert) errorAlert.style.display = "flex";
+                    showToast("Gagal! Anda belum memilih atau mengunggah foto dokumentasi eksekusi!", "warning");
+                }
+            };
+
+            if (btnCancel) {
+                btnCancel.onclick = () => {
+                    cleanup();
+                    resolve(false);
+                };
+            }
+
+            if (btnClose) {
+                btnClose.onclick = () => {
+                    cleanup();
+                    resolve(false);
+                };
+            }
+        } catch (err) {
+            console.error("Error in showProjectExecDocModal:", err);
+            showToast(`Gagal membuka modal foto eksekusi: ${err.message}`, "error");
+            resolve(false);
+        }
+    });
+};
 
 // ponytail: Modal Helper to show general EJO rejection targets routing and upload media evidence
 function showGeneralEjoRejectionModal(options) {
@@ -7569,6 +10728,9 @@ function showGeneralEjoRejectionModal(options) {
 // ponytail: Custom popup modal for approving general EJO with engineer checkboxes and checking sub-status radios
 function showGeneralEjoApprovalModal(ejo) {
     return new Promise((resolve) => {
+        // ponytail: close active EJO details modal to avoid displaying mismatched background EJO details
+        closeModal();
+
         const modal = document.getElementById("general-ejo-approve-modal");
         const listContainer = document.getElementById("gejo-approve-engineers");
         const btnOk = document.getElementById("gejo-approve-btn-ok");
@@ -7584,8 +10746,23 @@ function showGeneralEjoApprovalModal(ejo) {
         const currentEng = ejo.engineer || "";
         const currentNames = currentEng.split(',').map(n => n.trim().toLowerCase());
 
+        const allowedRoles = getAllowedAssigneeRoles(state.currentUser ? state.currentUser.role : "");
         const targetCategory = (ejo.category || "").trim().toLowerCase();
-        const filteredUsers = (state.users || []).filter(u => u.role.toLowerCase() === targetCategory);
+        
+        // ponytail: Repair Part is cross-disciplinary, show all allowed roles; others filter strictly by category first
+        let filteredUsers;
+        if (targetCategory === "repair part") {
+            filteredUsers = (state.users || []).filter(u => allowedRoles.includes(u.role));
+        } else {
+            filteredUsers = (state.users || []).filter(u => allowedRoles.includes(u.role) && u.role.toLowerCase() === targetCategory);
+            if (filteredUsers.length === 0) {
+                // ponytail: fallback to general Drafter role first, then fallback to all technical roles if still empty
+                filteredUsers = (state.users || []).filter(u => allowedRoles.includes(u.role) && u.role.toLowerCase() === "drafter");
+                if (filteredUsers.length === 0) {
+                    filteredUsers = (state.users || []).filter(u => allowedRoles.includes(u.role) && DRAFTER_ROLES.includes(u.role));
+                }
+            }
+        }
 
         // ponytail: dynamically update the engineer selection label with the category (no parentheses around category)
         const engineersLabel = document.getElementById("gejo-approve-engineers-label");
@@ -7599,7 +10776,7 @@ function showGeneralEjoApprovalModal(ejo) {
             const isChecked = currentNames.includes(u.fullname.toLowerCase());
             const checkedAttr = isChecked ? "checked" : "";
             const selectedClass = isChecked ? "selected" : "";
-            const avatarUrl = u.avatar ? (u.avatar.startsWith('http') || u.avatar.startsWith('/') ? u.avatar : '/' + u.avatar) : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+            const avatarUrl = u.avatar ? (u.avatar.startsWith('http') ? u.avatar : u.avatar.startsWith('photo-') ? 'https://images.unsplash.com/' + u.avatar : u.avatar.startsWith('/') ? u.avatar : '/' + u.avatar) : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
             const roleClass = 'role-badge-' + u.role.toLowerCase();
 
             html += `
@@ -7608,7 +10785,11 @@ function showGeneralEjoApprovalModal(ejo) {
                         <img src="${avatarUrl}" class="eng-avatar" alt="${u.fullname}" />
                         <div class="eng-details">
                             <span class="eng-name">${u.fullname}</span>
-                            <span class="eng-role-badge ${roleClass}">${u.role}</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <span class="eng-role-badge ${roleClass}">${u.role}</span>
+                                <!-- ponytail: show count of active EJO assignments -->
+                                <span class="eng-role-badge" style="background: var(--color-cyan-glow); color: var(--color-cyan); text-transform: uppercase;">${getActiveEjoCountForUser(u.fullname)} EJO</span>
+                            </div>
                         </div>
                     </div>
                     <div class="custom-checkbox">
@@ -7648,9 +10829,14 @@ function showGeneralEjoApprovalModal(ejo) {
         if (drawingPreviewImg) drawingPreviewImg.src = "";
         updateDrawingContainerVisibility();
 
-        // Listen for sub-status changes
+        // Listen for sub-status & engineer selection changes
         checkboxes.forEach(cb => {
             cb.onchange = () => {
+                updateDrawingContainerVisibility();
+            };
+        });
+        document.querySelectorAll(".gejo-approve-eng-check").forEach(chk => {
+            chk.onchange = () => {
                 updateDrawingContainerVisibility();
             };
         });
@@ -7714,10 +10900,6 @@ function showGeneralEjoApprovalModal(ejo) {
             const subStatus = subStatusVals.join(" & ");
 
             const estDateVal = estDateInput ? estDateInput.value : "";
-            if (!estDateVal) {
-                showToast("Silakan pilih tanggal estimasi selesai!", "warning");
-                return;
-            }
 
             const hasDrawingReady = subStatusVals.includes("Drawing Ready");
             const drawingFile = drawingFileInput ? drawingFileInput.files[0] : null;
@@ -7872,7 +11054,9 @@ function showGeneralEjoCompletionModal(ejo) {
                     for (let i = 0; i < files.length; i++) {
                         const file = files[i];
                         if (file.type.startsWith("image/")) {
-                            const base64 = await resizeImageBase64(file);
+                            // ponytail: check if this is from camera to apply timestamp and keep original quality/dimensions
+                            const isCamera = (typeLabel === "Foto");
+                            const base64 = await resizeImageBase64(file, isCamera, isCamera);
                             if (base64) {
                                 tempAttachments.push(`${file.name}||file-data-split||${base64}`);
                             }
@@ -7942,6 +11126,15 @@ function showGeneralEjoCompletionModal(ejo) {
 }
 
 
+// ponytail: Helper to format Drawing status badge text dynamically with department code
+function getDrawingStatusDisplay(status, dept) {
+    if (status === 'Pending Requester Approval') {
+        const deptCode = (dept || '').trim().toUpperCase();
+        return deptCode ? `Pending Staff (${deptCode}) Approval` : 'Pending Staff Approval';
+    }
+    return status || '';
+}
+
 // ponytail: Helper to map EJO status value to a descriptive role-based status string
 function getFriendlyStatusText(status, ejo) {
     if (!status) return status;
@@ -7950,20 +11143,23 @@ function getFriendlyStatusText(status, ejo) {
         const match = status.match(/\(Revisi (\d+)\)/);
         const revNum = match ? match[1] : '1';
         friendly = `Schedule (Revisi ${revNum})`;
+    } else if (status === 'Waiting Dept Approval') {
+        friendly = 'Waiting Dept Approval';
     } else if (status === 'Pending Approval') {
         friendly = 'Waiting for Lead approval';
     } else if (status === 'Pending Requester Approval') {
-        friendly = 'Approved by Lead, waiting for Requester approval';
+        const deptCode = ejo && ejo.dept ? (ejo.dept || '').trim().toUpperCase() : '';
+        friendly = deptCode ? `Work completed, waiting for Staff (${deptCode}) approval` : 'Work completed, waiting for Staff Dept approval';
     } else if (status === 'Pending Revision') {
         friendly = 'Revision requested, waiting for Lead approval';
     } else if (status === 'Pending User Approval') {
         friendly = 'Waiting for User approval';
     } else if (status === 'Pending Foreman Approval') {
-        friendly = 'Waiting for Foreman approval';
+        friendly = 'Waiting for Foreman Eng approval';
     } else if (status === 'Pending Supervisor Approval') {
-        friendly = 'Waiting for Supervisor approval';
+        friendly = 'Waiting for Supervisor Eng approval';
     } else if (status === 'Pending Manager Approval') {
-        friendly = 'Waiting for Manager approval';
+        friendly = 'Waiting for Manager Eng approval';
     }
 
     if (ejo) {
@@ -7988,14 +11184,251 @@ function getStatusClass(status) {
     return 'requested';
 }
 
-function getPriorityColor(priority) {
-    switch (priority) {
-        case 'Emergency': return 'var(--color-rose)';
-        case 'High': return 'var(--color-yellow)';
-        case 'Medium': return 'var(--color-blue)';
-        case 'Low': return 'var(--text-muted)';
-        default: return 'var(--text-secondary)';
+function getPriorityInfo(priority) {
+    if (!priority) return { code: "3", label: "3 - Rutin", color: "var(--color-cyan)", glow: "cyan", dotClass: "p-dot-low", barClass: "pbar-low" };
+    const pStr = String(priority).trim();
+    if (pStr === "1" || pStr === "High" || pStr === "Emergency" || pStr.startsWith("1")) {
+        return { code: "1", label: "1 - High", color: "var(--color-rose)", glow: "rose", dotClass: "p-dot-emergency", barClass: "pbar-emergency" };
     }
+    if (pStr === "2" || pStr === "Medium" || pStr.startsWith("2")) {
+        return { code: "2", label: "2 - Medium", color: "var(--color-yellow)", glow: "yellow", dotClass: "p-dot-high", barClass: "pbar-high" };
+    }
+    return { code: "3", label: "3 - Rutin", color: "var(--color-cyan)", glow: "cyan", dotClass: "p-dot-low", barClass: "pbar-low" };
+}
+
+function getPriorityColor(priority) {
+    return getPriorityInfo(priority).color;
+}
+
+function formatPriorityDisplay(priority) {
+    return getPriorityInfo(priority).label;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+// ponytail: Docs-style Markdown & Rich Text Formatter for details boxes
+function renderFormattedText(text) {
+    if (!text) return '';
+    
+    const str = String(text);
+    // If text already contains block-level HTML tags, return as-is
+    if (/<(h[1-6]|p|div|ul|ol|table|blockquote)\b[^>]*>/i.test(str)) {
+        return str;
+    }
+
+    const lines = str.split('\n');
+    let html = '';
+    let inList = false;
+    let listType = 'ul';
+
+    const formatInline = (val) => {
+        return escapeHtml(val)
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/__(.*?)__/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/_(.*?)_/g, '<em>$1</em>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>');
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+
+        if (!line) {
+            if (inList) {
+                html += `</${listType}>`;
+                inList = false;
+            }
+            continue;
+        }
+
+        // Header 1: "# Header", "H1: Header", "[H1] Header"
+        if (/^(?:#\s+|(?:h1|header\s*1)\s*:\s*|\[h1\]\s*)(.*)/i.test(line)) {
+            if (inList) { html += `</${listType}>`; inList = false; }
+            const match = line.match(/^(?:#\s+|(?:h1|header\s*1)\s*:\s*|\[h1\]\s*)(.*)/i);
+            html += `<h1 class="docs-h1">${formatInline(match[1])}</h1>`;
+        }
+        // Header 2: "## Header", "H2: Header", "[H2] Header"
+        else if (/^(?:##\s+|(?:h2|header\s*2)\s*:\s*|\[h2\]\s*)(.*)/i.test(line)) {
+            if (inList) { html += `</${listType}>`; inList = false; }
+            const match = line.match(/^(?:##\s+|(?:h2|header\s*2)\s*:\s*|\[h2\]\s*)(.*)/i);
+            html += `<h2 class="docs-h2">${formatInline(match[1])}</h2>`;
+        }
+        // Header 3: "### Header", "H3: Header", "[H3] Header"
+        else if (/^(?:###\s+|(?:h3|header\s*3)\s*:\s*|\[h3\]\s*)(.*)/i.test(line)) {
+            if (inList) { html += `</${listType}>`; inList = false; }
+            const match = line.match(/^(?:###\s+|(?:h3|header\s*3)\s*:\s*|\[h3\]\s*)(.*)/i);
+            html += `<h3 class="docs-h3">${formatInline(match[1])}</h3>`;
+        }
+        // Header 4: "#### Header", "H4: Header", "[H4] Header"
+        else if (/^(?:####\s+|(?:h4|header\s*4)\s*:\s*|\[h4\]\s*)(.*)/i.test(line)) {
+            if (inList) { html += `</${listType}>`; inList = false; }
+            const match = line.match(/^(?:####\s+|(?:h4|header\s*4)\s*:\s*|\[h4\]\s*)(.*)/i);
+            html += `<h4 class="docs-h4">${formatInline(match[1])}</h4>`;
+        }
+        // Blockquote: "> Quote"
+        else if (/^>\s+(.*)/.test(line)) {
+            if (inList) { html += `</${listType}>`; inList = false; }
+            const content = line.replace(/^>\s+/, '');
+            html += `<blockquote>${formatInline(content)}</blockquote>`;
+        }
+        // Unordered list: "- Item" or "* Item"
+        else if (/^[\-\*]\s+(.*)/.test(line)) {
+            const content = line.replace(/^[\-\*]\s+/, '');
+            if (!inList || listType !== 'ul') {
+                if (inList) html += `</${listType}>`;
+                html += '<ul class="docs-list">';
+                inList = true;
+                listType = 'ul';
+            }
+            html += `<li>${formatInline(content)}</li>`;
+        }
+        // Ordered list: "1. Item"
+        else if (/^\d+\.\s+(.*)/.test(line)) {
+            const content = line.replace(/^\d+\.\s+/, '');
+            if (!inList || listType !== 'ol') {
+                if (inList) html += `</${listType}>`;
+                html += '<ol class="docs-list">';
+                inList = true;
+                listType = 'ol';
+            }
+            html += `<li>${formatInline(content)}</li>`;
+        }
+        // Normal paragraph
+        else {
+            if (inList) { html += `</${listType}>`; inList = false; }
+            html += `<p class="docs-p">${formatInline(line)}</p>`;
+        }
+    }
+
+    if (inList) {
+        html += `</${listType}>`;
+    }
+
+    return html || `<p class="docs-p">${escapeHtml(str)}</p>`;
+}
+
+
+function updateFormUrgentReasonDisplay(selectId, reasonText) {
+    let displayId = '';
+    let textId = '';
+
+    if (selectId === 'gejo-form-priority') {
+        displayId = 'gejo-urgent-reason-display';
+        textId = 'gejo-urgent-reason-text';
+    } else if (selectId === 'drawing-form-priority') {
+        displayId = 'drawing-urgent-reason-display';
+        textId = 'drawing-urgent-reason-text';
+    } else if (selectId === 'part-ejo-priority') {
+        displayId = 'part-urgent-reason-display';
+        textId = 'part-urgent-reason-text';
+    }
+
+    const displayEl = document.getElementById(displayId);
+    const textEl = document.getElementById(textId);
+
+    if (displayEl && textEl) {
+        if (reasonText && reasonText.trim() !== '') {
+            textEl.textContent = reasonText.trim();
+            if ('value' in textEl) textEl.value = reasonText.trim();
+            displayEl.style.display = 'flex';
+            if (window.lucide) lucide.createIcons();
+        } else {
+            textEl.textContent = '';
+            if ('value' in textEl) textEl.value = '';
+            displayEl.style.display = 'none';
+        }
+    }
+}
+
+let currentUrgentReasonTargetSelectId = null;
+
+function initPriorityUrgentListeners() {
+    const prioritySelectIds = ['gejo-form-priority', 'drawing-form-priority', 'part-ejo-priority'];
+    prioritySelectIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.dataset.prevVal = el.value || '3';
+        el.addEventListener('change', function () {
+            if (this.value === '1') {
+                // Only open modal if urgent reason is not already saved
+                if (!this.dataset.urgentReason || this.dataset.urgentReason.trim() === '') {
+                    openUrgentReasonModal(this.id);
+                }
+            } else {
+                this.dataset.prevVal = this.value;
+                this.dataset.urgentReason = '';
+                updateFormUrgentReasonDisplay(this.id, '');
+            }
+        });
+    });
+
+    const btnCancel = document.getElementById('btn-cancel-urgent-reason');
+    if (btnCancel) {
+        btnCancel.addEventListener('click', () => {
+            if (currentUrgentReasonTargetSelectId) {
+                const selectEl = document.getElementById(currentUrgentReasonTargetSelectId);
+                if (selectEl) {
+                    const fallbackVal = (selectEl.dataset.prevVal && selectEl.dataset.prevVal !== '1') ? selectEl.dataset.prevVal : '3';
+                    selectEl.value = fallbackVal;
+                    selectEl.dataset.urgentReason = '';
+                    updateFormUrgentReasonDisplay(currentUrgentReasonTargetSelectId, '');
+                }
+            }
+            const modal = document.getElementById('urgent-reason-modal');
+            if (modal) modal.style.display = 'none';
+            currentUrgentReasonTargetSelectId = null;
+        });
+    }
+
+    const btnSubmit = document.getElementById('btn-submit-urgent-reason');
+    if (btnSubmit) {
+        btnSubmit.addEventListener('click', () => {
+            const input = document.getElementById('urgent-reason-input');
+            const err = document.getElementById('urgent-reason-error');
+            const val = input ? input.value.trim() : '';
+
+            if (!val) {
+                if (err) err.style.display = 'block';
+                if (input) input.focus();
+                return;
+            }
+
+            if (err) err.style.display = 'none';
+            if (currentUrgentReasonTargetSelectId) {
+                const selectEl = document.getElementById(currentUrgentReasonTargetSelectId);
+                if (selectEl) {
+                    selectEl.dataset.urgentReason = val;
+                    selectEl.dataset.prevVal = '1';
+                    updateFormUrgentReasonDisplay(currentUrgentReasonTargetSelectId, val);
+                }
+            }
+
+            const modal = document.getElementById('urgent-reason-modal');
+            if (modal) modal.style.display = 'none';
+            currentUrgentReasonTargetSelectId = null;
+        });
+    }
+}
+
+function openUrgentReasonModal(selectId) {
+    currentUrgentReasonTargetSelectId = selectId;
+    const modal = document.getElementById('urgent-reason-modal');
+    const input = document.getElementById('urgent-reason-input');
+    const err = document.getElementById('urgent-reason-error');
+    const selectEl = document.getElementById(selectId);
+
+    if (input) input.value = (selectEl && selectEl.dataset.urgentReason) ? selectEl.dataset.urgentReason : '';
+    if (err) err.style.display = 'none';
+    if (modal) modal.style.display = 'flex';
+    if (input) setTimeout(() => input.focus(), 100);
 }
 
 function formatDisplayDate(dateStr) {
@@ -8006,9 +11439,158 @@ function formatDisplayDate(dateStr) {
     return `${parseInt(parts[2])} ${months[parseInt(parts[1]) - 1]} ${parts[0]}`;
 }
 
+// ponytail: global reset helper for gejo photo before preview
+function resetGejoImagePreview() {
+    const filenameEl = document.getElementById("gejo-file-before-filename");
+    if (filenameEl) filenameEl.textContent = "Upload Foto Before (Wajib - JPG/PNG/PDF)";
+    const previewEl = document.getElementById("gejo-file-before-preview");
+    if (previewEl) previewEl.style.display = "none";
+    const previewImg = document.getElementById("gejo-file-before-preview-img");
+    if (previewImg) previewImg.src = "";
+    const fileInput = document.getElementById("gejo-file-before");
+    if (fileInput) fileInput.value = "";
+}
+window.resetGejoImagePreview = resetGejoImagePreview;
+
+// ponytail: global helper to open image lightbox preview modal instead of new tab window.open
+function openImagePreviewModal(imageUrl, title, options) {
+    if (!imageUrl) return;
+    let modal = document.getElementById("image-preview-modal");
+    if (!modal) {
+        const modalHtml = `
+            <div id="image-preview-modal" class="modal-backdrop active" style="display: flex !important; justify-content: center; align-items: center; z-index: 15000; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px);" onclick="if(event.target === this) closeImagePreviewModal();">
+                <div class="card-glass animate-in" style="width: 92vw; max-width: 900px; max-height: 92vh; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; align-items: stretch; text-align: left; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.15);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; border-bottom: 1px solid var(--card-border); padding-bottom: 0.75rem;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="image" style="width: 20px; height: 20px; color: var(--color-cyan);"></i>
+                            <h4 id="image-preview-modal-title" style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Pratinjau Foto Dokumentasi</h4>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <button id="image-preview-modal-delete-btn" type="button" class="btn btn-danger-outline btn-xs" style="padding: 4px 10px; font-size: 0.75rem; display: none; align-items: center; gap: 4px; border-color: rgba(239, 68, 68, 0.45); color: #f87171;" title="Hapus foto ini">
+                                <i data-lucide="trash-2" style="width: 13px; height: 13px;"></i> Hapus Foto
+                            </button>
+                            <a id="image-preview-modal-external-btn" href="#" target="_blank" class="btn btn-outline btn-xs" style="padding: 4px 10px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;" title="Buka gambar di tab baru">
+                                <i data-lucide="external-link" style="width: 13px; height: 13px;"></i> Buka Tab Baru
+                            </a>
+                            <button id="image-preview-modal-close-btn" onclick="closeImagePreviewModal()" class="modal-close" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--card-border); font-size: 1.2rem; cursor: pointer; color: var(--text-primary); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s;" title="Tutup (Esc)">&times;</button>
+                        </div>
+                    </div>
+                    <div class="image-preview-container" style="width: 100%; flex: 1; min-height: 0; border-radius: var(--border-radius-md); display: flex; align-items: center; justify-content: center; overflow: auto; padding: 1rem; box-sizing: border-box;">
+                        <img id="image-preview-modal-img" src="" alt="Pratinjau Foto" style="max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); transition: transform 0.2s ease;" />
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modal = document.getElementById("image-preview-modal");
+    }
+
+    const imgEl = document.getElementById("image-preview-modal-img");
+    const titleEl = document.getElementById("image-preview-modal-title");
+    const extBtn = document.getElementById("image-preview-modal-external-btn");
+    const deleteBtn = document.getElementById("image-preview-modal-delete-btn");
+
+    if (imgEl) imgEl.src = imageUrl;
+    if (titleEl) titleEl.textContent = title || "Pratinjau Foto Dokumentasi";
+    if (extBtn) extBtn.href = imageUrl;
+
+    // ponytail: detect owner context and wire photo delete button
+    const userRole = state.currentUser ? state.currentUser.role : "";
+    const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+    const targetFilename = imageUrl.split('?')[0].split('/').pop().toLowerCase();
+
+    let matchedContext = (options && typeof options === 'object') ? options : null;
+    if (!matchedContext && state.projects) {
+        for (const p of state.projects) {
+            if ((p.execution_docs || []).some(d => d.split('?')[0].split('/').pop().toLowerCase() === targetFilename)) {
+                matchedContext = { type: 'execution', projId: p.id };
+                break;
+            } else if ((p.handover_docs || []).some(d => d.split('?')[0].split('/').pop().toLowerCase() === targetFilename)) {
+                matchedContext = { type: 'handover', projId: p.id };
+                break;
+            } else if ((p.docs || []).some(d => d.split('?')[0].split('/').pop().toLowerCase() === targetFilename)) {
+                matchedContext = { type: 'boq', projId: p.id };
+                break;
+            }
+        }
+    }
+
+    if (deleteBtn) {
+        if (isAuthorized && matchedContext && matchedContext.projId) {
+            deleteBtn.style.display = "inline-flex";
+            deleteBtn.onclick = (ev) => {
+                if (ev) {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                }
+                closeImagePreviewModal();
+                setTimeout(() => {
+                    if (matchedContext.type === 'execution') {
+                        deleteProjectExecutionDoc(matchedContext.projId, imageUrl);
+                    } else if (matchedContext.type === 'handover') {
+                        deleteProjectHandoverDoc(matchedContext.projId, imageUrl);
+                    } else if (matchedContext.type === 'boq') {
+                        deleteProjectBoqDoc(matchedContext.projId, imageUrl);
+                    }
+                }, 200);
+            };
+        } else {
+            deleteBtn.style.display = "none";
+            deleteBtn.onclick = null;
+        }
+    }
+
+    modal.style.transition = "opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1)";
+    modal.style.opacity = "0";
+    modal.style.setProperty("display", "flex", "important");
+    modal.classList.add("active");
+    requestAnimationFrame(() => {
+        modal.style.opacity = "1";
+    });
+
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
+}
+
+function closeImagePreviewModal() {
+    const modal = document.getElementById("image-preview-modal");
+    if (modal) {
+        modal.style.transition = "opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)";
+        modal.style.opacity = "0";
+        setTimeout(() => {
+            modal.style.setProperty("display", "none", "important");
+            modal.classList.remove("active");
+            modal.style.opacity = "1";
+        }, 180);
+    }
+    const imgEl = document.getElementById("image-preview-modal-img");
+    if (imgEl) {
+        setTimeout(() => {
+            if (modal && modal.style.display === "none") {
+                imgEl.src = "";
+            }
+        }, 200);
+    }
+}
+
+window.openImagePreviewModal = openImagePreviewModal;
+window.closeImagePreviewModal = closeImagePreviewModal;
+
 // Toast Popup Trigger
+let _lastToastTime = 0;
+let _lastToastMessage = "";
+
 function showToast(message, type = 'info') {
+    const now = Date.now();
+    if (message === _lastToastMessage && (now - _lastToastTime) < 1000) {
+        return; // Prevent duplicate toast within 1 second
+    }
+    _lastToastTime = now;
+    _lastToastMessage = message;
+
     const container = document.getElementById("toast-container");
+    if (!container) return;
     const toast = document.createElement("div");
     toast.className = `toast toast-${type}`;
 
@@ -8023,7 +11605,9 @@ function showToast(message, type = 'info') {
     `;
 
     container.appendChild(toast);
-    lucide.createIcons();
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons();
+    }
 
     setTimeout(() => {
         toast.style.animation = 'slideOut 0.3s ease-in forwards';
@@ -8053,6 +11637,7 @@ function renderProjects() {
     const container2 = document.getElementById("container-fase2");
     const container3 = document.getElementById("container-fase3");
     const container4 = document.getElementById("container-fase4");
+    const container5 = document.getElementById("container-fase5");
 
     if (!container1 || !container2 || !container3) return;
 
@@ -8061,21 +11646,20 @@ function renderProjects() {
     container2.innerHTML = "";
     container3.innerHTML = "";
     if (container4) container4.innerHTML = "";
+    if (container5) container5.innerHTML = "";
 
     // ponytail: get search and filter input values
     const searchVal = (document.getElementById("proj-search-input")?.value || "").toLowerCase();
-    const deptVal = document.getElementById("proj-filter-dept")?.value || "all";
-    const picVal = document.getElementById("proj-filter-pic")?.value || "all";
+    const dateVal = document.getElementById("proj-filter-date")?.value || "";
 
     // ponytail: filter projects matching the criteria
-    const filtered = (state.projects || []).filter(p => {
+    const filtered = getVisibleProjects().filter(p => {
         const matchesSearch = (p.id || '').toLowerCase().includes(searchVal) ||
             (p.title || '').toLowerCase().includes(searchVal) ||
             (p.desc || '').toLowerCase().includes(searchVal) ||
             (p.pic || '').toLowerCase().includes(searchVal);
-        const matchesDept = departmentMatchesFilter(p.dept, deptVal);
-        const matchesPic = picVal === 'all' || p.pic === picVal;
-        return matchesSearch && matchesDept && matchesPic;
+        const matchesDate = !dateVal || (p.targetDate && p.targetDate.includes(dateVal)) || (p.createdDate && p.createdDate.includes(dateVal));
+        return matchesSearch && matchesDate;
     });
 
     const resultsCountEl = document.getElementById("proj-results-count");
@@ -8088,69 +11672,274 @@ function renderProjects() {
     let count2 = 0;
     let count3 = 0;
     let count4 = 0;
+    let count5 = 0;
 
     // Render cards
     filtered.forEach(p => {
         // ponytail: show next signer in project card metadata
         let approvalStatusHtml = "";
-        if (p.phase === 1) {
-            const approvals = p.approvals || {};
-            let nextRole = "Selesai";
-            if (!approvals.pic) nextRole = "Pengusul";
-            else if (!approvals.foreman) nextRole = "Foreman";
-            else if (!approvals.supervisor) nextRole = "Supervisor";
-            else if (!approvals.manager) nextRole = "Manager";
-
-            approvalStatusHtml = `
-                <div class="project-meta-item" style="color: var(--color-cyan);">
-                    <i data-lucide="clock" style="width: 12px; height: 12px;"></i>
-                    <span>Menunggu TTD: <strong>${nextRole}</strong></span>
-                </div>
-            `;
-        }
 
         let docsPreviewHtml = "";
-        if (p.phase === 3 || p.phase === 4) {
+        if (p.phase === 3 || p.phase === 4 || p.phase === 5) {
             const execDocs = p.execution_docs || [];
+            const userRole = state.currentUser ? state.currentUser.role : "";
+            const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+            const canUpload = p.phase === 3 && isAuthorized;
+
             if (execDocs.length > 0) {
+                const execThumbsHtml = execDocs.map(docUrl => {
+                    const safeUrl = docUrl.replace(/'/g, "\\'");
+                    return '<img src="' + docUrl + '" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal(\'' + safeUrl + '\', \'Foto Eksekusi Proyek\');" title="Lihat Foto" />';
+                }).join('');
+                const uploadDocBtnHtml = canUpload ? '<input type="file" id="card-upload-doc-' + p.id + '" accept="image/*" style="display: none;" multiple onchange="uploadProjectDocFromCard(\'' + p.id + '\', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById(\'card-upload-doc-' + p.id + '\').click();" title="Tambah Foto Dokumentasi"><i data-lucide="plus" style="width:13px;height:13px;"></i></button>' : '';
+
                 docsPreviewHtml = `
-                    <div class="project-card-docs-preview" style="margin-top: 10px; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
-                        ${execDocs.map(docUrl => `
-                            <img src="${docUrl}" style="width: 38px; height: 38px; object-fit: cover; border-radius: 6px; border: 1px solid var(--card-border); flex-shrink: 0;" onclick="event.stopPropagation(); window.open('${docUrl}', '_blank');" />
-                        `).join('')}
+                    <div class="project-card-docs-preview">
+                        ${execThumbsHtml}
+                        ${uploadDocBtnHtml}
                     </div>
                 `;
-            } else if (p.phase === 3) {
+            } else if (p.phase === 3 || p.phase === 4) {
+                const uploadDocBtnHtml = canUpload ? '<input type="file" id="card-upload-doc-' + p.id + '" accept="image/*" style="display: none;" multiple onchange="uploadProjectDocFromCard(\'' + p.id + '\', this)"><button class="btn btn-outline btn-xs" style="padding: 2px 7px; font-size: 0.68rem; display: flex; align-items: center; gap: 4px;" onclick="event.stopPropagation(); document.getElementById(\'card-upload-doc-' + p.id + '\').click();" title="Upload Foto Dokumentasi"><i data-lucide="camera" style="width:11px;height:11px;"></i> + Upload</button>' : '';
+
                 docsPreviewHtml = `
-                    <div style="font-size: 0.75rem; color: var(--text-muted); font-style: italic; margin-top: 10px;">
-                        Belum ada foto dokumentasi eksekusi.
+                    <div class="project-card-docs-empty">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="camera-off" style="width:13px;height:13px;"></i>
+                            <span>Belum ada foto eksekusi.</span>
+                        </div>
+                        ${uploadDocBtnHtml}
+                    </div>
+                `;
+            }
+        }
+        let handoverDocsHtml = "";
+        if (p.phase === 4 || p.phase === 5) {
+            const handoverDocs = p.handover_docs || [];
+            const userRole = state.currentUser ? state.currentUser.role : "";
+            const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+            const canUploadHandover = p.phase === 4 && isAuthorized;
+
+            if (handoverDocs.length > 0) {
+                const thumbsHtml = handoverDocs.map(docUrl => {
+                    const isPdf = docUrl.split('?')[0].toLowerCase().endsWith('.pdf');
+                    if (isPdf) {
+                        return '<div class="project-doc-thumb" style="display: flex; align-items: center; justify-content: center; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: var(--color-green);" onclick="event.stopPropagation(); window.open(\'' + docUrl + '\', \'_blank\');" title="Buka File Berita Acara (PDF)"><i data-lucide="file-text" style="width:18px;height:18px;"></i></div>';
+                    } else {
+                        return '<img src="' + docUrl + '" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal(\'' + docUrl + '\', \'Foto Berita Acara\');" title="Lihat Foto Berita Acara" />';
+                    }
+                }).join('');
+
+                const addBtnHtml = canUploadHandover ? '<input type="file" id="card-upload-handover-' + p.id + '" accept=".pdf,image/*" style="display: none;" multiple onchange="uploadProjectHandoverDocFromCard(\'' + p.id + '\', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById(\'card-upload-handover-' + p.id + '\').click();" title="Tambah File Berita Acara"><i data-lucide="plus" style="width:13px;height:13px;"></i></button>' : '';
+
+                handoverDocsHtml = `
+                    <div class="project-card-docs-preview" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px; margin-top: 6px; flex-wrap: wrap;">
+                        <div style="font-size: 0.7rem; color: var(--color-green); font-weight: 600; display: flex; align-items: center; gap: 4px; width: 100%; margin-bottom: 2px;">
+                            <i data-lucide="file-check" style="width:12px;height:12px;"></i> Berita Acara Serah Terima:
+                        </div>
+                        ${thumbsHtml}
+                        ${addBtnHtml}
+                    </div>
+                `;
+            } else if (p.phase === 4) {
+                const uploadBtnHtml = canUploadHandover ? '<input type="file" id="card-upload-handover-' + p.id + '" accept=".pdf,image/*" style="display: none;" multiple onchange="uploadProjectHandoverDocFromCard(\'' + p.id + '\', this)"><button class="btn btn-warning btn-xs" style="padding: 2px 7px; font-size: 0.68rem; display: flex; align-items: center; gap: 4px;" onclick="event.stopPropagation(); document.getElementById(\'card-upload-handover-' + p.id + '\').click();" title="Upload Dokumen Berita Acara Serah Terima"><i data-lucide="upload-cloud" style="width:11px;height:11px;"></i> Upload BA</button>' : '';
+
+                handoverDocsHtml = `
+                    <div class="project-card-docs-empty" style="border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.06); margin-top: 6px;">
+                        <div style="display: flex; align-items: center; gap: 6px; color: var(--color-yellow); font-weight: 500;">
+                            <i data-lucide="file-warning" style="width:13px;height:13px;"></i>
+                            <span>Wajib Upload Berita Acara</span>
+                        </div>
+                        ${uploadBtnHtml}
                     </div>
                 `;
             }
         }
 
+        // ponytail: BOQ document preview for phases 1, 2, and 3 only (Upload in Phase 1 only, view-only in Phase 2 & 3, hidden in Phase 4 & 5)
+        let boqPreviewHtml = "";
+        if (p.phase >= 1 && p.phase <= 3) {
+            const boqDocs = (p.docs || []).slice();
+            if (p.drawing_file && !boqDocs.includes(p.drawing_file)) {
+                boqDocs.push(p.drawing_file);
+            }
+
+            const canUploadBoq = (p.phase === 1);
+
+            if (boqDocs.length > 0) {
+                const boqBadgesHtml = boqDocs.map(docUrl => {
+                    const isImg = /\.(jpg|jpeg|png|webp)$/i.test(docUrl.split('?')[0]);
+                    const deleteCardBtnHtml = canUploadBoq ? `<span onclick="event.stopPropagation(); event.preventDefault(); deleteProjectBoqDoc(event, '${p.id}', '${encodeURIComponent(docUrl)}')" style="color: var(--color-red); margin-left: 4px; font-weight: bold; cursor: pointer; padding: 0 2px;" title="Hapus BOQ">&times;</span>` : '';
+                    if (isImg) {
+                        return '<div style="position:relative; display:inline-block;"><img src="' + docUrl + '" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal(\'' + docUrl + '\', \'Foto Dokumen BOQ\');" title="Lihat Dokumen BOQ" />' + (canUploadBoq ? '<span onclick="event.stopPropagation(); event.preventDefault(); deleteProjectBoqDoc(event, \'' + p.id + '\', \'' + encodeURIComponent(docUrl) + '\')" style="position:absolute; top:-4px; right:-4px; background:var(--color-red); color:#fff; border-radius:50%; width:14px; height:14px; font-size:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:bold;" title="Hapus BOQ">&times;</span>' : '') + '</div>';
+                    } else {
+                        return '<span class="badge badge-outline" style="font-size:0.85rem; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px; border-color:var(--color-cyan); color:var(--color-cyan); padding:4px 10px;" onclick="event.stopPropagation(); window.open(\'' + docUrl + '\', \'_blank\');" title="Buka File BOQ"><i data-lucide="file-text" style="width:14px;height:14px;"></i> BOQ ' + deleteCardBtnHtml + '</span>';
+                    }
+                }).join('');
+
+                const uploadBoqBtnHtml = canUploadBoq ? '<input type="file" id="card-upload-boq-' + p.id + '" accept=".pdf,image/*,.xlsx,.xls,.csv" style="display: none;" multiple onchange="uploadProjectBoqFromCard(\'' + p.id + '\', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById(\'card-upload-boq-' + p.id + '\').click();" title="Tambah / Update Dokumen BOQ"><i data-lucide="plus" style="width:16px;height:16px;"></i></button>' : '';
+
+                boqPreviewHtml = `
+                    <div class="project-card-docs-preview" style="margin-top: 8px; padding: 8px 10px; background: rgba(0, 242, 254, 0.05); border: 1px dashed rgba(0, 242, 254, 0.3); border-radius: var(--border-radius-sm); flex-wrap: wrap;">
+                        <div style="font-size: 0.88rem; font-weight: 700; color: var(--color-cyan); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; width: 100%;">
+                            <i data-lucide="paperclip" style="width:15px;height:15px;"></i> Dokumen BOQ:
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            ${boqBadgesHtml}
+                            ${uploadBoqBtnHtml}
+                        </div>
+                    </div>
+                `;
+            } else if (p.phase === 1) {
+                boqPreviewHtml = `
+                    <div class="project-card-docs-empty" style="margin-top: 8px; font-size: 0.88rem; padding: 8px 10px;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                            <i data-lucide="file-warning" style="width:16px;height:16px;"></i>
+                            <span>Belum ada BOQ.</span>
+                        </div>
+                        <input type="file" id="card-upload-boq-${p.id}" accept=".pdf,image/*,.xlsx,.xls,.csv" style="display: none;" multiple onchange="uploadProjectBoqFromCard('${p.id}', this)"><button class="btn btn-outline btn-xs" style="padding: 4px 10px; font-size: 0.82rem; font-weight: 700; display: flex; align-items: center; gap: 4px; border-color: var(--color-cyan); color: var(--color-cyan);" onclick="event.stopPropagation(); document.getElementById('card-upload-boq-${p.id}').click();" title="Upload Dokumen BOQ"><i data-lucide="upload" style="width:13px;height:13px;"></i> + Upload BOQ</button>
+                    </div>
+                `;
+            }
+        }
+
+        const isReviewOnly = p.is_review_only || p.is_review_only === 1 || p.is_review_only === '1' || p.is_review_only === true;
+        const drawingBadgeHtml = p.drawing_id ? `<span class="ejo-id-badge" onclick="event.stopPropagation(); openDrawingDetails('${p.drawing_id}')" style="font-size:0.85rem; font-weight:700; padding: 4px 10px; cursor: pointer;" title="Klik untuk lihat Drawing EJO ${p.drawing_id}"><i data-lucide="file-text" style="width:14px;height:14px;margin-right:4px;display:inline-block;vertical-align:middle;"></i>${p.drawing_id}</span>` : '';
+
+        const userRoleCard = state.currentUser ? state.currentUser.role : '';
+        const isForemanAdminCard = isForemanAdminRole(userRoleCard) || isLeadRole(userRoleCard) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleCard);
+        const editIdBtnHtml = isForemanAdminCard ? `<button class="btn-edit-project-id" onclick="event.stopPropagation(); editProjectId('${p.id}')" title="Edit ID Project" style="background: transparent; border: none; padding: 0 2px; cursor: pointer; color: var(--text-secondary); opacity: 0.85; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.color='var(--color-cyan)'; this.style.opacity='1';" onmouseout="this.style.color='var(--text-secondary)'; this.style.opacity='0.85';"><i data-lucide="edit-3" style="width: 14px; height: 14px;"></i></button>` : '';
+
+        // ponytail: custom status item inside project-card-meta box
+        let customStatusMetaHtml = '';
+        if (p.custom_status) {
+            customStatusMetaHtml = `
+            <div class="project-meta-item" style="color: #f59e0b; ${isForemanAdminCard ? 'cursor: pointer;' : ''}" onclick="event.stopPropagation(); ${isForemanAdminCard ? `editProjectCustomStatus('${p.id}')` : ''}" title="${isForemanAdminCard ? 'Klik untuk edit Status' : ''}">
+                <i data-lucide="tag" style="color: #f59e0b; width:15px; height:15px;"></i>
+                <span>Status: <span class="badge" style="font-size:0.85rem; font-weight:700; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;">${p.custom_status} ${isForemanAdminCard ? `<i data-lucide="edit-2" style="width:12px;height:12px;margin-left:2px;"></i>` : ''}</span></span>
+            </div>
+            `;
+        } else if (isForemanAdminCard) {
+            customStatusMetaHtml = `
+            <div class="project-meta-item" style="color: #f59e0b; cursor: pointer;" onclick="event.stopPropagation(); editProjectCustomStatus('${p.id}')" title="Klik untuk Input Status Project">
+                <i data-lucide="tag" style="color: #f59e0b; width:15px; height:15px;"></i>
+                <span>Status: <span class="badge" style="font-size:0.85rem; font-weight:700; background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px dashed rgba(245, 158, 11, 0.4); display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;">+ Input Status</span></span>
+            </div>
+            `;
+        }
+
+        // ponytail: PR, PO, GR procurement progress group for Phase 2 ONLY (rendered under BOQ group)
+        let procurementPreviewHtml = "";
+        if (p.phase === 2) {
+            const prVal = p.pr_percent !== undefined && p.pr_percent !== null ? p.pr_percent : 0;
+            const poVal = p.po_percent !== undefined && p.po_percent !== null ? p.po_percent : 0;
+            const grVal = p.gr_percent !== undefined && p.gr_percent !== null ? p.gr_percent : 0;
+
+            procurementPreviewHtml = `
+                <div class="project-card-docs-preview" style="margin-top: 8px; padding: 8px 10px; background: rgba(16, 185, 129, 0.06); border: 1px dashed rgba(16, 185, 129, 0.4); border-radius: var(--border-radius-sm); flex-wrap: wrap;" onclick="event.stopPropagation(); ${isForemanAdminCard ? `editProjectProcurement('${p.id}')` : ''}" title="${isForemanAdminCard ? 'Klik untuk Edit Progress PR / PO / GR' : ''}">
+                    <div style="font-size: 0.88rem; font-weight: 700; color: var(--color-green); margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <span style="display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="shopping-cart" style="width:15px;height:15px;"></i> Detail
+                        </span>
+                        ${isForemanAdminCard ? `<span style="font-size:0.82rem; color: var(--color-green); font-weight: 700; opacity: 0.95; display: flex; align-items: center; gap: 4px; cursor: pointer;"><i data-lucide="edit-2" style="width:12px;height:12px;"></i> Edit</span>` : ''}
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%;">
+                        <div style="background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); border-radius: 6px; padding: 6px 8px; text-align: center;">
+                            <div style="font-size: 0.8rem; color: var(--color-cyan); font-weight: 700;">PR</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: var(--color-cyan); margin-top: 1px;">${prVal}%</div>
+                        </div>
+                        <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 6px 8px; text-align: center;">
+                            <div style="font-size: 0.8rem; color: #f59e0b; font-weight: 700;">PO</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: #f59e0b; margin-top: 1px;">${poVal}%</div>
+                        </div>
+                        <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 6px; padding: 6px 8px; text-align: center;">
+                            <div style="font-size: 0.8rem; color: var(--color-green); font-weight: 700;">GR</div>
+                            <div style="font-size: 1.05rem; font-weight: 800; color: var(--color-green); margin-top: 1px;">${grVal}%</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ponytail: Timeline group for Phase 3 ONLY
+        let timelinePreviewHtml = "";
+        if (p.phase === 3) {
+            const timelineList = (p.timeline || []);
+            let optionsHtml = "";
+            let initialDesc = "Belum ada data timeline untuk proyek ini.";
+
+            if (timelineList.length > 0) {
+                initialDesc = timelineList[0].desc || "Tidak ada deskripsi.";
+                optionsHtml = timelineList.map((item, idx) => {
+                    let dStr = item.date || `Entri #${idx + 1}`;
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
+                        const parts = dStr.split('-');
+                        dStr = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    }
+                    return `<option value="${idx}">Tanggal: ${dStr}</option>`;
+                }).join('');
+            } else {
+                optionsHtml = `<option value="">(Belum Ada Timeline)</option>`;
+            }
+
+            timelinePreviewHtml = `
+                <div class="project-card-docs-preview" style="margin-top: 8px; padding: 8px 10px; background: rgba(245, 158, 11, 0.06); border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: var(--border-radius-sm); flex-wrap: wrap;" onclick="event.stopPropagation();">
+                    <div style="font-size: 0.88rem; font-weight: 700; color: #f59e0b; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <span style="display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="calendar" style="width:15px;height:15px;"></i> Timeline Proyek
+                        </span>
+                        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); openEditProjectTimelineModal('${p.id}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.1); display: inline-flex; align-items: center; gap: 3px;" title="Klik untuk Edit/Tambah Timeline">
+                            <i data-lucide="edit-2" style="width:10px;height:10px;"></i> Kelola Timeline
+                        </button>
+                    </div>
+
+                    <div style="width: 100%; margin-bottom: 6px;">
+                        <select class="form-control" style="width: 100%; padding: 4px 8px; font-size: 0.8rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; box-sizing: border-box;" onchange="event.stopPropagation(); updateProjectTimelineDesc(this.value, '${p.id}', 'card')">
+                            ${optionsHtml}
+                        </select>
+                    </div>
+
+                    <div id="project-timeline-desc-card-${p.id}" style="width: 100%; padding: 6px 10px; background: var(--bg-primary); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 4px; font-size: 0.8rem; color: var(--text-primary); min-height: 36px; box-sizing: border-box; line-height: 1.4; word-break: break-word;">
+                        ${initialDesc}
+                    </div>
+                </div>
+            `;
+        }
+
         const cardHtml = `
             <div class="project-card" style="cursor: pointer;" onclick="openProjectDetails(event, '${p.id}')">
                 <div class="project-card-header">
-                    <span class="project-card-id">${p.id}</span>
-                    <span class="badge badge-accent" style="font-size:0.65rem;">${p.dept}</span>
+                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span class="project-card-id" data-id="${p.id}" style="display: inline-flex; align-items: center; gap: 4px;">
+                            ${p.id}
+                            ${editIdBtnHtml}
+                        </span>
+                        ${drawingBadgeHtml}
+                    </div>
                 </div>
                 <h5 class="project-card-title">${p.title}</h5>
                 <p class="project-card-desc">${p.desc}</p>
-                
+
                 <div class="project-card-meta">
                     <div class="project-meta-item">
-                        <i data-lucide="user"></i>
-                        <span>Requestor: ${p.pic}</span>
+                        <i data-lucide="building-2"></i>
+                        <span>Dept: ${p.dept || 'PRD'}</span>
                     </div>
-                    <div class="project-meta-item">
-                        <i data-lucide="wallet"></i>
-                        <span>CapEx: Rp ${formatRupiah(p.budget)}</span>
+                    ${p.drawing_id ? `
+                    <div class="project-meta-item" style="color: var(--color-cyan); cursor: pointer;" onclick="event.stopPropagation(); openDrawingDetails('${p.drawing_id}')" title="Klik untuk melihat Drawing EJO">
+                        <i data-lucide="file-text"></i>
+                        <span>Ref Drawing: <strong>${p.drawing_id}</strong></span>
                     </div>
+                    ` : ''}
+                    ${customStatusMetaHtml}
                     ${approvalStatusHtml}
                 </div>
                 
+                ${boqPreviewHtml}
+                ${procurementPreviewHtml}
+                ${timelinePreviewHtml}
                 ${docsPreviewHtml}
+                ${handoverDocsHtml}
 
                 <div class="project-card-actions">
                     ${getProjectCardActions(p)}
@@ -8172,15 +11961,20 @@ function renderProjects() {
                 container4.insertAdjacentHTML('beforeend', cardHtml);
                 count4++;
             }
+        } else if (p.phase === 5) {
+            if (container5) {
+                container5.insertAdjacentHTML('beforeend', cardHtml);
+                count5++;
+            }
         }
     });
 
     // Update headers counts
-    document.getElementById("count-fase1").textContent = count1;
-    document.getElementById("count-fase2").textContent = count2;
-    document.getElementById("count-fase3").textContent = count3;
-    const count4El = document.getElementById("count-fase4");
-    if (count4El) count4El.textContent = count4;
+    if (document.getElementById("count-fase1")) document.getElementById("count-fase1").textContent = count1;
+    if (document.getElementById("count-fase2")) document.getElementById("count-fase2").textContent = count2;
+    if (document.getElementById("count-fase3")) document.getElementById("count-fase3").textContent = count3;
+    if (document.getElementById("count-fase4")) document.getElementById("count-fase4").textContent = count4;
+    if (document.getElementById("count-fase5")) document.getElementById("count-fase5").textContent = count5;
 
     // ponytail: apply selected phase column visibility
     filterProjectsByPhase();
@@ -8194,6 +11988,7 @@ function filterProjectsByPhase() {
     const col2 = document.getElementById("col-fase2");
     const col3 = document.getElementById("col-fase3");
     const col4 = document.getElementById("col-fase4");
+    const col5 = document.getElementById("col-fase5");
     const board = document.querySelector("#tab-projects .project-board");
 
     if (!col1 || !col2 || !col3 || !board) return;
@@ -8202,69 +11997,82 @@ function filterProjectsByPhase() {
         col1.style.display = "none";
         col2.style.display = "none";
         col3.style.display = "none";
-        if (col4) col4.style.display = "flex";
+        if (col4) col4.style.display = "none";
+        if (col5) col5.style.display = "flex";
         board.style.display = "grid";
         board.classList.add("single-phase");
     } else {
         board.style.display = "grid";
-        if (col4) col4.style.display = "none";
+        if (col5) col5.style.display = "none";
 
         if (state.activeProjectPhase === 1) {
             col1.style.display = "flex";
             col2.style.display = "none";
             col3.style.display = "none";
+            if (col4) col4.style.display = "none";
             board.classList.add("single-phase");
         } else if (state.activeProjectPhase === 2) {
             col1.style.display = "none";
             col2.style.display = "flex";
             col3.style.display = "none";
+            if (col4) col4.style.display = "none";
             board.classList.add("single-phase");
         } else if (state.activeProjectPhase === 3) {
             col1.style.display = "none";
             col2.style.display = "none";
             col3.style.display = "flex";
+            if (col4) col4.style.display = "none";
+            board.classList.add("single-phase");
+        } else if (state.activeProjectPhase === 4) {
+            col1.style.display = "none";
+            col2.style.display = "none";
+            col3.style.display = "none";
+            if (col4) col4.style.display = "flex";
             board.classList.add("single-phase");
         } else {
             col1.style.display = "flex";
             col2.style.display = "flex";
             col3.style.display = "flex";
+            if (col4) col4.style.display = "flex";
             board.classList.remove("single-phase");
         }
     }
 }
 
-// ponytail: render list of repair parts with search filter
+// ponytail: render list of EJO Repair Parts with search filter
+// ponytail: render list of repair parts (original spare parts table)
 function renderRepairParts() {
-    const tbody = document.getElementById("repair-parts-table-body");
+    const tbody = document.getElementById("partlist-table-body");
     if (!tbody) return;
 
     tbody.innerHTML = "";
 
-    const searchVal = (document.getElementById("search-repair-parts")?.value || "").toLowerCase().trim();
+    const searchVal = (document.getElementById("search-partlist")?.value || "").toLowerCase().trim();
 
     // Filter parts
     const filtered = state.repairParts.filter(p => {
         return (p.name || "").toLowerCase().includes(searchVal) ||
             (p.code || "").toLowerCase().includes(searchVal) ||
-            (p.location || "").toLowerCase().includes(searchVal) ||
-            (p.description || "").toLowerCase().includes(searchVal) ||
-            (p.ejo_id || "").toLowerCase().includes(searchVal);
+            (p.description || "").toLowerCase().includes(searchVal);
     });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:2rem;">Tidak ada spare part yang cocok.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" class="text-center text-muted" style="padding:2rem;">Tidak ada spare part yang cocok.</td></tr>`;
+        renderPartlistCharts([]);
         return;
     }
 
-    // ponytail: rename Lead Engineer -> Foreman
     const isLead = state.currentUser && (isLeadRole(state.currentUser.role));
 
-    filtered.forEach(p => {
+    filtered.forEach((p, idx) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-            <td data-label="Kode Part"><strong>${p.code || '--'}</strong></td>
-            <td data-label="Nama Spare Part">
-                <div style="display: flex; align-items: center; gap: 10px;">
+            <td data-label="No">${idx + 1}</td>
+            <td data-label="Departemen">--</td>
+            <td data-label="Ticket ID (Nomor EJO)"><span class="badge badge-blue">${p.code || '--'}</span></td>
+            <td data-label="MID">--</td>
+            <td data-label="Subject">
+                <div style="display: flex; align-items: center; gap: 10px; justify-content: flex-end;">
                     ${p.image ? `
                         <a href="${p.image}" target="_blank" title="Klik untuk memperbesar gambar" onclick="event.stopPropagation();">
                             <img src="${p.image}" style="width: 40px; height: 40px; border-radius: var(--border-radius-sm); object-fit: cover; border: 1px solid var(--card-border); cursor: zoom-in;" />
@@ -8273,10 +12081,13 @@ function renderRepairParts() {
                     <span class="part-name-link" onclick="openRepairPartDetails('${p.id}')">${p.name}</span>
                 </div>
             </td>
-            <td data-label="Jumlah Stok"><span class="badge badge-accent">${p.stock}</span></td>
-            <td data-label="Lokasi Penyimpanan">${p.location || '--'}</td>
-            <td data-label="Terhubung ke EJO">${p.ejo_id ? `<span class="badge badge-blue" style="cursor:pointer; font-weight:600;" onclick="openEJODetails('${p.ejo_id}')">${p.ejo_id}</span>` : '<span class="text-muted">-</span>'}</td>
-            <td data-label="Keterangan" class="text-secondary text-xs">${p.description || '--'}</td>
+            <td data-label="Description" class="text-secondary text-xs">${p.description || '--'}</td>
+            <td data-label="Prioritas">--</td>
+            <td data-label="Harga Baru">--</td>
+            <td data-label="Durasi (Hari)">--</td>
+            <td data-label="Biaya/Hari">--</td>
+            <td data-label="Total Biaya">--</td>
+            <td data-label="Cost Saving">--</td>
             <td data-label="Aksi">
                 <div style="display: flex; gap: 6px; align-items: center;">
                     <button class="btn btn-outline btn-xs" onclick="openRepairPartDetails('${p.id}')">
@@ -8302,7 +12113,7 @@ function renderRepairParts() {
                     const res = await fetch(`/api/repair-parts/${partId}`, { method: "DELETE" });
                     if (res.ok) {
                         state.repairParts = state.repairParts.filter(p => p.id !== partId);
-                        renderRepairParts();
+                        renderPartlistTab();
                         showToast("Spare part berhasil dihapus!", "success");
                     } else {
                         showToast("Gagal menghapus spare part!", "error");
@@ -8315,16 +12126,705 @@ function renderRepairParts() {
         });
     });
 
+    renderPartlistCharts(filtered);
     lucide.createIcons();
 }
 
-// ponytail: save new repair part to server and refresh list
-async function createNewRepairPart() {
+// ponytail: render list of EJO Repair Parts with search filter
+function renderRepairPartEJOs() {
+    const tbody = document.getElementById("partlist-ejo-table-body");
+    if (!tbody) return;
+
+    tbody.innerHTML = "";
+
+    const searchVal = (document.getElementById("search-partlist")?.value || "").toLowerCase().trim();
+
+    // Filter general EJOs of category 'Repair Part' and exclude Cancelled/Completed/Archived from active table
+    const filtered = getVisibleGeneralEjos().filter(e => {
+        if (e.category !== 'Repair Part') return false;
+        if (e.status === 'Cancelled' || e.status === 'Completed' || e.is_archived === 1 || e.is_archived === '1') return false; // ponytail: hide closed tickets from active list
+        
+        return (e.id || "").toLowerCase().includes(searchVal) ||
+            (e.dept || "").toLowerCase().includes(searchVal) ||
+            (e.mid || "").toLowerCase().includes(searchVal) ||
+            (e.title || "").toLowerCase().includes(searchVal) ||
+            (e.description || "").toLowerCase().includes(searchVal);
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="13" class="text-center text-muted" style="padding:2rem;">Tidak ada EJO Repair Part yang cocok.</td></tr>`;
+        return;
+    }
+
+    const isLead = state.currentUser && (isLeadRole(state.currentUser.role));
+
+    filtered.forEach((e, idx) => {
+        const prioInfo = getPriorityInfo(e.priority);
+        let prioLabel = prioInfo.label;
+        let prioColor = prioInfo.color;
+
+        const priceNew = parseFloat(e.part_price_new) || 0.0;
+        const duration = parseInt(e.repair_duration) || 0;
+        const costPerDay = parseFloat(e.repair_cost_per_day) || 0.0;
+        const totalCost = duration * costPerDay;
+        const costSaving = priceNew - totalCost;
+
+        const formatRupiah = (val) => {
+            return "Rp " + val.toLocaleString('id-ID');
+        };
+
+        let savingStyle = "color: var(--text-muted); font-weight: 700;";
+        if (costSaving > 0) {
+            savingStyle = "color: var(--color-green); font-weight: 700;";
+        } else if (costSaving < 0) {
+            savingStyle = "color: var(--color-rose); font-weight: 700;";
+        }
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td data-label="No">${idx + 1}</td>
+            <td data-label="Departemen">${getDepartmentDisplayLabel(e.dept)}</td>
+            <td data-label="Ticket ID (Nomor EJO)">
+                <span class="badge badge-blue" style="cursor:pointer; font-weight:600;" onclick="openEJODetails('${e.id}')">${e.id}</span>
+            </td>
+            <td data-label="MID">${e.mid || '--'}</td>
+            <td data-label="Subject"><strong>${e.title || '--'}</strong></td>
+            <td data-label="Description" class="text-secondary text-xs">${e.description || '--'}</td>
+            <td data-label="Prioritas">
+                <span class="badge" style="background-color: ${prioColor}; color: #ffffff; font-weight:700; min-width: 24px; text-align: center;">${prioLabel}</span>
+            </td>
+            <td data-label="Harga Baru">${formatRupiah(priceNew)}</td>
+            <td data-label="Durasi (Hari)">${duration}</td>
+            <td data-label="Biaya/Hari">${formatRupiah(costPerDay)}</td>
+            <td data-label="Total Biaya"><strong>${formatRupiah(totalCost)}</strong></td>
+            <td data-label="Cost Saving" style="${savingStyle}">${formatRupiah(costSaving)}</td>
+            <td data-label="Aksi">
+                <div style="display: flex; gap: 6px; align-items: center;">
+                    <button class="btn btn-outline btn-xs" onclick="openEJODetails('${e.id}')">
+                        <i data-lucide="external-link" style="width:12px; height:12px;"></i> Detail
+                    </button>
+                    <button class="btn btn-outline btn-xs" onclick="window.editRepairPartEjo('${e.id}')">
+                        <i data-lucide="edit" style="width:12px; height:12px;"></i> Edit
+                    </button>
+                    ${isLead ? `
+                        <button class="btn btn-danger btn-xs delete-part-ejo-btn" data-id="${e.id}">
+                            <i data-lucide="trash-2" style="width:12px; height:12px;"></i> Hapus
+                        </button>
+                    ` : ''}
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // Bind delete buttons
+    tbody.querySelectorAll(".delete-part-ejo-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const ejoId = btn.getAttribute("data-id");
+            if (await showCustomConfirm("Apakah Anda yakin ingin menghapus EJO Repair Part ini?")) {
+                try {
+                    // ponytail: pass requester username query param to align with backend delete_general_ejo authorization check
+                    const queryParam = `?requester=${encodeURIComponent(state.currentUser ? state.currentUser.username : '')}`;
+                    const res = await fetch(`/api/general-ejos/${ejoId}${queryParam}`, { method: "DELETE" });
+                    if (res.ok) {
+                        state.generalEjos = state.generalEjos.filter(e => e.id !== ejoId);
+                        renderPartlistTab();
+                        showToast("EJO Repair Part berhasil dihapus!", "success");
+                    } else {
+                        showToast("Gagal menghapus EJO Repair Part!", "error");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("Gagal menghubungi server!", "error");
+                }
+            }
+        });
+    });
+
+    lucide.createIcons();
+}
+
+// ponytail: render both tables in the partlist tab
+function renderPartlistTab() {
+    renderRepairParts();
+    renderRepairPartEJOs();
+}
+
+// ponytail: render charts for partlist tab
+function renderPartlistCharts(filtered) {
+    const canvasTrend = document.getElementById('partlistTrendChart');
+    const canvasLocation = document.getElementById('partlistLocationChart');
+    if (!canvasTrend || !canvasLocation) return;
+
+    const ctxTrend = canvasTrend.getContext('2d');
+    const ctxLoc = canvasLocation.getContext('2d');
+
+    if (state.charts.partlistTrend) state.charts.partlistTrend.destroy();
+    if (state.charts.partlistLocation) state.charts.partlistLocation.destroy();
+
+    // Filter EJO Repair Parts
+    // ponytail: filter by visible General EJOs for department isolation
+    const repairEjos = getVisibleGeneralEjos().filter(e => e.category === 'Repair Part');
+
+    // ponytail: trend period filter sync
+    const period = state.partlistTrendPeriod || 'year';
+    const filterEl = document.getElementById("partlist-trend-time-filter");
+    if (filterEl) {
+        filterEl.value = period;
+    }
+
+    // ponytail: helpers to extract creation date and actual completion date
+    const getCreatedDate = (e) => {
+        if (e.createdDate) return e.createdDate;
+        if (e.logs && e.logs.length > 0) {
+            const firstLog = e.logs[0];
+            if (firstLog && firstLog.date) {
+                return firstLog.date.split(' ')[0];
+            }
+        }
+        return e.targetDate || '';
+    };
+
+    const getCompletedDate = (e) => {
+        if (e.status !== 'Completed') return '';
+        if (e.logs && e.logs.length > 0) {
+            const compLog = e.logs.find(l => l.message && (l.message.toLowerCase().includes('selesai') || l.message.toLowerCase().includes('completed'))) || e.logs[e.logs.length - 1];
+            if (compLog && compLog.date) {
+                return compLog.date.split(' ')[0];
+            }
+        }
+        return e.targetDate || '';
+    };
+
+    const now = new Date();
+    let sliceLabels = [];
+    let sliceMasuk = [];
+    let sliceSelesai = [];
+
+    if (period === 'month') {
+        // ponytail: get weekly trend of the current month (Minggu 1, 2, 3, 4)
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+        sliceLabels = ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'];
+        const masukPerWeek = new Array(4).fill(0);
+        const selesaiPerWeek = new Array(4).fill(0);
+
+        repairEjos.forEach(e => {
+            const cDate = getCreatedDate(e);
+            if (cDate) {
+                const parts = cDate.split('-');
+                const y = parseInt(parts[0]);
+                const m = parseInt(parts[1]) - 1;
+                const d = parseInt(parts[2]);
+                if (y === currentYear && m === currentMonth && d >= 1 && d <= daysInMonth) {
+                    const wIdx = Math.min(3, Math.floor((d - 1) / 7));
+                    masukPerWeek[wIdx]++;
+                }
+            }
+            if (e.status === 'Completed') {
+                const compDate = getCompletedDate(e);
+                if (compDate) {
+                    const parts = compDate.split('-');
+                    const y = parseInt(parts[0]);
+                    const m = parseInt(parts[1]) - 1;
+                    const d = parseInt(parts[2]);
+                    if (y === currentYear && m === currentMonth && d >= 1 && d <= daysInMonth) {
+                        const wIdx = Math.min(3, Math.floor((d - 1) / 7));
+                        selesaiPerWeek[wIdx]++;
+                    }
+                }
+            }
+        });
+        sliceMasuk = masukPerWeek;
+        sliceSelesai = selesaiPerWeek;
+    } else {
+        // ponytail: year trend (monthly aggregation)
+        const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        const masukPerMonth = new Array(12).fill(0);
+        const selesaiPerMonth = new Array(12).fill(0);
+
+        repairEjos.forEach(e => {
+            const cDate = getCreatedDate(e);
+            if (cDate) {
+                const m = parseInt(cDate.split('-')[1]) - 1;
+                if (m >= 0 && m < 12) masukPerMonth[m]++;
+            }
+            if (e.status === 'Completed') {
+                const compDate = getCompletedDate(e);
+                if (compDate) {
+                    const m = parseInt(compDate.split('-')[1]) - 1;
+                    if (m >= 0 && m < 12) selesaiPerMonth[m]++;
+                }
+            }
+        });
+
+        let startIdx = 0;
+        let endIdx = 11;
+        const hasData = masukPerMonth.some(v => v > 0);
+        if (hasData) {
+            startIdx = Math.max(0, masukPerMonth.findIndex(v => v > 0) - 1);
+            const lastActive = masukPerMonth.reduce((last, v, i) => v > 0 ? i : last, 0);
+            endIdx = Math.min(11, lastActive + 1);
+        }
+        sliceLabels = monthLabels.slice(startIdx, endIdx + 1);
+        sliceMasuk = masukPerMonth.slice(startIdx, endIdx + 1);
+        sliceSelesai = selesaiPerMonth.slice(startIdx, endIdx + 1);
+    }
+
+    // ponytail: compute Outstanding (OS) = cumulative masuk - cumulative selesai per slice
+    const sliceOS = sliceMasuk.map((m, i) => Math.max(0, m - sliceSelesai[i]));
+
+    // ponytail: custom plugin to draw data labels inside badge-like boxes
+    const partlistTrendDataLabels = {
+        id: 'partlistTrendDataLabels',
+        afterDatasetsDraw(chart) {
+            const { ctx } = chart;
+            ctx.save();
+            chart.data.datasets.forEach((dataset, dIdx) => {
+                const meta = chart.getDatasetMeta(dIdx);
+                if (!meta.hidden) {
+                    meta.data.forEach((el, idx) => {
+                        const val = dataset.data[idx];
+                        if (val === 0) return;
+
+                        // Calculate badge coordinates
+                        const x = el.x;
+                        let y = el.y - 12; // default above element
+                        let bgColor = '#ef4444';
+                        let textColor = '#ffffff';
+
+                        if (dataset.label === 'Masuk') {
+                            bgColor = '#b91c1c';
+                            textColor = '#ffffff';
+                        } else if (dataset.label === 'Selesai') {
+                            bgColor = '#15803d';
+                            textColor = '#ffffff';
+                        } else if (dataset.label === 'OS') {
+                            y = el.y - 16;
+                            bgColor = '#f59e0b';
+                            textColor = '#1e293b';
+                        }
+
+                        // Draw rounded rect badge
+                        const textStr = String(val);
+                        ctx.font = 'bold 11px Outfit';
+                        const textWidth = ctx.measureText(textStr).width;
+                        const paddingX = 6;
+                        const paddingY = 4;
+                        const width = textWidth + paddingX * 2;
+                        const height = 12 + paddingY * 2;
+
+                        ctx.fillStyle = bgColor;
+                        const rx = x - width / 2;
+                        const ry = y - height / 2;
+                        const radius = 3;
+
+                        ctx.beginPath();
+                        ctx.moveTo(rx + radius, ry);
+                        ctx.lineTo(rx + width - radius, ry);
+                        ctx.quadraticCurveTo(rx + width, ry, rx + width, ry + radius);
+                        ctx.lineTo(rx + width, ry + height - radius);
+                        ctx.quadraticCurveTo(rx + width, ry + height, rx + width - radius, ry + height);
+                        ctx.lineTo(rx + radius, ry + height);
+                        ctx.quadraticCurveTo(rx, ry + height, rx, ry + height - radius);
+                        ctx.lineTo(rx, ry + radius);
+                        ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+                        ctx.closePath();
+                        ctx.fill();
+
+                        // Draw text centered in the badge
+                        ctx.fillStyle = textColor;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(textStr, x, y + 1);
+                    });
+                }
+            });
+            ctx.restore();
+        }
+    };
+
+    state.charts.partlistTrend = new Chart(ctxTrend, {
+        type: 'bar',
+        data: {
+            labels: sliceLabels,
+            datasets: [
+                {
+                    label: 'Masuk',
+                    data: sliceMasuk,
+                    backgroundColor: 'rgba(239, 68, 68, 0.85)',
+                    borderColor: '#ef4444',
+                    borderWidth: 1.5,
+                    borderRadius: 4,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7,
+                    order: 2
+                },
+                {
+                    label: 'Selesai',
+                    data: sliceSelesai,
+                    backgroundColor: 'rgba(34, 197, 94, 0.85)',
+                    borderColor: '#22c55e',
+                    borderWidth: 1.5,
+                    borderRadius: 4,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7,
+                    order: 3
+                },
+                {
+                    label: 'OS',
+                    type: 'line',
+                    data: sliceOS,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    borderWidth: 2.5,
+                    pointBackgroundColor: '#f59e0b',
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    tension: 0.35,
+                    fill: false,
+                    order: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    top: 15
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: {
+                        color: '#94a3b8',
+                        font: { family: 'Outfit', size: 11 },
+                        boxWidth: 14,
+                        usePointStyle: true,
+                        pointStyle: 'rectRounded'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return ` ${context.dataset.label}: ${context.raw}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: { color: '#94a3b8', font: { family: 'Outfit' } }
+                },
+                y: {
+                    beginAtZero: true,
+                    grace: '15%',
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#94a3b8', font: { family: 'Outfit' }, precision: 0 }
+                }
+            }
+        },
+        plugins: [partlistTrendDataLabels]
+    });
+
+    // 2. Data Aggregation: EJO Repair Cost vs savings Doughnut
+    let totalRepairCost = 0;
+    let totalSavings = 0;
+
+    repairEjos.forEach(e => {
+        const priceNew = parseFloat(e.part_price_new) || 0.0;
+        const duration = parseInt(e.repair_duration) || 0;
+        const costPerDay = parseFloat(e.repair_cost_per_day) || 0.0;
+        const totalCost = duration * costPerDay;
+        const saving = priceNew - totalCost;
+
+        totalRepairCost += totalCost;
+        if (saving > 0) {
+            totalSavings += saving;
+        }
+    });
+
+    const doughnutLabels = [
+        `Biaya Perbaikan (Rp ${totalRepairCost.toLocaleString('id-ID')})`,
+        `Total Penghematan (Rp ${totalSavings.toLocaleString('id-ID')})`
+    ];
+    const doughnutValues = [totalRepairCost, totalSavings];
+
+    state.charts.partlistLocation = new Chart(ctxLoc, {
+        type: 'doughnut',
+        data: {
+            labels: doughnutLabels,
+            datasets: [{
+                data: doughnutValues,
+                backgroundColor: [
+                    'rgba(245, 158, 11, 0.7)',  // amber / orange for spent cost
+                    'rgba(16, 185, 129, 0.7)'   // green for savings
+                ],
+                borderColor: 'var(--card-bg)',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: {
+                        color: 'var(--text-secondary)',
+                        boxWidth: 12,
+                        font: { size: 10 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const val = context.raw || 0;
+                            const labelText = context.dataIndex === 0 ? 'Total Biaya: Rp ' : 'Total Hemat: Rp ';
+                            return labelText + val.toLocaleString('id-ID');
+                        }
+                    }
+                }
+            }
+        }
+    });}
+
+// ponytail: save new EJO Repair Part or update existing
+async function submitRepairPartEJO(e) {
+    if (e) e.preventDefault();
+
+    const dept = document.getElementById("part-ejo-dept").value || getUserDepartmentCode();
+    const mid = document.getElementById("part-ejo-mid").value.trim();
+    const prioVal = document.getElementById("part-ejo-priority").value;
+    const title = document.getElementById("part-ejo-subject").value.trim();
+    let description = document.getElementById("part-ejo-desc").value.trim();
+    const partPriceNew = parseFloat(document.getElementById("part-ejo-price-new").value) || 0.0;
+    const repairDateVal = document.getElementById("part-ejo-repair-date").value;
+    const startStr = state.editingRepairPartEjoId 
+        ? (getVisibleGeneralEjos().find(item => item.id === state.editingRepairPartEjoId)?.createdDate || new Date().toISOString().split('T')[0])
+        : new Date().toISOString().split('T')[0];
+    let repairDuration = 0;
+    if (repairDateVal && startStr) {
+        const startD = new Date(startStr);
+        const endD = new Date(repairDateVal);
+        const diffTime = endD.getTime() - startD.getTime();
+        repairDuration = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    }
+    const repairCostPerDay = parseFloat(document.getElementById("part-ejo-cost-per-day").value) || 0.0;
+
+    if (!dept || !mid || !title || !description) {
+        showToast("Mohon isi semua field wajib!", "warning");
+        return;
+    }
+
+    const prioritySelect = document.getElementById("part-ejo-priority");
+    let priority = prioritySelect ? prioritySelect.value : "3";
+    let urgentReason = prioritySelect ? (prioritySelect.dataset.urgentReason || '').trim() : '';
+
+    if (priority === '1' && !urgentReason) {
+        openUrgentReasonModal("part-ejo-priority");
+        showToast("Mohon isi alasan / justifikasi prioritas urgent pada popup!", "warning");
+        return;
+    }
+
+    if (priority === '1' && urgentReason && !description.includes("[JUSTIFIKASI URGENT / PRIORITY 1]:")) {
+        description += `\n\n⚠️ [JUSTIFIKASI URGENT / PRIORITY 1]: ${urgentReason}`;
+    }
+
+    const submitBtn = document.querySelector('#part-form button[type="submit"]');
+    let originalHtml = "";
+    if (submitBtn) {
+        originalHtml = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Mengirim...";
+    }
+
+    if (state.editingRepairPartEjoId) {
+        const ejo = getVisibleGeneralEjos().find(item => item.id === state.editingRepairPartEjoId);
+        if (!ejo) return;
+
+        const updatedFields = {
+            status: ejo.status,
+            engineer: ejo.engineer || 'Unassigned',
+            estCost: ejo.estCost || 0,
+            actCost: ejo.actCost || 0,
+            approvals: ejo.approvals || {},
+            is_archived: ejo.is_archived || 0,
+            estDate: ejo.estDate || "",
+            createdDate: ejo.createdDate || "",
+            category: "Repair Part",
+            title, dept, priority, description, mid, location: ejo.location || "Pabrik PT. BAS", targetDate: ejo.targetDate || new Date().toISOString().split('T')[0],
+            part_price_new: partPriceNew,
+            repair_duration: repairDuration,
+            repair_cost_per_day: repairCostPerDay
+        };
+
+        try {
+            const res = await fetch(`/api/general-ejos/${state.editingRepairPartEjoId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedFields)
+            });
+            if (!res.ok) throw new Error("Gagal mengupdate EJO Repair Part");
+
+            await initData();
+            resetRepairPartEjoForm();
+            renderPartlistTab();
+            showToast("EJO Repair Part berhasil diperbarui", "success");
+        } catch (err) {
+            console.error(err);
+            showToast("Gagal menyimpan perubahan EJO Repair Part!", "error");
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                lucide.createIcons();
+            }
+        }
+        return;
+    }
+
+    // Creating new EJO Repair Part
+    const now = new Date();
+    const timestamp = now.getFullYear() + "-" +
+        String(now.getMonth() + 1).padStart(2, '0') + "-" +
+        String(now.getDate()).padStart(2, '0') + " " +
+        String(now.getHours()).padStart(2, '0') + ":" +
+        String(now.getMinutes()).padStart(2, '0');
+
+    const newGejo = {
+        title, dept, category: "Repair Part", priority, location: "Pabrik PT. BAS", targetDate: now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0'),
+        status: "Requested",
+        engineer: "Unassigned",
+        estCost: 0,
+        actCost: 0,
+        description,
+        mid,
+        requester: state.currentUser ? state.currentUser.fullname : "System User",
+        logs: [
+            { date: timestamp, message: `EJO Repair Part dibuat oleh ${state.currentUser ? state.currentUser.fullname : 'user'}.` }
+        ],
+        createdDate: now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, '0') + "-" + String(now.getDate()).padStart(2, '0'),
+        part_price_new: partPriceNew,
+        repair_duration: repairDuration,
+        repair_cost_per_day: repairCostPerDay
+    };
+
+    try {
+        const res = await fetch("/api/general-ejos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newGejo)
+        });
+        if (!res.ok) throw new Error("Gagal menyimpan EJO Repair Part");
+        const resData = await res.json();
+        const savedId = resData.id;
+
+        await initData();
+        resetRepairPartEjoForm();
+        renderPartlistTab();
+        showToast(`EJO Repair Part ${savedId} berhasil dibuat`, "success");
+    } catch (err) {
+        console.error(err);
+        showToast("Gagal membuat EJO Repair Part!", "error");
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalHtml;
+            lucide.createIcons();
+        }
+    }
+}
+
+// ponytail: edit repair part ejo flow
+window.editRepairPartEjo = function (ejoId) {
+    const ejo = getVisibleGeneralEjos().find(item => item.id === ejoId);
+    if (!ejo) return;
+
+    state.editingRepairPartEjoId = ejoId;
+
+    document.getElementById("part-ejo-title").textContent = "Edit EJO Repair Part";
+    document.getElementById("part-ejo-dept").value = normalizeDepartmentCode(ejo.dept) || "";
+    document.getElementById("part-ejo-mid").value = ejo.mid || "";
+    
+    document.getElementById("part-ejo-priority").value = getPriorityInfo(ejo.priority).code;
+    document.getElementById("part-ejo-subject").value = ejo.title || "";
+    document.getElementById("part-ejo-desc").value = parseEjoDescription(ejo.description).descText || "";
+    document.getElementById("part-ejo-price-new").value = ejo.part_price_new || 0.0;
+    // Hitung Target Selesai Perbaikan dari createdDate + repair_duration, sama kayak General EJO
+    let startDateStr = ejo.createdDate || "";
+    if (!startDateStr && ejo.logs && ejo.logs.length > 0) {
+        const firstLog = ejo.logs[0];
+        if (firstLog && firstLog.date) startDateStr = firstLog.date.split(" ")[0];
+    }
+    if (!startDateStr) startDateStr = new Date().toISOString().split('T')[0];
+    const startD = new Date(startDateStr);
+    const durationDays = parseInt(ejo.repair_duration) || 0;
+    const repairDate = new Date(startD.getTime());
+    repairDate.setDate(repairDate.getDate() + durationDays);
+    const yyyy = repairDate.getFullYear();
+    const mm = String(repairDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(repairDate.getDate()).padStart(2, '0');
+    document.getElementById("part-ejo-repair-date").value = `${yyyy}-${mm}-${dd}`;
+    document.getElementById("part-ejo-cost-per-day").value = ejo.repair_cost_per_day || 0.0;
+
+    const submitBtn = document.querySelector('#part-form button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i data-lucide="save" style="width: 16px; height: 16px;"></i><span>Simpan Perubahan EJO Repair Part</span>`;
+    }
+
+    const partFormContainer = document.getElementById("part-form-container");
+    if (partFormContainer) {
+        partFormContainer.style.display = 'block';
+        partFormContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    const btnTogglePart = document.getElementById("btn-toggle-new-part");
+    if (btnTogglePart) {
+        btnTogglePart.innerHTML = '<i data-lucide="minus-circle"></i> Sembunyikan Form';
+    }
+    lucide.createIcons();
+};
+
+// ponytail: reset form state
+function resetRepairPartEjoForm() {
+    state.editingRepairPartEjoId = null;
+    const form = document.getElementById("part-form");
+    if (form) form.reset();
+    applyUserDepartmentToFormSelect("part-ejo-dept");
+    
+    const titleEl = document.getElementById("part-ejo-title");
+    if (titleEl) titleEl.textContent = "Tambah EJO Repair Part Baru";
+    
+    const submitBtn = document.querySelector('#part-form button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.innerHTML = `<i data-lucide="save" style="width: 16px; height: 16px;"></i><span>Simpan EJO Repair Part</span>`;
+    }
+    
+    const partFormContainer = document.getElementById("part-form-container");
+    if (partFormContainer) {
+        partFormContainer.style.display = 'none';
+    }
+    
+    const btnTogglePart = document.getElementById("btn-toggle-new-part");
+    if (btnTogglePart) {
+        btnTogglePart.innerHTML = '<i data-lucide="plus-circle"></i> Tambah EJO Repair Part';
+    }
+    lucide.createIcons();
+}
+window.resetRepairPartEjoForm = resetRepairPartEjoForm;
+
+// ponytail: save new spare part to server and refresh list
+async function submitSparePart(e) {
+    if (e) e.preventDefault();
+
     const name = document.getElementById("part-name").value.trim();
     const code = document.getElementById("part-code").value.trim() || null;
-    const stock = parseInt(document.getElementById("part-stock").value) || 0;
-    const location = document.getElementById("part-location").value.trim();
-    const ejoId = document.getElementById("part-ejo-id").value.trim() || null;
     const description = document.getElementById("part-desc").value.trim() || null;
 
     // ponytail: read image input and convert/compress to base64
@@ -8335,18 +12835,9 @@ async function createNewRepairPart() {
         imageBase64 = await resizeImageBase64(imageInput.files[0]);
     }
 
-    if (!name || stock < 0 || !location) {
+    if (!name) {
         showToast("Mohon isi semua field wajib!", "warning");
         return;
-    }
-
-    // Check if EJO ID exists if provided
-    if (ejoId) {
-        const ejoExists = state.ejos.some(e => e.id === ejoId) || state.generalEjos.some(g => g.id === ejoId);
-        if (!ejoExists) {
-            showToast(`EJO ID "${ejoId}" tidak ditemukan!`, "warning");
-            return;
-        }
     }
 
     const partId = `PART-${Date.now()}`;
@@ -8354,11 +12845,14 @@ async function createNewRepairPart() {
         id: partId,
         name,
         code,
-        stock,
-        location,
-        ejo_id: ejoId,
+        stock: 0,
+        location: "",
+        ejo_id: null,
         description,
-        image: imageBase64
+        image: imageBase64,
+        price: 0.0,
+        cost_saving: 0.0,
+        original_price: 0.0
     };
 
     try {
@@ -8370,12 +12864,13 @@ async function createNewRepairPart() {
 
         if (res.ok) {
             state.repairParts.push(newPart);
-            renderRepairParts();
+            renderPartlistTab();
 
             // Reset form
-            document.getElementById("part-form").reset();
-            document.getElementById("part-form-container").style.display = 'none';
-            document.getElementById("btn-toggle-new-part").innerHTML = '<i data-lucide="plus-circle"></i> Tambah Part';
+            document.getElementById("sparepart-form").reset();
+            resetPartImagePreview();
+            document.getElementById("sparepart-form-container").style.display = 'none';
+            document.getElementById("btn-toggle-new-sparepart").innerHTML = '<i data-lucide="plus-circle"></i> Tambah Spare Part';
 
             showToast("Spare part berhasil ditambahkan!", "success");
         } else {
@@ -8397,66 +12892,44 @@ function getProjectCardActions(p) {
     }
 
     if (p.phase === 1) {
-        const approvals = p.approvals || {};
-        const isFullyApproved = approvals.pic && approvals.foreman && approvals.supervisor && approvals.manager;
+        const userRole = state.currentUser ? state.currentUser.role : "";
+        const deleteButton = (isOwner || isLead || ['Admin Eng', 'Foreman Eng', 'Server'].includes(userRole)) ? `<button class="btn btn-danger-outline btn-xs" onclick="deleteProject('${p.id}')">Hapus</button>` : '';
 
-        // Only owner/PIC can delete the project in Fase 1
-        const deleteButton = isOwner ? `<button class="btn btn-danger-outline btn-xs" onclick="deleteProject('${p.id}')">Hapus</button>` : '';
+        // ponytail: Drawing review-only projects cannot be transferred to Phase 2
+        const isReviewOnly = p.is_review_only || p.is_review_only === 1 || p.is_review_only === '1' || p.is_review_only === true;
+        if (isReviewOnly) {
+            return `${deleteButton}`;
+        }
 
-        if (isFullyApproved) {
-            const userRole = state.currentUser ? state.currentUser.role : "";
-            const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
-            if (isAuthorized) {
+        const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server' || isOwner || isLead;
+        const hasBoq = (p.docs && Array.isArray(p.docs) && p.docs.length > 0) || Boolean(p.drawing_file);
+
+        if (isAuthorized) {
+            if (!hasBoq) {
                 return `
                     ${deleteButton}
-                    <button class="btn btn-primary btn-xs" onclick="moveProjectPhase('${p.id}', 1)">Setujui &rarr;</button>
+                    <span style="font-size: 0.7rem; color: #eab308; background: rgba(234, 179, 8, 0.1); border: 1px dashed rgba(234, 179, 8, 0.3); padding: 4px 8px; border-radius: var(--border-radius-sm); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" title="Unggah file BOQ di Fase 1 untuk melanjutkan ke Pengadaan">
+                        <i data-lucide="alert-circle" style="width: 12px; height: 12px;"></i> Unggah BOQ Terlebih Dahulu
+                    </span>
                 `;
-            } else {
-                return deleteButton;
             }
+            return `
+                ${deleteButton}
+                <button class="btn btn-primary btn-xs" onclick="moveProjectPhase('${p.id}', 1)">Fase 2 &rarr;</button>
+            `;
         } else {
-            // ponytail: check who is eligible to sign next and show direct sign button
-            const userRole = state.currentUser ? state.currentUser.role : "";
-            const userLevel = getRoleLevel(userRole);
-
-            let eligibleSlot = "";
-            let userIsEligible = false;
-            if (!approvals.pic) {
-                eligibleSlot = "pic";
-                userIsEligible = isOwner;
-            } else if (!approvals.foreman) {
-                eligibleSlot = "foreman";
-                // ponytail: only Foreman/Admin/Server role can sign the foreman slot
-                userIsEligible = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
-            } else if (!approvals.supervisor) {
-                eligibleSlot = "supervisor";
-                // ponytail: only Supervisor/Admin/Server role can sign the supervisor slot
-                userIsEligible = userRole === 'Supervisor' || userRole === 'Admin' || userRole === 'Server';
-            } else if (!approvals.manager) {
-                eligibleSlot = "manager";
-                // ponytail: only Manager/Plant Manager/Admin/Server role can sign the manager slot
-                userIsEligible = userRole === 'Manager' || userRole === 'Plant Manager' || userRole === 'Admin' || userRole === 'Server';
-            }
-
-            if (userIsEligible) {
-                return `
-                    ${deleteButton}
-                    <button class="btn btn-primary btn-xs glow-button" onclick="signProjectRoleDirect(event, '${p.id}', '${eligibleSlot}')">Setujui & Tanda Tangan</button>
-                `;
-            } else {
-                return `
-                    ${deleteButton}
-                    <button class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan);" onclick="openProjectDetails(null, '${p.id}')">Detail & Tanda Tangan</button>
-                `;
-            }
+            return `
+                ${deleteButton}
+                <button class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan);" onclick="openProjectDetails(null, '${p.id}')">Detail Project</button>
+            `;
         }
     } else if (p.phase === 2) {
         const userRole = state.currentUser ? state.currentUser.role : "";
-        const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
+        const isAuthorized = /foreman/i.test(userRole) || /admin/i.test(userRole) || userRole === 'Server' || (state.currentUser && state.currentUser.username === 'foreman');
         if (isAuthorized) {
             return `
-                <button class="btn btn-outline btn-xs" onclick="moveProjectPhase('${p.id}', -1)">&larr; Balikkan</button>
-                <button class="btn btn-primary btn-xs" onclick="moveProjectPhase('${p.id}', 1)">Barang Ready &rarr;</button>
+                <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); moveProjectPhase('${p.id}', -1)">&larr; Fase 1</button>
+                <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); moveProjectPhase('${p.id}', 1)">Fase 3 &rarr;</button>
             `;
         } else {
             return `
@@ -8465,15 +12938,11 @@ function getProjectCardActions(p) {
         }
     } else if (p.phase === 3) {
         const userRole = state.currentUser ? state.currentUser.role : "";
-        const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
+        const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
         if (isAuthorized) {
             return `
-                <button class="btn btn-outline btn-xs" onclick="moveProjectPhase('${p.id}', -1)">&larr; Pengadaan</button>
-                <input type="file" id="card-upload-doc-${p.id}" accept="image/*" style="display: none;" multiple onchange="uploadProjectDocFromCard('${p.id}', this)">
-                <button class="btn btn-primary btn-xs glow-button" onclick="document.getElementById('card-upload-doc-${p.id}').click();">
-                    <i data-lucide="camera" style="width:10px;height:10px;display:inline;"></i> Upload Foto
-                </button>
-                <button class="btn btn-xs glow-button" style="background: linear-gradient(135deg, #10B981, #059669); color: white; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);" onclick="completeProjectFromCard('${p.id}')">Selesaikan EJO <i data-lucide="check" style="width:10px;height:10px;display:inline;"></i></button>
+                <button class="btn btn-outline btn-xs" onclick="moveProjectPhase('${p.id}', -1)">&larr; Fase 2</button>
+                <button class="btn btn-primary btn-xs glow-button" onclick="moveProjectPhase('${p.id}', 1)">Fase 4 &rarr;</button>
             `;
         } else {
             return `
@@ -8481,8 +12950,37 @@ function getProjectCardActions(p) {
             `;
         }
     } else if (p.phase === 4) {
+        const userRole = state.currentUser ? state.currentUser.role : "";
+        const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+        if (isAuthorized) {
+            const handoverDocs = p.handover_docs || [];
+            const handoverSigs = p.handover_approvals || {};
+            const handoverRoles = ['staff_eng', 'spv_eng', 'manager_eng', 'manager_user', 'spv_user', 'staff_user'];
+            const allSigned = handoverRoles.every(r => handoverSigs[r] && handoverSigs[r].signature);
+            const canComplete = handoverDocs.length > 0 && allSigned;
+
+            const completeBtnHtml = canComplete ? `
+                <button class="btn btn-xs glow-button" style="width: 100%; margin-top: 4px; background: linear-gradient(135deg, #10B981, #059669); color: white; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25); display: flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 10px;" onclick="completeProjectFromCard('${p.id}')">
+                    <span>Serah Terima & Selesaikan</span>
+                    <i data-lucide="check" style="width:12px;height:12px;display:inline-block;"></i>
+                </button>
+            ` : '';
+
+            return `
+                <div class="project-action-row" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; margin-bottom: 4px;">
+                    <button class="btn btn-outline btn-xs" onclick="moveProjectPhase('${p.id}', -1)">&larr; Fase 3</button>
+                    <button class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan);" onclick="openProjectDetails(null, '${p.id}')">Review BA / Detail</button>
+                </div>
+                ${completeBtnHtml}
+            `;
+        } else {
+            return `
+                <button class="btn btn-outline btn-xs" style="width: 100%; border-color: var(--color-cyan); color: var(--color-cyan);" onclick="openProjectDetails(null, '${p.id}')">Detail Project</button>
+            `;
+        }
+    } else if (p.phase === 5) {
         return `
-            <button class="btn btn-outline btn-xs" onclick="moveProjectPhase('${p.id}', -1)">&larr; Balikkan ke Fase 3</button>
+            <button class="btn btn-outline btn-xs" onclick="moveProjectPhase('${p.id}', -1)">&larr; Fase 4</button>
             <button class="btn btn-danger-outline btn-xs" onclick="deleteProject('${p.id}')">Hapus</button>
         `;
     }
@@ -8498,6 +12996,7 @@ function getGeneralEjoCardActions(e) {
 
     const isRequester = checkIsRequester(e.requester);
     const detailOnlyButton = `<button class="btn btn-outline btn-xs" onclick="openEJODetails('${e.id}')">Detail</button>`;
+
     if (e.status === 'Requested') {
         if (isRequester) {
             return `
@@ -8580,8 +13079,253 @@ function getGeneralEjoCardActions(e) {
     return '';
 }
 
+// ponytail: SVG generator for Etiket previews (Landscape & Portrait per category)
+function generateEtiketSampleSVG(category, orientation, isZoom = false) {
+    const cat = (category || 'Mekanik / Part').toLowerCase();
+    const isLandscape = orientation === 'landscape';
+
+    if (cat.includes('sipil')) {
+        if (isLandscape) {
+            return `<svg viewBox="0 0 420 270" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="max-height: 100%;">
+                <rect width="420" height="270" fill="#ffffff"/>
+                <rect x="12" y="12" width="396" height="246" fill="none" stroke="#0f172a" stroke-width="2"/>
+                <rect x="20" y="20" width="380" height="230" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,2"/>
+                <line x1="60" y1="50" x2="340" y2="50" stroke="#0d9488" stroke-width="1.5" stroke-dasharray="5,3"/>
+                <line x1="60" y1="120" x2="340" y2="120" stroke="#0d9488" stroke-width="1.5" stroke-dasharray="5,3"/>
+                <line x1="100" y1="30" x2="100" y2="160" stroke="#0d9488" stroke-width="1.5" stroke-dasharray="5,3"/>
+                <line x1="220" y1="30" x2="220" y2="160" stroke="#0d9488" stroke-width="1.5" stroke-dasharray="5,3"/>
+                <circle cx="100" cy="50" r="12" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+                <text x="100" y="54" font-size="10" font-weight="bold" fill="#0f766e" text-anchor="middle">A-1</text>
+                <circle cx="220" cy="50" r="12" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+                <text x="220" y="54" font-size="10" font-weight="bold" fill="#0f766e" text-anchor="middle">A-2</text>
+                <rect x="85" y="105" width="30" height="30" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+                <rect x="205" y="105" width="30" height="30" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+                <text x="100" y="95" font-size="9" fill="#0369a1" font-weight="bold" text-anchor="middle">FOUNDATION F1</text>
+                <rect x="205" y="170" width="195" height="80" fill="#f0fdf4" stroke="#0f172a" stroke-width="1.5"/>
+                <line x1="205" y1="192" x2="400" y2="192" stroke="#0f172a" stroke-width="1"/>
+                <line x1="205" y1="214" x2="400" y2="214" stroke="#0f172a" stroke-width="1"/>
+                <line x1="205" y1="234" x2="400" y2="234" stroke="#0f172a" stroke-width="1"/>
+                <line x1="305" y1="192" x2="305" y2="250" stroke="#0f172a" stroke-width="1"/>
+                <text x="210" y="185" font-size="10" font-weight="bold" fill="#065f46">PT. BUMI ALAM SEGAR (SIPIL)</text>
+                <text x="210" y="206" font-size="9" font-weight="bold" fill="#0f172a">DENAH STRUKTUR GUDANG B</text>
+                <text x="210" y="226" font-size="8" fill="#374151">SKALA 1:100 | TANGGAL: 2026</text>
+                <text x="210" y="244" font-size="8" fill="#374151">NO. DRAWING: C-001</text>
+                <text x="310" y="206" font-size="8" font-weight="bold" fill="#0284c7">DIBUAT: DRAFTER / FOREMAN</text>
+                <text x="310" y="224" font-size="8" fill="#16a34a">PERIKSA: REQUESTOR & SPV USER</text>
+                <text x="310" y="242" font-size="8" fill="#2563eb">SETUJU: ENGINEER / MANAGER</text>
+            </svg>`;
+        } else {
+            return `<svg viewBox="0 0 270 380" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="max-height: 100%;">
+                <rect width="270" height="380" fill="#ffffff"/>
+                <rect x="12" y="12" width="246" height="356" fill="none" stroke="#0f172a" stroke-width="2"/>
+                <rect x="20" y="20" width="230" height="340" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,2"/>
+                <rect x="90" y="50" width="90" height="210" fill="#f1f5f9" stroke="#0f172a" stroke-width="2"/>
+                <line x1="90" y1="100" x2="180" y2="100" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="4,2"/>
+                <line x1="90" y1="160" x2="180" y2="160" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="4,2"/>
+                <text x="135" y="42" font-size="10" font-weight="bold" fill="#0f766e" text-anchor="middle">POTONGAN KOLOM K1</text>
+                <text x="190" y="103" font-size="8" fill="#0284c7">+3.50 m</text>
+                <text x="190" y="163" font-size="8" fill="#0284c7">±0.00 m</text>
+                <rect x="20" y="285" width="230" height="75" fill="#f0fdf4" stroke="#0f172a" stroke-width="1.5"/>
+                <line x1="20" y1="305" x2="250" y2="305" stroke="#0f172a" stroke-width="1"/>
+                <line x1="20" y1="325" x2="250" y2="325" stroke="#0f172a" stroke-width="1"/>
+                <line x1="20" y1="343" x2="250" y2="343" stroke="#0f172a" stroke-width="1"/>
+                <line x1="145" y1="305" x2="145" y2="360" stroke="#0f172a" stroke-width="1"/>
+                <text x="25" y="298" font-size="10" font-weight="bold" fill="#065f46">PT. BUMI ALAM SEGAR (SIPIL A4)</text>
+                <text x="25" y="318" font-size="9" font-weight="bold" fill="#0f172a">DETAIL STRUCTURE POTONGAN</text>
+                <text x="25" y="336" font-size="8" fill="#374151">SKALA 1:50 | DEPT SIPIL</text>
+                <text x="25" y="354" font-size="8" fill="#374151">NO. DRAWING: C-002-V</text>
+                <text x="150" y="318" font-size="8" font-weight="bold" fill="#0284c7">DIBUAT: DRAFTER</text>
+                <text x="150" y="334" font-size="8" fill="#16a34a">PERIKSA: FOREMAN</text>
+                <text x="150" y="352" font-size="8" fill="#2563eb">SETUJU: MANAGER</text>
+            </svg>`;
+        }
+    } else if (cat.includes('elektrik')) {
+        if (isLandscape) {
+            return `<svg viewBox="0 0 420 270" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="max-height: 100%;">
+                <rect width="420" height="270" fill="#ffffff"/>
+                <rect x="12" y="12" width="396" height="246" fill="none" stroke="#0f172a" stroke-width="2"/>
+                <rect x="20" y="20" width="380" height="230" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,2"/>
+                <line x1="50" y1="90" x2="330" y2="90" stroke="#2563eb" stroke-width="2.5"/>
+                <text x="60" y="82" font-size="9" font-weight="bold" fill="#1d4ed8">380V / 3 PHASE BUSBAR</text>
+                <line x1="100" y1="90" x2="100" y2="130" stroke="#2563eb" stroke-width="2"/>
+                <rect x="90" y="130" width="20" height="25" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+                <text x="100" y="146" font-size="8" font-weight="bold" fill="#1e40af" text-anchor="middle">MCB</text>
+                <line x1="100" y1="155" x2="100" y2="180" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="100" cy="190" r="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+                <text x="100" y="194" font-size="9" font-weight="bold" fill="#1d4ed8" text-anchor="middle">M 3~</text>
+                <rect x="205" y="170" width="195" height="80" fill="#eff6ff" stroke="#0f172a" stroke-width="1.5"/>
+                <line x1="205" y1="192" x2="400" y2="192" stroke="#0f172a" stroke-width="1"/>
+                <line x1="205" y1="214" x2="400" y2="214" stroke="#0f172a" stroke-width="1"/>
+                <line x1="205" y1="234" x2="400" y2="234" stroke="#0f172a" stroke-width="1"/>
+                <line x1="305" y1="192" x2="305" y2="250" stroke="#0f172a" stroke-width="1"/>
+                <text x="210" y="185" font-size="10" font-weight="bold" fill="#1e40af">PT. BUMI ALAM SEGAR (ELEKTRIK)</text>
+                <text x="210" y="206" font-size="9" font-weight="bold" fill="#0f172a">SINGLE LINE DIAGRAM PANEL A</text>
+                <text x="210" y="226" font-size="8" fill="#374151">DEPT ELEKTRIK | REV: 1.0</text>
+                <text x="210" y="244" font-size="8" fill="#374151">NO. DRAWING: E-001</text>
+                <text x="310" y="206" font-size="8" font-weight="bold" fill="#0284c7">DIBUAT: DRAFTER</text>
+                <text x="310" y="224" font-size="8" fill="#16a34a">PERIKSA: FOREMAN</text>
+                <text x="310" y="242" font-size="8" fill="#2563eb">SETUJU: MANAGER</text>
+            </svg>`;
+        } else {
+            return `<svg viewBox="0 0 270 380" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="max-height: 100%;">
+                <rect width="270" height="380" fill="#ffffff"/>
+                <rect x="12" y="12" width="246" height="356" fill="none" stroke="#0f172a" stroke-width="2"/>
+                <rect x="20" y="20" width="230" height="340" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,2"/>
+                <line x1="60" y1="50" x2="60" y2="250" stroke="#ef4444" stroke-width="2"/>
+                <line x1="210" y1="50" x2="210" y2="250" stroke="#3b82f6" stroke-width="2"/>
+                <text x="55" y="42" font-size="8" fill="#dc2626" font-weight="bold">+24V</text>
+                <text x="205" y="42" font-size="8" fill="#2563eb" font-weight="bold">0V</text>
+                <line x1="60" y1="100" x2="100" y2="100" stroke="#0f172a" stroke-width="1.5"/>
+                <circle cx="110" cy="100" r="8" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+                <line x1="120" y1="100" x2="210" y2="100" stroke="#0f172a" stroke-width="1.5"/>
+                <text x="135" y="92" font-size="8" fill="#0f172a" font-weight="bold">RELAY K1</text>
+                <rect x="20" y="285" width="230" height="75" fill="#eff6ff" stroke="#0f172a" stroke-width="1.5"/>
+                <line x1="20" y1="305" x2="250" y2="305" stroke="#0f172a" stroke-width="1"/>
+                <line x1="20" y1="325" x2="250" y2="325" stroke="#0f172a" stroke-width="1"/>
+                <line x1="20" y1="343" x2="250" y2="343" stroke="#0f172a" stroke-width="1"/>
+                <line x1="145" y1="305" x2="145" y2="360" stroke="#0f172a" stroke-width="1"/>
+                <text x="25" y="298" font-size="10" font-weight="bold" fill="#1e40af">PT. BUMI ALAM SEGAR (ELEKTRIK)</text>
+                <text x="25" y="318" font-size="9" font-weight="bold" fill="#0f172a">WIRING SCHEMATIC CONTROL</text>
+                <text x="25" y="336" font-size="8" fill="#374151">DEPT ELEKTRIK | A4 VERTICAL</text>
+                <text x="25" y="354" font-size="8" fill="#374151">NO. DRAWING: E-002-V</text>
+                <text x="150" y="318" font-size="8" font-weight="bold" fill="#0284c7">DIBUAT: DRAFTER</text>
+                <text x="150" y="334" font-size="8" fill="#16a34a">PERIKSA: FOREMAN</text>
+                <text x="150" y="352" font-size="8" fill="#2563eb">SETUJU: MANAGER</text>
+            </svg>`;
+        }
+    } else {
+        // Mekanik / Part (Default)
+        if (isLandscape) {
+            return `<svg viewBox="0 0 420 270" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="max-height: 100%;">
+                <rect width="420" height="270" fill="#ffffff"/>
+                <rect x="12" y="12" width="396" height="246" fill="none" stroke="#0f172a" stroke-width="2"/>
+                <rect x="20" y="20" width="380" height="230" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,2"/>
+                <path d="M 50 110 L 130 110 L 130 80 L 220 80 L 220 140 L 130 140 L 130 110 Z" fill="none" stroke="#0284c7" stroke-width="2"/>
+                <circle cx="90" cy="110" r="16" fill="none" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="4,3"/>
+                <line x1="30" y1="110" x2="240" y2="110" stroke="#ef4444" stroke-width="1" stroke-dasharray="6,3"/>
+                <line x1="130" y1="65" x2="220" y2="65" stroke="#0369a1" stroke-width="1"/>
+                <line x1="130" y1="60" x2="130" y2="75" stroke="#0369a1" stroke-width="1"/>
+                <line x1="220" y1="60" x2="220" y2="75" stroke="#0369a1" stroke-width="1"/>
+                <text x="175" y="60" font-size="9" font-weight="bold" fill="#0369a1" text-anchor="middle">Ø 45 mm</text>
+                <rect x="205" y="170" width="195" height="80" fill="#f8fafc" stroke="#0f172a" stroke-width="1.5"/>
+                <line x1="205" y1="192" x2="400" y2="192" stroke="#0f172a" stroke-width="1"/>
+                <line x1="205" y1="214" x2="400" y2="214" stroke="#0f172a" stroke-width="1"/>
+                <line x1="205" y1="234" x2="400" y2="234" stroke="#0f172a" stroke-width="1"/>
+                <line x1="305" y1="192" x2="305" y2="250" stroke="#0f172a" stroke-width="1"/>
+                <text x="210" y="185" font-size="10" font-weight="bold" fill="#0f172a">PT. BUMI ALAM SEGAR (MEKANIK)</text>
+                <text x="210" y="206" font-size="9" font-weight="bold" fill="#1e293b">SHAFT SPINDLE MESIN</text>
+                <text x="210" y="226" font-size="8" fill="#475569">MAT: S45C | SATUAN: MM</text>
+                <text x="210" y="244" font-size="8" fill="#475569">SKALA 1:1 | FORMAT: A3/A4 HORIZ</text>
+                <text x="310" y="206" font-size="8" font-weight="bold" fill="#0284c7">DIBUAT: DRAFTER</text>
+                <text x="310" y="224" font-size="8" fill="#16a34a">PERIKSA: FOREMAN</text>
+                <text x="310" y="242" font-size="8" fill="#2563eb">SETUJU: MANAGER</text>
+            </svg>`;
+        } else {
+            return `<svg viewBox="0 0 270 380" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="max-height: 100%;">
+                <rect width="270" height="380" fill="#ffffff"/>
+                <rect x="12" y="12" width="246" height="356" fill="none" stroke="#0f172a" stroke-width="2"/>
+                <rect x="20" y="20" width="230" height="340" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,2"/>
+                <path d="M 60 70 L 190 70 L 190 110 L 110 110 L 110 220 L 60 220 Z" fill="none" stroke="#0284c7" stroke-width="2"/>
+                <circle cx="145" cy="90" r="12" fill="none" stroke="#0284c7" stroke-width="1.5"/>
+                <circle cx="85" cy="180" r="10" fill="none" stroke="#0284c7" stroke-width="1.5"/>
+                <text x="125" y="55" font-size="9" font-weight="bold" fill="#0369a1" text-anchor="middle">BRACKET SUPPORT MOUNTING</text>
+                <rect x="20" y="285" width="230" height="75" fill="#f8fafc" stroke="#0f172a" stroke-width="1.5"/>
+                <line x1="20" y1="305" x2="250" y2="305" stroke="#0f172a" stroke-width="1"/>
+                <line x1="20" y1="325" x2="250" y2="325" stroke="#0f172a" stroke-width="1"/>
+                <line x1="20" y1="343" x2="250" y2="343" stroke="#0f172a" stroke-width="1"/>
+                <line x1="145" y1="305" x2="145" y2="360" stroke="#0f172a" stroke-width="1"/>
+                <text x="25" y="298" font-size="10" font-weight="bold" fill="#0f172a">PT. BUMI ALAM SEGAR (MEKANIK A4)</text>
+                <text x="25" y="318" font-size="9" font-weight="bold" fill="#1e293b">BRACKET SUPPORT MOUNTING</text>
+                <text x="25" y="336" font-size="8" fill="#475569">MAT: SUS304 | SATUAN: MM</text>
+                <text x="25" y="354" font-size="8" fill="#475569">SKALA 1:2 | FORMAT: A4 VERTICAL</text>
+                <text x="150" y="318" font-size="8" font-weight="bold" fill="#0284c7">DIBUAT: DRAFTER</text>
+                <text x="150" y="334" font-size="8" fill="#16a34a">PERIKSA: FOREMAN</text>
+                <text x="150" y="352" font-size="8" fill="#2563eb">SETUJU: MANAGER</text>
+            </svg>`;
+        }
+    }
+}
+
+// ponytail: update etiket modal preview images dynamically on category select change using converted PDF PNGs
+function updateEtiketModalPreviews() {
+    const etiketSelect = document.getElementById("drawing-upload-complete-etiket-category");
+    if (!etiketSelect) return;
+
+    const cat = etiketSelect.value || "Mekanik / Part";
+
+    const badge = document.getElementById("etiket-category-badge");
+    if (badge) badge.textContent = cat;
+
+    const isSipil = cat.toLowerCase().includes('sipil');
+    const landscapeImg = isSipil ? '/etiket/pak diki etiket landscape.png' : '/etiket/pak rifan etiket landscape.png';
+    const portraitImg = isSipil ? '/etiket/pak diki etiket potrait.png' : '/etiket/pak rifan etiket potrait.png';
+
+    const landscapeBox = document.getElementById("etiket-sample-landscape-preview");
+    const portraitBox = document.getElementById("etiket-sample-portrait-preview");
+
+    if (landscapeBox) {
+        landscapeBox.innerHTML = `<img src="${encodeURI(landscapeImg)}" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff;" alt="Sample Landscape ${cat}" />`;
+    }
+    if (portraitBox) {
+        portraitBox.innerHTML = `<img src="${encodeURI(portraitImg)}" style="width: 100%; height: 100%; object-fit: contain; background: #ffffff;" alt="Sample Portrait ${cat}" />`;
+    }
+}
+
+// ponytail: open zoom modal for detailed etiket sample review displaying Pak Diki's actual drawing
+function openEtiketZoomModal(orientation) {
+    const etiketSelect = document.getElementById("drawing-upload-complete-etiket-category");
+    const cat = etiketSelect ? etiketSelect.value : "Mekanik / Part";
+
+    const zoomModal = document.getElementById("etiket-zoom-modal");
+    const zoomTitle = document.getElementById("etiket-zoom-title");
+    const zoomBody = document.getElementById("etiket-zoom-body");
+    const zoomDesc = document.getElementById("etiket-zoom-desc");
+
+    if (!zoomModal || !zoomBody) return;
+
+    const isSipil = cat.toLowerCase().includes('sipil');
+    const imgPath = isSipil
+        ? (orientation === 'landscape' ? '/etiket/pak diki etiket landscape.png' : '/etiket/pak diki etiket potrait.png')
+        : (orientation === 'landscape' ? '/etiket/pak rifan etiket landscape.png' : '/etiket/pak rifan etiket potrait.png');
+    const pdfPath = isSipil
+        ? (orientation === 'landscape' ? '/etiket/pak diki etiket landscape.pdf' : '/etiket/pak diki etiket potrait.pdf')
+        : (orientation === 'landscape' ? '/etiket/pak rifan etiket landscape.pdf' : '/etiket/pak rifan etiket potrait.pdf');
+    const authorName = isSipil ? 'Diki (Sipil)' : 'Rifan (Mekanik)';
+
+    const orientName = orientation === 'landscape' ? 'Landscape (Horizontal)' : 'Portrait (Vertikal)';
+    if (zoomTitle) zoomTitle.textContent = `Sampel Etiket ${cat} (${orientation})`;
+
+    zoomBody.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; min-height: 0; padding: 6px; box-sizing: border-box; background: #ffffff; border-radius: 6px;">
+            <img src="${encodeURI(imgPath)}" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);" alt="Sampel Etiket ${cat} ${orientName}" />
+        </div>
+    `;
+
+    if (zoomDesc) {
+        zoomDesc.innerHTML = `
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <a href="${encodeURI(pdfPath)}" target="_blank" class="btn btn-sm btn-outline" style="padding: 4px 10px; font-size: 0.78rem; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: rgba(6,182,212,0.1); color: var(--color-cyan, #06b6d4); border-color: rgba(6,182,212,0.3);">
+                    📄 Lihat File PDF Original (${authorName})
+                </a>
+            </div>
+        `;
+    }
+
+    zoomModal.style.display = 'flex';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function closeEtiketZoomModal() {
+    const zoomModal = document.getElementById("etiket-zoom-modal");
+    if (zoomModal) zoomModal.style.display = 'none';
+}
+
 // ponytail: Show modal to upload a drawing and complete the work
 async function triggerCardDrawingCompleteUpload(drawingId) {
+    const hasSig = await ensureUserProfileSignature("penyelesaian dan pengiriman file drawing");
+    if (!hasSig) {
+        return;
+    }
     return new Promise((resolve) => {
         const modal = document.getElementById("drawing-upload-complete-modal");
         const fileInput = document.getElementById("drawing-upload-complete-file-input");
@@ -8606,6 +13350,108 @@ async function triggerCardDrawingCompleteUpload(drawingId) {
         if (preview) preview.style.display = "none";
         if (previewImg) previewImg.src = "";
 
+        const fileErrorDiv = document.getElementById("drawing-upload-complete-file-error");
+        if (fileErrorDiv) fileErrorDiv.style.display = "none";
+        delete trigger.dataset.hasError;
+        trigger.style.borderColor = "rgba(6, 182, 212, 0.3)";
+        trigger.style.background = "rgba(6, 182, 212, 0.02)";
+
+        let selectedOrientation = 'landscape';
+        const currentDrawing = (state.drawings || []).find(d => String(d.id) === String(drawingId));
+        if (currentDrawing && currentDrawing.etiket_orientation) {
+            selectedOrientation = currentDrawing.etiket_orientation;
+        }
+
+        const etiketSelect = document.getElementById("drawing-upload-complete-etiket-category");
+        if (etiketSelect) {
+            if (currentDrawing && (currentDrawing.category === "Sipil" || currentDrawing.etiket_category === "Sipil")) {
+                etiketSelect.value = "Sipil";
+            } else {
+                etiketSelect.value = "Mekanik / Part";
+            }
+            etiketSelect.onchange = updateEtiketModalPreviews;
+        }
+
+        // Helper to update active visual highlight on Landscape vs Portrait cards
+        const landscapeCard = document.getElementById("etiket-sample-card-landscape");
+        const portraitCard = document.getElementById("etiket-sample-card-portrait");
+        const landscapeBadge = document.getElementById("etiket-landscape-badge");
+        const portraitBadge = document.getElementById("etiket-portrait-badge");
+
+        const updateOrientationCardSelection = (orient) => {
+            selectedOrientation = orient;
+            if (landscapeCard) {
+                if (orient === 'landscape') {
+                    landscapeCard.style.border = "2px solid var(--color-cyan, #06b6d4)";
+                    landscapeCard.style.background = "rgba(6, 182, 212, 0.12)";
+                    landscapeCard.style.boxShadow = "0 0 12px rgba(6, 182, 212, 0.25)";
+                    if (landscapeBadge) {
+                        landscapeBadge.textContent = "✓ Terpilih";
+                        landscapeBadge.style.background = "var(--color-cyan, #06b6d4)";
+                        landscapeBadge.style.color = "#ffffff";
+                        landscapeBadge.style.fontWeight = "700";
+                    }
+                } else {
+                    landscapeCard.style.border = "1px solid rgba(255, 255, 255, 0.12)";
+                    landscapeCard.style.background = "rgba(255, 255, 255, 0.03)";
+                    landscapeCard.style.boxShadow = "none";
+                    if (landscapeBadge) {
+                        landscapeBadge.textContent = "Pilih";
+                        landscapeBadge.style.background = "rgba(255, 255, 255, 0.05)";
+                        landscapeBadge.style.color = "var(--text-tertiary, #9ca3af)";
+                        landscapeBadge.style.fontWeight = "500";
+                    }
+                }
+            }
+            if (portraitCard) {
+                if (orient === 'portrait') {
+                    portraitCard.style.border = "2px solid var(--color-cyan, #06b6d4)";
+                    portraitCard.style.background = "rgba(6, 182, 212, 0.12)";
+                    portraitCard.style.boxShadow = "0 0 12px rgba(6, 182, 212, 0.25)";
+                    if (portraitBadge) {
+                        portraitBadge.textContent = "✓ Terpilih";
+                        portraitBadge.style.background = "var(--color-cyan, #06b6d4)";
+                        portraitBadge.style.color = "#ffffff";
+                        portraitBadge.style.fontWeight = "700";
+                    }
+                } else {
+                    portraitCard.style.border = "1px solid rgba(255, 255, 255, 0.12)";
+                    portraitCard.style.background = "rgba(255, 255, 255, 0.03)";
+                    portraitCard.style.boxShadow = "none";
+                    if (portraitBadge) {
+                        portraitBadge.textContent = "Pilih";
+                        portraitBadge.style.background = "rgba(255, 255, 255, 0.05)";
+                        portraitBadge.style.color = "var(--text-tertiary, #9ca3af)";
+                        portraitBadge.style.fontWeight = "500";
+                    }
+                }
+            }
+        };
+
+        // Wire card click events to select orientation directly
+        if (landscapeCard) {
+            landscapeCard.onclick = () => updateOrientationCardSelection('landscape');
+        }
+        if (portraitCard) {
+            portraitCard.onclick = () => updateOrientationCardSelection('portrait');
+        }
+
+        // Apply initial orientation card highlight
+        updateOrientationCardSelection(selectedOrientation);
+
+        // Render initial etiket previews
+        updateEtiketModalPreviews();
+
+        const zoomCloseBtn = document.getElementById("etiket-zoom-close");
+        if (zoomCloseBtn) zoomCloseBtn.onclick = closeEtiketZoomModal;
+
+        const zoomModal = document.getElementById("etiket-zoom-modal");
+        if (zoomModal) {
+            zoomModal.onclick = (e) => {
+                if (e.target === zoomModal) closeEtiketZoomModal();
+            };
+        }
+
         const handleTriggerClick = () => {
             fileInput.click();
         };
@@ -8627,6 +13473,11 @@ async function triggerCardDrawingCompleteUpload(drawingId) {
                     if (previewImg) previewImg.src = "";
                     return;
                 }
+
+                if (fileErrorDiv) fileErrorDiv.style.display = "none";
+                delete trigger.dataset.hasError;
+                trigger.style.borderColor = "rgba(6, 182, 212, 0.3)";
+                trigger.style.background = "rgba(6, 182, 212, 0.02)";
 
                 filenameSpan.textContent = file.name;
                 filenameSpan.style.color = "var(--text-primary)";
@@ -8668,14 +13519,28 @@ async function triggerCardDrawingCompleteUpload(drawingId) {
         document.getElementById("drawing-upload-complete-btn-ok").addEventListener("click", async () => {
             const file = fileInput.files[0];
             if (!file) {
-                showToast("Silakan pilih file drawing terlebih dahulu!", "warning");
+                showToast("Harap pilih/unggah file drawing terlebih dahulu!", "error");
+                if (fileErrorDiv) {
+                    fileErrorDiv.style.display = "flex";
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                }
+                trigger.dataset.hasError = "true";
+                trigger.style.borderColor = "#ef4444";
+                trigger.style.background = "rgba(239, 68, 68, 0.08)";
+                trigger.style.animation = "none";
+                trigger.offsetHeight; // trigger reflow
+                trigger.style.animation = "shake 0.4s ease-in-out";
                 return;
             }
 
+            const selectedEtiket = etiketSelect ? etiketSelect.value : "Mekanik / Part";
             showToast("Mengunggah file drawing...", "info");
             const fd = new FormData();
             fd.append("file", file);
             fd.append("uploader", state.currentUser ? state.currentUser.fullname : "");
+            fd.append("category", selectedEtiket);
+            fd.append("etiket_category", selectedEtiket);
+            fd.append("etiket_orientation", selectedOrientation);
 
             try {
                 const res = await fetch(`/api/drawings/${drawingId}`, {
@@ -8715,6 +13580,10 @@ async function triggerCardDrawingCompleteUpload(drawingId) {
 
 // ponytail: Helper to upload a drawing file directly from a Kanban board card
 async function triggerCardDrawingUpload(drawingId) {
+    const hasSig = await ensureUserProfileSignature("pengunggahan file drawing");
+    if (!hasSig) {
+        return;
+    }
     const fileInput = document.createElement("input");
     fileInput.type = "file";
     fileInput.type = "file";
@@ -8790,17 +13659,45 @@ async function archiveDrawingCard(drawingId) {
 function getDrawingCardActions(d) {
     const userRole = state.currentUser ? state.currentUser.role : '';
     const userFullname = state.currentUser ? state.currentUser.fullname : '';
-    const isAssigned = d.engineer === userFullname;
+    const username = state.currentUser ? state.currentUser.username : '';
 
-    const isForeman = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
-    const isSupervisor = userRole === 'Supervisor' || userRole === 'Server';
-    const isManager = userRole === 'Manager' || userRole === 'Plant Manager' || userRole === 'Server';
+    const isAssigned = state.currentUser && (
+        (d.engineer && userFullname && d.engineer.toLowerCase().includes(userFullname.toLowerCase())) ||
+        (d.engineer && username && d.engineer.toLowerCase().includes(username.toLowerCase())) ||
+        (userFullname && d.engineer && userFullname.toLowerCase().includes(d.engineer.toLowerCase())) ||
+        (username && d.engineer && username.toLowerCase().includes(d.engineer.toLowerCase()))
+    );
+    const isDrafter = isDrafterRole(userRole) || userRole === 'Drafter' || userRole === 'Drafter Eng' || userRole === 'Drafter/Engineer';
+
+    const isForeman = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+    const isSupervisor = userRole === 'Supervisor Eng' || userRole === 'Server';
+    const isManager = userRole === 'Manager Eng' || userRole === 'Plant Manager' || userRole === 'Server';
+    const isFactoryManager = userRole === 'Factory Manager' || userRole === 'Server';
 
     let buttons = '';
 
     const isUploader = state.currentUser && (d.uploader === state.currentUser.fullname || d.uploader === state.currentUser.username || d.requester === state.currentUser.fullname || d.requester === state.currentUser.username);
 
-    if (d.status === 'Pending Foreman Approval') {
+    if (d.status === 'Pending Dept Approval') {
+        const isDeptApprover = isDepartmentApprover(state.currentUser, d.dept, d);
+        const isServer = state.currentUser && (state.currentUser.role === 'Server' || state.currentUser.username === 'server');
+        if (isDeptApprover || isServer) {
+            buttons += `
+                <button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'reject')">Tolak</button>
+                <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'approve')">Setujui &rarr;</button>
+            `;
+            if (isUploader) {
+                buttons += `
+                    <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editDrawingByUser('${d.id}')">Edit</button>
+                `;
+            }
+        } else if (isUploader) {
+            buttons += `
+                <button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); deleteDrawing('${d.id}')">Batal / Hapus</button>
+                <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editDrawingByUser('${d.id}')">Edit</button>
+            `;
+        }
+    } else if (d.status === 'Pending Foreman Approval') {
         if (!d.file_path) {
             if (isUploader) {
                 buttons += `
@@ -8814,7 +13711,7 @@ function getDrawingCardActions(d) {
                 `;
             }
         } else {
-            // Official sign-off step (On Progress column)
+            // Official sign-off step (after Requester approval)
             if (isForeman) {
                 buttons += `
                     <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'reject')">&larr; Tolak</button>
@@ -8835,8 +13732,8 @@ function getDrawingCardActions(d) {
             `;
         }
     } else if (d.status === 'On Progress') {
-        // ponytail: Foreman/User hanya approve/tolak, bukan selesaikan
-        if (isAssigned) {
+        // ponytail: Drafter/Foreman completes work and submits for Requester approval
+        if (isAssigned || isDrafter || isForeman) {
             if (d.file_path) {
                 buttons += `<button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'approve')">Selesaikan &rarr;</button>`;
             } else {
@@ -8844,6 +13741,13 @@ function getDrawingCardActions(d) {
                     <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); triggerCardDrawingCompleteUpload('${d.id}')">Selesaikan &rarr;</button>
                 `;
             }
+        }
+    } else if (d.status === 'Pending Requester Approval') {
+        if (checkIsRequesterOrRole(d)) {
+            buttons += `
+                <button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'reject')">Tolak</button>
+                <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'approve')">Setujui &rarr;</button>
+            `;
         }
     } else if (d.status === 'Pending Supervisor Approval') {
         if (isSupervisor) {
@@ -8859,20 +13763,38 @@ function getDrawingCardActions(d) {
                 <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'approve')">Setujui &rarr;</button>
             `;
         }
-    } else if (d.status === 'Pending Requester Approval') {
-        const isRequester = (userFullname === d.requester || userFullname === d.uploader || userRole === 'Admin' || userRole === 'Server');
-        if (isRequester) {
+    } else if (d.status === 'Pending Factory Manager Approval') {
+        if (isFactoryManager) {
             buttons += `
                 <button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'reject')">Tolak</button>
                 <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'approve')">Setujui &rarr;</button>
             `;
         }
     } else if (d.status === 'Completed') {
-        const isRequester = (userFullname === d.requester || userFullname === d.uploader || userRole === 'Admin' || userRole === 'Server');
-        if (isRequester || userRole === 'Foreman') {
+        const isRequester = (userFullname === d.requester || userFullname === d.uploader || userRole === 'Admin Eng' || userRole === 'Server');
+        if (isRequester || userRole === 'Foreman Eng') {
             buttons += `
                 <button class="btn btn-primary btn-xs glow-button" onclick="event.stopPropagation(); archiveDrawingCard('${d.id}')">Konfirmasi Selesai & Arsipkan</button>
             `;
+        }
+    }
+
+    const isServerUser = state.currentUser && (state.currentUser.role === 'Server' || state.currentUser.username === 'server' || userRole === 'Server' || getRoleLevel(userRole) === 100);
+    if (isServerUser) {
+        if (!buttons.includes(`deleteDrawing('${d.id}')`)) {
+            buttons = `<button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); deleteDrawing('${d.id}')">Batal / Hapus</button> ` + buttons;
+        }
+    }
+
+    // ponytail: Add "Alihkan ke Project" or "Di Project" button across all drawing phases
+    const linkedProjAction = state.projects && state.projects.find(p => p.drawing_id === d.id);
+    if (linkedProjAction) {
+        if (!buttons.includes("flexToProjectTab")) {
+            buttons += ` <button class="btn btn-outline btn-xs" style="border-color: var(--color-green); color: var(--color-green); opacity: 0.9;" onclick="event.stopPropagation(); flexToProjectTab('${d.id}')" title="Sudah dialihkan ke Project Monitoring (${linkedProjAction.id})"><i data-lucide="check" style="width:11px;height:11px;"></i> Di Project (${linkedProjAction.id})</button>`;
+        }
+    } else if (getDrawingPhase(d) === 1) {
+        if (isForemanAdminRole(userRole)) {
+            buttons += ` <button class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan);" onclick="event.stopPropagation(); openTransferDrawingToProjectModal('${d.id}')"><i data-lucide="external-link" style="width:11px;height:11px;"></i> Alihkan ke Project</button>`;
         }
     }
 
@@ -8907,6 +13829,8 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
     const isRequester = checkIsRequester(ejo.requester);
     const isForeman = state.currentUser && isForemanAdminRole(state.currentUser.role);
 
+    const isDeptApprover = isDepartmentApprover(state.currentUser, ejo.dept);
+
     let canMove = false;
     if (nextStatus === 'In Progress') {
         if (oldStatus === 'Approved' || oldStatus.startsWith('Checking')) {
@@ -8914,7 +13838,13 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
         } else if (oldStatus === 'Pending User Approval') canMove = isRequester;
         else if (oldStatus === 'Pending Foreman Approval') canMove = isForeman;
     } else {
-        if (oldStatus === 'Requested') {
+        if (oldStatus === 'Waiting Dept Approval') {
+            if (nextStatus === 'Requested') {
+                canMove = isDeptApprover;
+            } else if (nextStatus === 'Cancelled') {
+                canMove = isRequester || isDeptApprover;
+            }
+        } else if (oldStatus === 'Requested') {
             canMove = isForeman;
         } else if (oldStatus === 'Approved' || oldStatus.startsWith('Checking')) {
             canMove = isForeman;
@@ -9005,7 +13935,14 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
         }
     } else {
         // Approving: require signature upload
-        if (oldStatus === 'Pending User Approval' && nextStatus === 'Pending Foreman Approval') {
+        if (oldStatus === 'Waiting Dept Approval' && nextStatus === 'Requested') {
+            approvalsObj.dept_manager = {
+                username: state.currentUser.username,
+                name: state.currentUser.fullname,
+                signature: "approved",
+                date: timestamp
+            };
+        } else if (oldStatus === 'Pending User Approval' && nextStatus === 'Pending Foreman Approval') {
             // ponytail: signature prompt disabled for General EJO
             approvalsObj.user = {
                 username: state.currentUser.username,
@@ -9076,7 +14013,7 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
     let completionReason = "";
     let completionSignature = null;
     const isDrafter = state.currentUser && isDrafterRole(state.currentUser.role);
-    const isRestrictedCompleter = state.currentUser && ['Foreman', 'Supervisor', 'Manager', 'Plant Manager'].includes(state.currentUser.role);
+    const isRestrictedCompleter = state.currentUser && ['Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager'].includes(state.currentUser.role);
 
     if (oldStatus.startsWith("In Progress") && finalStatus === "Pending User Approval") {
         let completeData = null;
@@ -9108,6 +14045,9 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
     }
 
     let logMessage = `Status dirubah dari ${oldStatus} menjadi ${finalStatus} oleh ${state.currentUser ? state.currentUser.fullname : 'User'}.${rejectionReason ? ' Alasan Penolakan: ' + rejectionReason : ''}`;
+    if (oldStatus === 'Waiting Dept Approval' && finalStatus === 'Requested') {
+        logMessage = `EJO disetujui oleh Manager/Supervisor ${state.currentUser.dept} (${state.currentUser.fullname}).`;
+    }
     if (rejectionImage) {
         logMessage += `<br/><img src="${rejectionImage}" onclick="openRejectionImage(this.src)" style="max-width: 100%; max-height: 150px; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 8px; cursor: pointer; display: block; object-fit: contain;" title="Klik untuk memperbesar gambar bukti penolakan" />`;
     }
@@ -9161,9 +14101,9 @@ async function deleteGeneralEjo(ejoId) {
     if (!ejo) return;
 
     const isLead = state.currentUser && (isLeadRole(state.currentUser.role));
-    const isRestrictedRole = state.currentUser && ['Foreman', 'Supervisor', 'Manager', 'Plant Manager'].includes(state.currentUser.role);
+    const isRestrictedRole = state.currentUser && ['Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager'].includes(state.currentUser.role);
     const isRequester = checkIsRequester(ejo.requester);
-    const isSchedulePhase = ejo.status === 'Requested' || ejo.status === 'Approved' || (ejo.status || '').startsWith('Checking');
+    const isSchedulePhase = ejo.status === 'Requested' || ejo.status === 'Approved' || (ejo.status || '').startsWith('Checking') || ejo.status === 'Waiting Dept Approval';
 
     let canDelete = (isLead && !isRestrictedRole) || (isRequester && isSchedulePhase);
     if (!canDelete) {
@@ -9529,6 +14469,10 @@ async function archiveGeneralEJO(ejoId) {
 
 
 async function createNewProject() {
+    if (state.currentUser && (isOrdinaryUser(state.currentUser.role) || (state.currentUser.role || '').includes('Staff'))) {
+        showToast("Akses ditolak. Jabatan Staff tidak memiliki akses untuk membuat Project baru.", "warning");
+        return;
+    }
     const title = document.getElementById("proj-title").value;
     const dept = document.getElementById("proj-dept").value;
     const budget = parseInt(document.getElementById("proj-budget").value) || 0;
@@ -9558,9 +14502,12 @@ async function createNewProject() {
     const nextIdNum = lastIdNum + 1;
     const nextId = `PRJ-2026-${String(nextIdNum).padStart(3, '0')}`;
 
-    // ponytail: create project directly without signature in Fase 1
-    const approvals = {};
+    const drawingSelect = document.getElementById("proj-drawing-select");
+    const drawingId = drawingSelect ? drawingSelect.value : "";
+    const selectedDrawing = drawingId ? (state.drawings || []).find(d => d.id === drawingId) : null;
+    const drawingFile = selectedDrawing ? (selectedDrawing.file_path || "") : "";
 
+    const docs = drawingFile ? [drawingFile] : [];
     const newProject = {
         id: nextId,
         title,
@@ -9569,8 +14516,11 @@ async function createNewProject() {
         targetDate,
         pic,
         desc,
+        drawing_id: drawingId,
+        drawing_file: drawingFile,
+        docs: docs,
         phase: 1, // Default to Phase 1: Inisialisasi Ide
-        approvals: approvals
+        approvals: {}
     };
 
     try {
@@ -9618,108 +14568,95 @@ async function createNewProject() {
     }
 }
 
-async function moveProjectPhase(projId, direction) {
-    const proj = state.projects.find(p => p.id === projId);
-    if (!proj) return;
+window.moveProjectPhase = async function moveProjectPhase(projId, direction) {
+    if (window.event) window.event.stopPropagation();
+    console.log("moveProjectPhase invoked:", projId, direction);
+    const proj = state.projects ? state.projects.find(p => String(p.id).trim() === String(projId).trim()) : null;
+    if (!proj) {
+        console.warn("Project not found in state.projects for ID:", projId);
+        showToast(`Data project ${projId} tidak ditemukan!`, "error");
+        return;
+    }
 
-    const oldPhase = proj.phase;
-    const newPhase = oldPhase + direction;
+    // ponytail: Drawing review-only projects cannot be moved to phase 2
+    if (proj.is_review_only || proj.is_review_only === 1 || proj.is_review_only === '1' || proj.is_review_only === true) {
+        showToast("Drawing EJO di project ini bersifat Review Only dan tidak dapat dialihkan ke fase 2!", "warning");
+        return;
+    }
 
-    if (newPhase >= 1 && newPhase <= 4) {
+    const oldPhase = parseInt(proj.phase) || 1;
+    const dir = parseInt(direction) || 1;
+    const newPhase = oldPhase + dir;
+
+    if (newPhase >= 1 && newPhase <= 5) {
         let approvals = { ...(proj.approvals || {}) };
 
-        // ponytail: restrict phase movement from Fase 2 to Foreman/Admin/Server only and require BOQ upload + signature confirmation
         if (oldPhase === 2) {
             const userRole = state.currentUser ? state.currentUser.role : "";
-            const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
+            const isAuthorized = isForemanAdminRole(userRole) || isLeadRole(userRole) || /foreman/i.test(userRole) || /admin/i.test(userRole) || userRole === 'Server' || (state.currentUser && state.currentUser.username === 'foreman');
             if (!isAuthorized) {
                 showToast("Hanya Foreman atau Admin yang berhak memindahkan fase project di Fase 2!", "error");
                 return;
             }
-
-            if (direction > 0) {
-                // Check if BOQ file is uploaded
-                const docs = proj.docs || [];
-                const boqFiles = docs.filter(d => {
-                    const ext = d.split('.').pop().toLowerCase();
-                    return ['xlsx', 'xls', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext);
-                });
-                if (boqFiles.length === 0) {
-                    showToast("File BOQ belum diunggah! Silakan unggah file BOQ terlebih dahulu di detail project.", "warning");
-                    openProjectDetails(null, projId);
-                    return;
-                }
-
-                // Ask for signature confirmation
-                const sig = await showSignatureModal(
-                    `Konfirmasi TTD ${userRole}`,
-                    "Silakan bubuhkan tanda tangan untuk mengonfirmasi bahwa barang/jasa telah ready.",
-                    false
-                );
-                if (!sig) {
-                    showToast("Konfirmasi tanda tangan dibatalkan.", "warning");
-                    return;
-                }
-
-                // Save signature
-                const now = new Date();
-                const timestamp = now.getFullYear() + "-" +
-                    String(now.getMonth() + 1).padStart(2, '0') + "-" +
-                    String(now.getDate()).padStart(2, '0') + " " +
-                    String(now.getHours()).padStart(2, '0') + ":" +
-                    String(now.getMinutes()).padStart(2, '0');
-
-                approvals.ready = {
-                    signer: state.currentUser.fullname,
-                    role: userRole,
-                    date: timestamp,
-                    signature: sig
-                };
-            } else if (oldPhase === 3) {
-                const userRole = state.currentUser ? state.currentUser.role : "";
-                const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
-                if (!isAuthorized) {
-                    showToast("Hanya Foreman atau Admin yang berhak memindahkan fase project di Fase 3!", "error");
-                    return;
-                }
+        } else if (oldPhase === 3 || oldPhase === 4) {
+            const userRole = state.currentUser ? state.currentUser.role : "";
+            const isAuthorized = isForemanAdminRole(userRole) || isLeadRole(userRole) || /foreman/i.test(userRole) || /admin/i.test(userRole) || userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+            if (!isAuthorized) {
+                showToast("Hanya Foreman atau Admin yang berhak memindahkan fase project!", "error");
+                return;
             }
         }
 
         if (direction > 0) {
             // Moving forward: require all 4 signatures in approvals to move to Fase 2!
             if (oldPhase === 1) {
-                const userRole = state.currentUser ? state.currentUser.role : "";
-                const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
-                if (!isAuthorized) {
-                    showToast("Hanya Foreman atau Admin yang berhak menyetujui perpindahan project ke Fase 2!", "error");
-                    return;
-                }
-                if (!approvals.pic || !approvals.foreman || !approvals.supervisor || !approvals.manager) {
-                    showToast("Persetujuan bertingkat belum lengkap! Membuka detail proyek untuk ditandatangani...", "warning");
-                    openProjectDetails(null, projId);
+                const hasBoq = (proj.docs && Array.isArray(proj.docs) && proj.docs.length > 0) || Boolean(proj.drawing_file);
+                if (!hasBoq) {
+                    showToast("Gagal! Anda WAJIB mengunggah dokumen BOQ (Bill of Quantities) terlebih dahulu di Fase 1 sebelum melanjutkan ke Pengadaan.", "warning");
                     return;
                 }
             } else if (oldPhase === 3) {
-                // Selesaikan EJO: require at least one photo documentation
-                const execDocs = proj.execution_docs || [];
-                if (execDocs.length === 0) {
-                    showToast("Gagal! Anda wajib mengunggah minimal 1 foto dokumentasi sebelum menyelesaikan EJO.", "warning");
+                // Moving to Commissioning (Fase 4): require Execution Photo upload via popup modal
+                const uploaded = await showProjectExecDocModal(projId);
+                if (!uploaded) return;
+            } else if (oldPhase === 4) {
+                // Moving to Selesai (Fase 5): require Berita Acara Serah Terima Pekerjaan document & all 6 sequential signatures
+                const handoverDocs = proj.handover_docs || [];
+                if (handoverDocs.length === 0) {
+                    showToast("Gagal! Anda WAJIB mengunggah Dokumen Berita Acara Serah Terima Pekerjaan di Fase 4 sebelum menyelesaikan EJO.", "warning");
+                    return;
+                }
+                const handoverSigs = proj.handover_approvals || {};
+                const handoverRoles = ['staff_eng', 'spv_eng', 'manager_eng', 'manager_user', 'spv_user', 'staff_user'];
+                const missingRole = handoverRoles.find(r => !handoverSigs[r] || !handoverSigs[r].signature);
+                if (missingRole) {
+                    showToast("Gagal! Seluruh 6 tanda tangan Berita Acara (Staff ENG, Foreman ENG, Manager ENG, Manager User, SPV User, Staff User) WAJIB lengkap secara berurutan!", "warning");
+                    openProjectDetails(null, projId);
                     return;
                 }
             }
         }
 
+        // ponytail: reset commissioning handover docs & signatures when reverting back to Phase 3 or earlier
+        let updatePayload = { phase: newPhase, approvals: approvals };
+        if (dir < 0 && newPhase < 4) {
+            updatePayload.handover_docs = [];
+            updatePayload.handover_approvals = {};
+        }
+
         try {
-            const res = await fetch(`/api/projects/${projId}`, {
+            const res = await fetch(`/api/projects/${encodeURIComponent(projId)}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ phase: newPhase, approvals: approvals })
+                body: JSON.stringify(updatePayload)
             });
             if (!res.ok) throw new Error("Gagal mengubah fase");
 
             await initData();
 
             if (newPhase === 4) {
+                showToast(`Project ${proj.id} dipindahkan ke Fase 4: Commissioning & Serah Terima`, "info");
+            } else if (newPhase === 5) {
                 showToast(`Project ${proj.id} berhasil diselesaikan & diarsipkan`, "success");
             } else {
                 showToast(`Project ${proj.id} dipindahkan ke Fase ${newPhase}`, "info");
@@ -9731,12 +14668,243 @@ async function moveProjectPhase(projId, direction) {
     }
 }
 
+// ponytail: Edit Project ID for Foreman Eng / Admin Eng
+window.editProjectId = async function editProjectId(projId) {
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const isAuthorized = isForemanAdminRole(userRole) || isLeadRole(userRole) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRole);
+    if (!isAuthorized) {
+        showToast("Hanya Foreman Eng atau Admin Eng yang diperbolehkan mengedit ID Project!", "error");
+        return;
+    }
+
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) {
+        showToast("Project tidak ditemukan!", "error");
+        return;
+    }
+
+    const newId = await showCustomPrompt(
+        "Masukkan ID Project baru (contoh: PRJ-2026-004):",
+        proj.id,
+        "Edit ID Project"
+    );
+
+    if (newId === null) return; // User cancelled
+    const trimmedId = newId.trim();
+
+    if (!trimmedId) {
+        showToast("ID Project tidak boleh kosong!", "error");
+        return;
+    }
+
+    if (trimmedId === proj.id) {
+        return; // Unchanged
+    }
+
+    const exists = (state.projects || []).some(p => p.id === trimmedId && p.id !== proj.id);
+    if (exists) {
+        showToast(`ID Project '${trimmedId}' sudah digunakan!`, "error");
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(proj.id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_id: trimmedId, id: trimmedId })
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || "Gagal memperbarui ID Project!");
+        }
+
+        const oldId = proj.id;
+        proj.id = trimmedId;
+
+        if (state.currentDetailProjectId === oldId) {
+            state.currentDetailProjectId = trimmedId;
+            openProjectDetails(null, trimmedId);
+        }
+
+        renderProjects();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        showToast(`ID Project berhasil diperbarui menjadi ${trimmedId}!`, "success");
+    } catch (err) {
+        console.error("Error editing project ID:", err);
+        showToast(err.message || "Gagal memperbarui ID Project", "error");
+    }
+};
+
+// ponytail: Edit manual status for project by Foreman Eng / Admin Eng
+window.editProjectCustomStatus = async function editProjectCustomStatus(projId) {
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const isAuthorized = isForemanAdminRole(userRole) || isLeadRole(userRole) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRole);
+    if (!isAuthorized) {
+        showToast("Hanya Foreman Eng atau Admin Eng yang diperbolehkan menginput status!", "error");
+        return;
+    }
+
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) {
+        showToast("Project tidak ditemukan!", "error");
+        return;
+    }
+
+    const statusInput = await showCustomPrompt(
+        "Masukkan status / catatan untuk project ini (kosongkan jika ingin menghapus):",
+        proj.custom_status || "",
+        "Input Status Project"
+    );
+
+    if (statusInput === null || statusInput === undefined) return; // User cancelled
+    const rawText = typeof statusInput === 'object' ? (statusInput.text || '') : statusInput;
+    const trimmedStatus = String(rawText || '').trim();
+
+    try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(proj.id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ custom_status: trimmedStatus })
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || "Gagal memperbarui status!");
+        }
+
+        proj.custom_status = trimmedStatus;
+        const projInState = state.projects ? state.projects.find(p => p.id === proj.id) : null;
+        if (projInState) {
+            projInState.custom_status = trimmedStatus;
+        }
+
+        if (state.currentDetailProjectId === proj.id) {
+            openProjectDetails(null, proj.id);
+        }
+
+        renderProjects();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        showToast("Status project berhasil diperbarui!", "success");
+    } catch (err) {
+        console.error("Error updating project custom status:", err);
+        showToast(err.message || "Gagal memperbarui status project", "error");
+    }
+};
+
+// ponytail: Edit manual PR, PO, GR progress percentage for Phase 2 project
+window.editProjectProcurement = async function editProjectProcurement(projId) {
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const isAuthorized = isForemanAdminRole(userRole) || isLeadRole(userRole) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRole);
+    if (!isAuthorized) {
+        showToast("Hanya Foreman Eng atau Admin Eng yang diperbolehkan menginput status PR/PO/GR!", "error");
+        return;
+    }
+
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) {
+        showToast("Project tidak ditemukan!", "error");
+        return;
+    }
+
+    const modal = document.getElementById("custom-procurement-modal");
+    const titleEl = document.getElementById("procurement-modal-title");
+    const inputPr = document.getElementById("procurement-input-pr");
+    const inputPo = document.getElementById("procurement-input-po");
+    const inputGr = document.getElementById("procurement-input-gr");
+    const btnOk = document.getElementById("procurement-btn-ok");
+    const btnCancel = document.getElementById("procurement-btn-cancel");
+
+    if (!modal || !inputPr || !inputPo || !inputGr || !btnOk || !btnCancel) {
+        return;
+    }
+
+    if (titleEl) titleEl.textContent = `Input Status Procurement (${proj.id})`;
+    inputPr.value = proj.pr_percent !== undefined && proj.pr_percent !== null ? proj.pr_percent : 0;
+    inputPo.value = proj.po_percent !== undefined && proj.po_percent !== null ? proj.po_percent : 0;
+    inputGr.value = proj.gr_percent !== undefined && proj.gr_percent !== null ? proj.gr_percent : 0;
+
+    modal.style.display = 'flex';
+    if (window.lucide) lucide.createIcons();
+
+    return new Promise((resolve) => {
+        btnOk.onclick = async (e) => {
+            if (e) e.preventDefault();
+            
+            let prVal = parseInt(inputPr.value, 10);
+            let poVal = parseInt(inputPo.value, 10);
+            let grVal = parseInt(inputGr.value, 10);
+
+            if (isNaN(prVal) || prVal < 0) prVal = 0;
+            if (prVal > 100) prVal = 100;
+
+            if (isNaN(poVal) || poVal < 0) poVal = 0;
+            if (poVal > 100) poVal = 100;
+
+            if (isNaN(grVal) || grVal < 0) grVal = 0;
+            if (grVal > 100) grVal = 100;
+
+            try {
+                const res = await fetch(`/api/projects/${encodeURIComponent(proj.id)}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        pr_percent: prVal,
+                        po_percent: poVal,
+                        gr_percent: grVal
+                    })
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.message || "Gagal memperbarui status procurement!");
+                }
+
+                proj.pr_percent = prVal;
+                proj.po_percent = poVal;
+                proj.gr_percent = grVal;
+                const projInState = state.projects ? state.projects.find(p => p.id === proj.id) : null;
+                if (projInState) {
+                    projInState.pr_percent = prVal;
+                    projInState.po_percent = poVal;
+                    projInState.gr_percent = grVal;
+                }
+
+                showToast("Status PR, PO, GR berhasil diperbarui!", "success");
+                renderProjects();
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+
+                const detailModal = document.getElementById("project-modal");
+                if (detailModal && detailModal.style.display !== "none" && state.currentDetailProjectId === proj.id) {
+                    openProjectDetails(null, proj.id);
+                }
+            } catch (err) {
+                console.error("Error updating procurement progress:", err);
+                showToast(err.message || "Gagal memperbarui status procurement!", "error");
+            } finally {
+                modal.style.display = 'none';
+                btnOk.onclick = null;
+                btnCancel.onclick = null;
+                resolve();
+            }
+        };
+
+        btnCancel.onclick = (e) => {
+            if (e) e.preventDefault();
+            modal.style.display = 'none';
+            btnOk.onclick = null;
+            btnCancel.onclick = null;
+            resolve();
+        };
+    });
+};
+
 async function deleteProject(projId) {
     const confirmDel = await showCustomConfirm(`Apakah Anda yakin ingin membatalkan project ${projId}?`);
     if (!confirmDel) return;
 
     try {
-        const res = await fetch(`/api/projects/${projId}`, {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projId)}`, {
             method: "DELETE"
         });
         if (!res.ok) throw new Error("Gagal menghapus project");
@@ -9752,7 +14920,7 @@ async function deleteProject(projId) {
 // ponytail: upload project doc photos from Kanban card directly
 async function uploadProjectDocFromCard(projId, inputEl) {
     const userRole = state.currentUser ? state.currentUser.role : "";
-    const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
+    const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
     if (!isAuthorized) {
         showToast("Hanya Foreman atau Admin yang diperbolehkan mengunggah foto dokumentasi!", "error");
         inputEl.value = "";
@@ -9764,7 +14932,6 @@ async function uploadProjectDocFromCard(projId, inputEl) {
     const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
     let uploadedCount = 0;
 
-    // Upload files sequentially to prevent database locks or concurrent update issues
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const ext = '.' + file.name.split('.').pop().toLowerCase();
@@ -9806,21 +14973,305 @@ async function uploadProjectDocFromCard(projId, inputEl) {
     renderProjects();
 }
 
+// ponytail: upload project BOQ documents from Phase 1 Kanban card
+async function uploadProjectBoqFromCard(projId, inputEl) {
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) return;
+    if (proj.phase !== 1) {
+        showToast("Upload BOQ hanya dapat dilakukan pada Fase 1!", "warning");
+        inputEl.value = "";
+        return;
+    }
+
+    const files = inputEl.files;
+    if (!files || files.length === 0) return;
+
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.pdf', '.xlsx', '.xls', '.csv'];
+    let uploadedCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!allowed.includes(ext)) {
+            showToast(`Format file "${file.name}" tidak didukung!`, "error");
+            continue;
+        }
+
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("project_id", projId);
+        fd.append("doc_type", "boq");
+
+        try {
+            const res = await fetch("/api/projects/upload-doc", {
+                method: "POST",
+                body: fd
+            });
+            const data = await res.json();
+            if (!res.ok || data.status === "error") {
+                throw new Error(data.message || "Gagal mengunggah file BOQ");
+            }
+
+            if (proj) {
+                proj.docs = data.docs;
+            }
+            uploadedCount++;
+        } catch (err) {
+            console.error(err);
+            showToast(`Gagal mengunggah file ${file.name}: ${err.message}`, "error");
+        }
+    }
+
+    inputEl.value = "";
+    if (uploadedCount > 0) {
+        showToast(`${uploadedCount} Dokumen BOQ berhasil diunggah`, "success");
+        await initData();
+        if (state.currentDetailProjectId === projId) {
+            openProjectDetails(null, projId);
+        }
+    }
+}
+
+// ponytail: delete project BOQ document in Phase 1
+window.deleteProjectBoqDoc = async function deleteProjectBoqDoc(arg1, arg2, arg3) {
+    let evt = null;
+    let projId = "";
+    let encodedDocUrl = "";
+
+    if (arg1 && typeof arg1 === 'object' && (arg1.stopPropagation || arg1.target)) {
+        evt = arg1;
+        projId = arg2;
+        encodedDocUrl = arg3;
+    } else {
+        projId = arg1;
+        encodedDocUrl = arg2;
+    }
+
+    if (evt && evt.stopPropagation) evt.stopPropagation();
+    if (evt && evt.preventDefault) evt.preventDefault();
+    if (window.event && window.event.stopPropagation) window.event.stopPropagation();
+
+    const docUrl = decodeURIComponent(encodedDocUrl || "");
+    const targetFilename = docUrl.split('?')[0].split('/').pop().toLowerCase();
+
+    if (!targetFilename) return;
+
+    const confirmDelete = await showCustomConfirm(`Apakah Anda yakin ingin menghapus dokumen BOQ ini?`);
+    if (!confirmDelete) {
+        return;
+    }
+
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) {
+        showToast("Data project tidak ditemukan!", "error");
+        return;
+    }
+
+    if (proj.phase !== 1) {
+        showToast("Penghapusan BOQ hanya diperbolehkan di Fase 1!", "warning");
+        return;
+    }
+
+    let updatedDocs = (proj.docs || []).filter(d => d.split('?')[0].split('/').pop().toLowerCase() !== targetFilename);
+    let updatedDrawingFile = proj.drawing_file || "";
+    if (updatedDrawingFile.split('?')[0].split('/').pop().toLowerCase() === targetFilename) {
+        updatedDrawingFile = "";
+    }
+
+    try {
+        const res = await fetch(`/api/projects/${projId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                docs: updatedDocs,
+                drawing_file: updatedDrawingFile
+            })
+        });
+
+        if (!res.ok) throw new Error("Gagal menghapus BOQ di server");
+
+        await initData();
+
+        showToast("Dokumen BOQ berhasil dihapus!", "success");
+
+        if (state.currentDetailProjectId === projId) {
+            openProjectDetails(null, projId);
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Gagal menghapus dokumen BOQ!", "error");
+    }
+};
+
+// ponytail: upload project handover Berita Acara documents from Kanban card
+async function uploadProjectHandoverDocFromCard(projId, inputEl) {
+    const userRole = state.currentUser ? state.currentUser.role : "";
+    const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+    if (!isAuthorized) {
+        showToast("Hanya Foreman atau Admin yang diperbolehkan mengunggah Berita Acara!", "error");
+        inputEl.value = "";
+        return;
+    }
+    const files = inputEl.files;
+    if (!files || files.length === 0) return;
+
+    const allowed = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
+    let uploadedCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!allowed.includes(ext)) {
+            showToast(`Format file "${file.name}" tidak didukung! Hanya PDF atau Gambar (JPG, PNG, WEBP) yang diperbolehkan.`, "error");
+            continue;
+        }
+
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("project_id", projId);
+        fd.append("doc_type", "handover");
+
+        try {
+            const res = await fetch("/api/projects/upload-doc", {
+                method: "POST",
+                body: fd
+            });
+            const data = await res.json();
+            if (!res.ok || data.status === "error") {
+                throw new Error(data.message || "Gagal mengunggah Berita Acara");
+            }
+
+            const proj = state.projects.find(p => p.id === projId);
+            if (proj) {
+                proj.handover_docs = data.handover_docs;
+                proj.handover_approvals = data.handover_approvals || {};
+            }
+            uploadedCount++;
+        } catch (err) {
+            console.error(err);
+            showToast(`Gagal mengunggah "${file.name}": ` + err.message, "error");
+        }
+    }
+
+    if (uploadedCount > 0) {
+        showToast(`${uploadedCount} Dokumen Berita Acara Serah Terima berhasil diunggah!`, "success");
+        if (state.currentDetailProjectId === projId) {
+            openProjectDetails(null, projId);
+        }
+    }
+    inputEl.value = "";
+    renderProjects();
+}
+
+// ponytail: delete uploaded project execution documentation photo
+async function deleteProjectExecutionDoc(projId, docUrl) {
+    const userRole = state.currentUser ? state.currentUser.role : "";
+    const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+    if (!isAuthorized) {
+        showToast("Hanya Foreman atau Admin yang berhak menghapus foto dokumentasi eksekusi!", "error");
+        return;
+    }
+    const confirmed = await showCustomConfirm(
+        "Apakah Anda yakin ingin menghapus foto dokumentasi eksekusi ini?",
+        "Hapus Foto Eksekusi"
+    );
+    if (!confirmed) return;
+
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) {
+        showToast("Data project tidak ditemukan!", "error");
+        return;
+    }
+
+    const targetFilename = docUrl.split('?')[0].split('/').pop().toLowerCase();
+    const updatedDocs = (proj.execution_docs || []).filter(d => d.split('?')[0].split('/').pop().toLowerCase() !== targetFilename);
+
+    try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ execution_docs: updatedDocs })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Gagal menghapus foto eksekusi");
+
+        proj.execution_docs = updatedDocs;
+        showToast("Foto dokumentasi eksekusi berhasil dihapus!", "success");
+        closeImagePreviewModal();
+        renderProjects();
+        if (state.currentDetailProjectId === projId) {
+            openProjectDetails(null, projId);
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Gagal menghapus foto eksekusi: " + err.message, "error");
+    }
+}
+window.deleteProjectExecutionDoc = deleteProjectExecutionDoc;
+
+// ponytail: delete uploaded project handover Berita Acara document
+async function deleteProjectHandoverDoc(projId, docUrl) {
+    const userRole = state.currentUser ? state.currentUser.role : "";
+    const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
+    if (!isAuthorized) {
+        showToast("Hanya Foreman atau Admin yang dapat menghapus dokumen Berita Acara!", "error");
+        return;
+    }
+    const confirmed = await showCustomConfirm(
+        "Apakah Anda yakin ingin menghapus dokumen Berita Acara ini?\nSeluruh tanda tangan yang telah diisi akan direset ulang dari awal.",
+        "Konfirmasi Hapus Berita Acara"
+    );
+    if (!confirmed) return;
+
+    try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/handover-doc?url=${encodeURIComponent(docUrl)}`, {
+            method: "DELETE"
+        });
+        const data = await res.json();
+        if (!res.ok || data.status === "error") {
+            throw new Error(data.message || "Gagal menghapus Berita Acara");
+        }
+        const proj = state.projects.find(p => p.id === projId);
+        if (proj) {
+            proj.handover_docs = data.handover_docs;
+            proj.handover_approvals = data.handover_approvals || {};
+        }
+        showToast("Dokumen Berita Acara berhasil dihapus.", "info");
+        renderProjects();
+        if (state.currentDetailProjectId === projId) {
+            openProjectDetails(null, projId);
+        }
+    } catch (err) {
+        console.error(err);
+        showToast("Gagal menghapus Berita Acara: " + err.message, "error");
+    }
+}
+
 // ponytail: complete EJO project card check & proceed
 async function completeProjectFromCard(projId) {
     const userRole = state.currentUser ? state.currentUser.role : "";
-    const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
+    const isAuthorized = userRole === 'Foreman Eng' || userRole === 'Admin Eng' || userRole === 'Server';
     if (!isAuthorized) {
-        showToast("Hanya Foreman atau Admin yang berhak melakukan tindakan ini di Fase 3!", "error");
+        showToast("Hanya Foreman atau Admin yang berhak melakukan tindakan ini di Fase 4!", "error");
         return;
     }
 
     const proj = state.projects.find(p => p.id === projId);
     if (!proj) return;
 
-    const execDocs = proj.execution_docs || [];
-    if (execDocs.length === 0) {
-        showToast("Gagal! Anda wajib mengunggah minimal 1 foto dokumentasi sebelum menyelesaikan EJO.", "warning");
+    const handoverDocs = proj.handover_docs || [];
+    if (handoverDocs.length === 0) {
+        showToast("Gagal! Anda WAJIB mengunggah Dokumen Berita Acara Serah Terima Pekerjaan di Fase 4 sebelum menyelesaikan EJO.", "warning");
+        openProjectDetails(null, projId);
+        return;
+    }
+
+    const handoverSigs = proj.handover_approvals || {};
+    const handoverRoles = ['staff_eng', 'spv_eng', 'manager_eng', 'manager_user', 'spv_user', 'staff_user'];
+    const missingRole = handoverRoles.find(r => !handoverSigs[r] || !handoverSigs[r].signature);
+    if (missingRole) {
+        showToast("Gagal! Tanda tangan Berita Acara Serah Terima (6 Pihak) belum lengkap! Membuka detail proyek...", "warning");
+        openProjectDetails(null, projId);
         return;
     }
 
@@ -9832,9 +15283,16 @@ async function convertProjectToEJO(projId) {
     const proj = state.projects.find(p => p.id === projId);
     if (!proj) return;
 
+    // Auto map PIC to a default EJO category
+    // Ahmad Dani -> Mekanik, Budi Utomo -> Program, Charlie -> Sipil, Deddy -> Kalibrasi
+    let ejoCategory = "Program";
+    if (proj.pic === "Ahmad Dani") ejoCategory = "Mekanik";
+    else if (proj.pic === "Charlie Santoso") ejoCategory = "Sipil";
+    else if (proj.pic === "Deddy Corbuzier") ejoCategory = "Kalibrasi";
+
     // ponytail: check General EJO & Drawing limits before conversion
-    if (checkGeneralEjoLimit()) {
-        showToast("Batas pembuatan General EJO tercapai! Anda tidak dapat mengkonversi project karena maksimal 2 General EJO aktif.", "warning");
+    if (checkGeneralEjoLimit(ejoCategory)) {
+        showToast(`Batas pembuatan General EJO kategori '${ejoCategory}' tercapai! Anda tidak dapat mengkonversi project karena maksimal 2 General EJO aktif per kategori.`, "warning");
         return;
     }
     if (checkDrawingLimit()) {
@@ -9844,22 +15302,24 @@ async function convertProjectToEJO(projId) {
 
     state._isConverting = true;
 
-    // Auto map PIC to a default EJO category
-    // Ahmad Dani -> Mekanik, Budi Utomo -> Program, Charlie -> Sipil, Deddy -> Kalibrasi
-    let ejoCategory = "Program";
-    if (proj.pic === "Ahmad Dani") ejoCategory = "Mekanik";
-    else if (proj.pic === "Charlie Santoso") ejoCategory = "Sipil";
-    else if (proj.pic === "Deddy Corbuzier") ejoCategory = "Kalibrasi";
-
     // Generate General EJO Code
-    const lastIdNum = (state.generalEjos || []).reduce((max, item) => {
-        const parts = item.id.split('-');
-        const num = parseInt(parts[1]);
-        return num > max ? num : max;
-    }, 5);
+    const allItems = [...(state.generalEjos || []), ...(state.drawings || [])];
+    const lastIdNum = allItems.reduce((max, item) => {
+        const m = (item.id || '').match(/EJO(\d{3})/i) || (item.id || '').match(/(\d+)/);
+        if (m) {
+            const num = parseInt(m[1], 10);
+            return num > max ? num : max;
+        }
+        return max;
+    }, 0);
 
     const nextIdNum = lastIdNum + 1;
-    const nextId = `GEJO-${String(nextIdNum).padStart(3, '0')}`;
+    const nowConv = new Date();
+    const ddConv = String(nowConv.getDate()).padStart(2, '0');
+    const mmConv = String(nowConv.getMonth() + 1).padStart(2, '0');
+    const yyyyConv = nowConv.getFullYear();
+    const dateStrConv = `${ddConv}${mmConv}${yyyyConv}`;
+    const nextId = `EJO${String(nextIdNum).padStart(3, '0')}${dateStrConv}`;
 
     // ponytail: Allow custom General EJO ID for project approval/conversion
     const customId = await showCustomPrompt(
@@ -9939,7 +15399,7 @@ async function convertProjectToEJO(projId) {
         if (!resDrawing.ok) throw new Error("Gagal membuat Drawing Request otomatis");
 
         // Delete from projects list
-        const resProj = await fetch(`/api/projects/${projId}`, {
+        const resProj = await fetch(`/api/projects/${encodeURIComponent(projId)}`, {
             method: "DELETE"
         });
         if (!resProj.ok) throw new Error("Gagal menghapus project asal");
@@ -9958,6 +15418,50 @@ async function convertProjectToEJO(projId) {
     }
 }
 
+// ponytail: Parse and render live Excel Spreadsheet preview table using SheetJS
+window.renderExcelPreview = async function renderExcelPreview(docUrl, previewContainerId) {
+    const containerEl = document.getElementById(previewContainerId);
+    if (!containerEl) return;
+
+    try {
+        const response = await fetch(docUrl);
+        if (!response.ok) throw new Error("Gagal mengambil file Excel");
+        const arrayBuffer = await response.arrayBuffer();
+
+        if (window.XLSX) {
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const htmlTable = XLSX.utils.sheet_to_html(worksheet, { id: 'excel-preview-table', editable: false });
+
+            containerEl.innerHTML = `
+                <div style="width: 100%; max-height: 500px; overflow: auto; border-radius: var(--border-radius-md); border: 1px solid rgba(16, 185, 129, 0.3); background: var(--bg-secondary); padding: 12px; box-sizing: border-box;">
+                    <div style="font-size: 0.8rem; font-weight: 600; color: #10b981; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="sheet" style="width:14px;height:14px;"></i> Live Sheet Preview (${firstSheetName}):
+                    </div>
+                    <style>
+                        #excel-preview-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; color: var(--text-primary); }
+                        #excel-preview-table td, #excel-preview-table th { border: 1px solid rgba(255,255,255,0.12); padding: 7px 10px; white-space: nowrap; text-align: left; }
+                        #excel-preview-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+                        #excel-preview-table tr:first-child { background: rgba(16, 185, 129, 0.15); font-weight: bold; color: #10b981; }
+                    </style>
+                    ${htmlTable}
+                </div>
+            `;
+            if (window.lucide) lucide.createIcons();
+        } else {
+            throw new Error("Library XLSX belum siap");
+        }
+    } catch (err) {
+        console.warn("Excel preview error:", err);
+        containerEl.innerHTML = `
+            <div style="padding: 12px; font-size: 0.75rem; color: var(--text-muted); font-style: italic; background: rgba(16, 185, 129, 0.05); border: 1px dashed rgba(16, 185, 129, 0.2); border-radius: 6px; text-align: center;">
+                Spreadsheet Excel terlampir. Klik <strong>"Buka Dokumen"</strong> di atas untuk mengunduh/membuka file.
+            </div>
+        `;
+    }
+};
+
 // ponytail: Open project details modal
 function openProjectDetails(event, projId) {
     // Prevent opening if clicking on an action button
@@ -9970,21 +15474,303 @@ function openProjectDetails(event, projId) {
 
     state.currentDetailProjectId = proj.id;
 
-    document.getElementById("modal-project-id").textContent = proj.id;
-    document.getElementById("modal-project-dept").textContent = getDepartmentDisplayLabel(proj.dept);
+    const modalIdEl = document.getElementById("modal-project-id");
+    if (modalIdEl) {
+        modalIdEl.setAttribute("data-id", proj.id);
+        const userRoleModal = state.currentUser ? state.currentUser.role : '';
+        const isForemanAdminModal = isForemanAdminRole(userRoleModal) || isLeadRole(userRoleModal) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleModal);
+        if (isForemanAdminModal) {
+            modalIdEl.innerHTML = `
+                ${proj.id}
+                <button onclick="event.stopPropagation(); editProjectId('${proj.id}')" title="Edit ID Project" style="background: transparent; border: none; padding: 0 4px; cursor: pointer; color: var(--color-cyan); display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;">
+                    <i data-lucide="edit-3" style="width: 13px; height: 13px;"></i>
+                </button>
+            `;
+        } else {
+            modalIdEl.textContent = proj.id;
+        }
+    }
+    const drawingBadgeEl = document.getElementById("modal-project-drawing-badge");
+    if (drawingBadgeEl) {
+        if (proj.drawing_id) {
+            drawingBadgeEl.style.display = "inline-flex";
+            drawingBadgeEl.innerHTML = `<span class="ejo-id-badge" onclick="event.stopPropagation(); openDrawingDetails('${proj.drawing_id}')" style="font-size: 0.78rem; padding: 3px 10px; cursor: pointer; border: 1px solid var(--color-cyan); color: var(--color-cyan);" title="Klik untuk lihat Drawing EJO ${proj.drawing_id}"><i data-lucide="file-text" style="width:12px;height:12px;margin-right:4px;display:inline-block;vertical-align:middle;"></i> Ref Drawing: ${proj.drawing_id}</span>`;
+        } else {
+            drawingBadgeEl.style.display = "none";
+        }
+    }
+    const deptEl = document.getElementById("modal-project-dept");
+    if (deptEl) deptEl.textContent = getDepartmentDisplayLabel(proj.dept);
     document.getElementById("modal-project-title").textContent = proj.title;
-    document.getElementById("modal-project-pic").textContent = proj.pic || "Belum ditentukan";
+    const picEl = document.getElementById("modal-project-pic");
+    if (picEl) picEl.textContent = proj.pic || "Belum ditentukan";
 
     let phaseText = "Fase 1: Inisialisasi Ide";
     if (proj.phase === 2) phaseText = "Fase 2: Pengadaan";
-    else if (proj.phase === 3) phaseText = "Fase 3: Tinggal Eksekusi";
-    else if (proj.phase === 4) phaseText = "Selesai & Diarsipkan";
-    document.getElementById("modal-project-phase").textContent = phaseText;
+    else if (proj.phase === 3) phaseText = "Fase 3: Eksekusi";
+    else if (proj.phase === 4) phaseText = "Fase 4: Commissioning & Serah Terima";
+    else if (proj.phase === 5) phaseText = "Arsip Project (Selesai)";
+    
+    const phaseEl = document.getElementById("modal-project-phase");
+    if (phaseEl) phaseEl.textContent = phaseText;
 
-    document.getElementById("modal-project-desc").textContent = proj.desc || "Tidak ada deskripsi.";
+    const customStatusModalEl = document.getElementById("modal-project-custom-status");
+    if (customStatusModalEl) {
+        const userRoleModal = state.currentUser ? state.currentUser.role : '';
+        const isForemanAdminModal = isForemanAdminRole(userRoleModal) || isLeadRole(userRoleModal) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleModal);
+        if (proj.custom_status) {
+            customStatusModalEl.style.display = "inline-flex";
+            customStatusModalEl.innerHTML = `<span class="badge" onclick="event.stopPropagation(); ${isForemanAdminModal ? `editProjectCustomStatus('${proj.id}')` : ''}" style="font-size: 0.72rem; padding: 3px 9px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-flex; align-items: center; gap: 4px; ${isForemanAdminModal ? 'cursor: pointer;' : ''}" title="${isForemanAdminModal ? 'Klik untuk edit Status' : ''}"><i data-lucide="tag" style="width:11px;height:11px;"></i> ${proj.custom_status} ${isForemanAdminModal ? `<i data-lucide="edit-2" style="width:10px;height:10px;margin-left:2px;"></i>` : ''}</span>`;
+        } else if (isForemanAdminModal) {
+            customStatusModalEl.style.display = "inline-flex";
+            customStatusModalEl.innerHTML = `<button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectCustomStatus('${proj.id}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.1); display: inline-flex; align-items: center; gap: 3px;"><i data-lucide="plus" style="width:10px;height:10px;"></i> + Input Status</button>`;
+        } else {
+            customStatusModalEl.style.display = "none";
+        }
+    }
+
+    const descEl = document.getElementById("modal-project-desc");
+    if (descEl) descEl.textContent = proj.desc || "Tidak ada deskripsi.";
+
+    // ponytail: Render BOQ Documents in Project Detail Modal with sleek UI card layout
+    const boqGallery = document.getElementById("project-boq-gallery");
+    const boqSec = document.getElementById("project-boq-docs-sec");
+    const boqUploadContainer = document.getElementById("modal-boq-upload-btn-container");
+
+    if (boqUploadContainer) {
+        if (proj.phase === 1) {
+            boqUploadContainer.innerHTML = `
+                <input type="file" id="modal-upload-boq-${proj.id}" accept=".pdf,image/*,.xlsx,.xls,.csv" style="display: none;" multiple onchange="uploadProjectBoqFromCard('${proj.id}', this)">
+                <button class="btn btn-outline btn-xs" style="padding: 2px 8px; font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px; border-color: var(--color-cyan); color: var(--color-cyan);" onclick="document.getElementById('modal-upload-boq-${proj.id}').click();">
+                    <i data-lucide="upload" style="width:12px;height:12px;"></i> + Upload BOQ
+                </button>
+            `;
+        } else {
+            boqUploadContainer.innerHTML = "";
+        }
+    }
+
+    if (boqGallery && boqSec) {
+        if (proj.phase <= 3) {
+            const boqDocs = (proj.docs || []).slice();
+            if (proj.drawing_file && !boqDocs.includes(proj.drawing_file)) {
+                boqDocs.push(proj.drawing_file);
+            }
+
+            if (boqDocs.length > 0) {
+                boqSec.style.display = "block";
+                boqGallery.innerHTML = boqDocs.map((docUrl, idx) => {
+                    const urlNoQuery = docUrl.split('?')[0];
+                    const ext = urlNoQuery.split('.').pop().toLowerCase();
+                    const isPdf = ext === 'pdf';
+                    const isExcel = ['xlsx', 'xls', 'csv'].includes(ext);
+                    const rawName = urlNoQuery.split('/').pop();
+                    
+                    let fileTypeLabel = "Dokumen Lampiran";
+                    let iconName = "file-text";
+                    let themeColor = "var(--color-cyan)";
+                    let themeBg = "rgba(0, 242, 254, 0.08)";
+                    let themeBorder = "rgba(0, 242, 254, 0.25)";
+
+                    if (isPdf) {
+                        fileTypeLabel = "Dokumen PDF (BOQ)";
+                        iconName = "file-text";
+                    } else if (isExcel) {
+                        fileTypeLabel = `Spreadsheet ${ext.toUpperCase()} (BOQ)`;
+                        iconName = "sheet";
+                        themeColor = "#10b981";
+                        themeBg = "rgba(16, 185, 129, 0.08)";
+                        themeBorder = "rgba(16, 185, 129, 0.25)";
+                    } else {
+                        fileTypeLabel = "Foto Dokumentasi BOQ";
+                        iconName = "image";
+                    }
+
+                    let displayName = rawName;
+                    if (rawName.startsWith("proj_")) {
+                        displayName = `BOQ-${proj.id}.${ext}`;
+                    }
+
+                    let previewHtml = "";
+                    const previewId = `excel-preview-${proj.id}-${idx}`;
+                    if (isPdf) {
+                        previewHtml = `
+                            <div style="width: 100%; height: 350px; margin-top: 8px; border-radius: var(--border-radius-md); overflow: hidden; border: 1px solid ${themeBorder}; background: var(--bg-secondary);">
+                                <iframe src="${docUrl}" style="width: 100%; height: 100%; border: none;"></iframe>
+                            </div>
+                        `;
+                    } else if (isExcel) {
+                        previewHtml = `
+                            <div id="${previewId}" style="width: 100%; margin-top: 8px;">
+                                <div style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px; background: rgba(16, 185, 129, 0.05); border: 1px dashed rgba(16, 185, 129, 0.25); border-radius: var(--border-radius-md); color: #10b981; font-size: 0.78rem;">
+                                    <i data-lucide="loader" class="spin" style="width: 14px; height: 14px;"></i> Memuat Preview Spreadsheet Excel...
+                                </div>
+                            </div>
+                        `;
+                        setTimeout(() => {
+                            renderExcelPreview(docUrl, previewId);
+                        }, 50);
+                    } else {
+                        previewHtml = `
+                            <div style="width: 100%; max-height: 350px; margin-top: 8px; border-radius: var(--border-radius-md); overflow: hidden; border: 1px solid ${themeBorder}; background: var(--bg-secondary); text-align: center; padding: 8px; box-sizing: border-box;">
+                                <img src="${docUrl}" style="max-width: 100%; max-height: 330px; object-fit: contain; border-radius: var(--border-radius-sm); cursor: pointer;" onclick="openImagePreviewModal('${docUrl}', 'Dokumen BOQ Proyek');" title="Klik untuk memperbesar foto" />
+                            </div>
+                        `;
+                    }
+
+                    const deleteBtnHtml = (proj.phase === 1) ? `
+                        <button class="btn btn-danger-outline btn-xs" style="padding: 3px 8px; font-size: 0.72rem; display: inline-flex; align-items: center; gap: 3px;" onclick="event.stopPropagation(); event.preventDefault(); deleteProjectBoqDoc(event, '${proj.id}', '${encodeURIComponent(docUrl)}')" title="Hapus dokumen BOQ ini">
+                            <i data-lucide="trash-2" style="width:12px;height:12px;"></i> Hapus
+                        </button>
+                    ` : '';
+
+                    return `
+                        <div style="display: flex; flex-direction: column; width: 100%; margin-bottom: 8px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: ${themeBg}; border: 1px solid ${themeBorder}; border-radius: var(--border-radius-md); transition: all 0.2s ease; cursor: pointer; width: 100%; box-sizing: border-box;" onclick="window.open('${docUrl}', '_blank');" title="Buka ${displayName}">
+                                <div style="display: flex; align-items: center; gap: 12px; overflow: hidden; min-width: 0;">
+                                    <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; color: ${themeColor}; flex-shrink: 0; border: 1px solid ${themeBorder};">
+                                        <i data-lucide="${iconName}" style="width:18px;height:18px;"></i>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; overflow: hidden;">
+                                        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${displayName}</span>
+                                        <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">${fileTypeLabel}</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-left: 12px;">
+                                    ${deleteBtnHtml}
+                                    <div style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: ${themeColor}; font-weight: 600;">
+                                        <span>Buka Dokumen</span>
+                                        <i data-lucide="external-link" style="width:13px;height:13px;"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            ${previewHtml}
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                boqSec.style.display = "block";
+                boqGallery.innerHTML = '<span style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">Belum ada dokumen BOQ yang diunggah.</span>';
+            }
+        } else {
+            boqSec.style.display = "none";
+        }
+        lucide.createIcons();
+    }
+
+    // ponytail: Render Procurement PR / PO / GR details section in Project Detail Modal for Phase 2
+    const procSec = document.getElementById("project-procurement-sec");
+    const procContent = document.getElementById("project-procurement-content");
+    const procEditBtnContainer = document.getElementById("modal-procurement-edit-btn-container");
+
+    if (procSec && procContent) {
+        if (proj.phase === 2) {
+            procSec.style.display = "block";
+            const userRoleModal = state.currentUser ? state.currentUser.role : '';
+            const isForemanAdminModal = isForemanAdminRole(userRoleModal) || isLeadRole(userRoleModal) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleModal);
+
+            if (procEditBtnContainer) {
+                procEditBtnContainer.innerHTML = isForemanAdminModal ? `
+                    <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectProcurement('${proj.id}')" style="padding: 2px 8px; font-size: 0.72rem; border-color: var(--color-green); color: var(--color-green); background: rgba(16, 185, 129, 0.1); display: inline-flex; align-items: center; gap: 4px;">
+                        <i data-lucide="edit-2" style="width:11px;height:11px;"></i> Edit Progress
+                    </button>
+                ` : '';
+            }
+
+            const prVal = proj.pr_percent !== undefined && proj.pr_percent !== null ? proj.pr_percent : 0;
+            const poVal = proj.po_percent !== undefined && proj.po_percent !== null ? proj.po_percent : 0;
+            const grVal = proj.gr_percent !== undefined && proj.gr_percent !== null ? proj.gr_percent : 0;
+
+            procContent.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; margin-top: 6px;">
+                    <div style="background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: var(--border-radius-sm); padding: 10px; text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--color-cyan); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
+                            <i data-lucide="file-text" style="width: 13px; height: 13px;"></i> Progress PR
+                        </div>
+                        <div style="font-size: 1.25rem; font-weight: 800; color: var(--color-cyan);">${prVal}%</div>
+                    </div>
+                    <div style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--border-radius-sm); padding: 10px; text-align: center;">
+                        <div style="font-size: 0.75rem; color: #f59e0b; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
+                            <i data-lucide="shopping-bag" style="width: 13px; height: 13px;"></i> Progress PO
+                        </div>
+                        <div style="font-size: 1.25rem; font-weight: 800; color: #f59e0b;">${poVal}%</div>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--border-radius-sm); padding: 10px; text-align: center;">
+                        <div style="font-size: 0.75rem; color: var(--color-green); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 2px;">
+                            <i data-lucide="package-check" style="width: 13px; height: 13px;"></i> Progress GR
+                        </div>
+                        <div style="font-size: 1.25rem; font-weight: 800; color: var(--color-green);">${grVal}%</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            procSec.style.display = "none";
+        }
+    }
+
+    // ponytail: Render Timeline details section in Project Detail Modal for Phase 3
+    const timelineSec = document.getElementById("project-timeline-sec");
+    const timelineContent = document.getElementById("project-timeline-content");
+    const timelineEditBtnContainer = document.getElementById("modal-timeline-edit-btn-container");
+
+    if (timelineSec && timelineContent) {
+        if (proj.phase === 3) {
+            timelineSec.style.display = "block";
+            if (timelineEditBtnContainer) {
+                timelineEditBtnContainer.innerHTML = `
+                    <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); openEditProjectTimelineModal('${proj.id}')" style="padding: 2px 8px; font-size: 0.72rem; border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.1); display: inline-flex; align-items: center; gap: 4px;">
+                        <i data-lucide="edit-2" style="width:11px;height:11px;"></i> Kelola Timeline
+                    </button>
+                `;
+            }
+
+            const timelineList = (proj.timeline || []);
+            let optionsHtml = "";
+            let initialDesc = "Belum ada data timeline untuk proyek ini.";
+
+            if (timelineList.length > 0) {
+                initialDesc = timelineList[0].desc || "Tidak ada deskripsi.";
+                optionsHtml = timelineList.map((item, idx) => {
+                    let dStr = item.date || `Entri #${idx + 1}`;
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
+                        const parts = dStr.split('-');
+                        dStr = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    }
+                    return `<option value="${idx}">Tanggal: ${dStr}</option>`;
+                }).join('');
+            } else {
+                optionsHtml = `<option value="">(Belum Ada Timeline)</option>`;
+            }
+
+            timelineContent.innerHTML = `
+                <div style="background: rgba(245, 158, 11, 0.05); border: 1px dashed rgba(245, 158, 11, 0.3); border-radius: var(--border-radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                    <div style="width: 100%;">
+                        <label style="font-size: 0.78rem; font-weight: 700; color: #f59e0b; display: block; margin-bottom: 4px;">Pilih Tanggal Timeline:</label>
+                        <select class="form-control" style="width: 100%; padding: 6px 10px; font-size: 0.85rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; box-sizing: border-box;" onchange="event.stopPropagation(); updateProjectTimelineDesc(this.value, '${proj.id}', 'modal')">
+                            ${optionsHtml}
+                        </select>
+                    </div>
+
+                    <div style="width: 100%; margin-top: 2px;">
+                        <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 4px;">Deskripsi Tanggal Terpilih:</label>
+                        <div id="project-timeline-desc-modal-${proj.id}" style="width: 100%; padding: 10px 12px; background: var(--bg-primary); border: 1px solid var(--card-border); border-radius: 6px; font-size: 0.88rem; color: var(--text-primary); min-height: 48px; box-sizing: border-box; line-height: 1.5; word-break: break-word;">
+                            ${initialDesc}
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            timelineSec.style.display = "none";
+        }
+    }
 
     // ponytail: Render project approvals signatures (4 roles)
     const approvals = proj.approvals || {};
+
+    const phase1Sec = document.getElementById("project-phase1-signatures-sec");
+    if (phase1Sec) {
+        phase1Sec.style.display = "none";
+    }
 
     // ponytail: Set next signer info in details modal status badge
     const statusBadge = document.getElementById("modal-project-sig-status");
@@ -9992,9 +15778,9 @@ function openProjectDetails(event, projId) {
         if (proj.phase === 1) {
             let nextRole = "Selesai";
             if (!approvals.pic) nextRole = "Pengusul";
-            else if (!approvals.foreman) nextRole = "Foreman";
-            else if (!approvals.supervisor) nextRole = "Supervisor";
-            else if (!approvals.manager) nextRole = "Manager";
+            else if (!approvals.foreman) nextRole = "Foreman Eng";
+            else if (!approvals.supervisor) nextRole = "Supervisor Eng";
+            else if (!approvals.manager) nextRole = "Manager Eng";
             statusBadge.style.display = "inline-block";
             statusBadge.textContent = `Menunggu TTD: ${nextRole}`;
         } else {
@@ -10004,6 +15790,7 @@ function openProjectDetails(event, projId) {
 
     const roles = ['pic', 'foreman', 'supervisor', 'manager'];
     const userRole = state.currentUser ? state.currentUser.role : "";
+    const isAuthorized = /foreman/i.test(userRole) || /admin/i.test(userRole) || userRole === 'Server' || (state.currentUser && state.currentUser.username === 'foreman');
     const userLevel = getRoleLevel(userRole);
 
     roles.forEach(r => {
@@ -10055,7 +15842,6 @@ function openProjectDetails(event, projId) {
         const supportingDocs = proj.docs || [];
 
         const uploadMock = document.getElementById("proj-attachment-upload-mock");
-        const isAuthorized = userRole === 'Foreman' || userRole === 'Admin' || userRole === 'Server';
         if (uploadMock) {
             uploadMock.style.display = (proj.phase === 2 && isAuthorized) ? "flex" : "none";
         }
@@ -10072,14 +15858,24 @@ function openProjectDetails(event, projId) {
                 else if (ext === 'pdf') icon = "file-text";
                 else if (['xlsx', 'xls', 'csv'].includes(ext)) icon = "file-spreadsheet";
 
+                // ponytail: only allow BOQ delete in phase < 3 (before Eksekusi)
+                const canDelete = proj.phase < 3 && (isAuthorized || (state.currentUser && (state.currentUser.username === proj.pic || state.currentUser.username === 'server' || state.currentUser.username === 'admin')));
+
+                const deleteBtnHtml = canDelete ? `
+                    <button type="button" class="btn-icon-delete" onclick="event.preventDefault(); event.stopPropagation(); window.deleteProjectBoqDoc('${proj.id}', '${encodeURIComponent(docUrl)}');" title="Hapus File BOQ" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: var(--color-red); cursor: pointer; padding: 4px 8px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; font-size: 0.75rem; font-weight: 600; transition: background 0.2s;">
+                        <i data-lucide="trash-2" style="width: 13px; height: 13px;"></i> Hapus
+                    </button>
+                ` : '';
+
                 attachmentsList.insertAdjacentHTML('beforeend', `
-                    <a href="${docUrl}" target="_blank" class="card-glass" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; font-size: 0.8rem; color: var(--text-primary); text-decoration: none; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); transition: background 0.2s; margin-bottom: 4px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <i data-lucide="${icon}" style="width:16px; height:16px; color: var(--color-cyan);"></i>
-                            <span>${filename}</span>
-                        </div>
-                        <i data-lucide="external-link" style="width:12px; height:12px; color: var(--text-muted);"></i>
-                    </a>
+                    <div class="card-glass" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 0.8rem; color: var(--text-primary); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); transition: background 0.2s; margin-bottom: 6px; gap: 10px;">
+                        <a href="${docUrl}" target="_blank" style="display: flex; align-items: center; gap: 8px; color: var(--text-primary); text-decoration: none; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <i data-lucide="${icon}" style="width:16px; height:16px; color: var(--color-cyan); flex-shrink: 0;"></i>
+                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;">${filename}</span>
+                            <i data-lucide="external-link" style="width:12px; height:12px; color: var(--text-muted); flex-shrink: 0;"></i>
+                        </a>
+                        ${deleteBtnHtml}
+                    </div>
                 `);
             });
         } else {
@@ -10105,26 +15901,286 @@ function openProjectDetails(event, projId) {
                     execDocs.forEach(docUrl => {
                         gallery.insertAdjacentHTML('beforeend', `
                             <div style="position: relative; width: 110px; height: 80px; background: rgba(0,0,0,0.2); border-radius: var(--border-radius-sm); overflow: hidden; border: 1px solid var(--card-border);">
-                                <img src="${docUrl}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;" onclick="window.open('${docUrl}', '_blank')" />
+                                <img src="${docUrl}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;" onclick="openImagePreviewModal('${docUrl}', 'Foto Eksekusi Proyek')" />
                             </div>
                         `);
                     });
                 }
             }
 
-            // Hide the upload mock button in Phase 4 (Archive) since it's completed
+            // Hide the upload mock button in Phase 4 (Archive) or for unauthorized roles
             const uploadMock = document.getElementById("proj-doc-upload-mock");
             if (uploadMock) {
-                uploadMock.style.display = (proj.phase === 3) ? "flex" : "none";
+                uploadMock.style.display = (proj.phase === 3 && isAuthorized) ? "flex" : "none";
             }
         } else {
             docsSec.style.display = "none";
+        }
+
+        // Render Berita Acara Handover Docs in detail modal ONLY for Phase 4 and Phase 5
+        const handoverSec = document.getElementById("project-handover-docs-sec");
+        if (handoverSec) {
+            if (proj.phase >= 4 && proj.phase <= 5) {
+                handoverSec.style.display = "block";
+                const handoverDocs = proj.handover_docs || [];
+                const canUploadHandover = (proj.phase === 4) && isAuthorized;
+
+                const gallery = document.getElementById("project-handover-gallery");
+                if (gallery) {
+                    gallery.innerHTML = "";
+                    if (handoverDocs.length === 0) {
+                        gallery.innerHTML = `<span style="font-size: 0.75rem; color: var(--color-yellow); font-style: italic; padding: 4px;">Belum ada Dokumen Form Berita Acara yang diunggah. Silakan unggah file Berita Acara yang telah diisi / ditandatangani.</span>`;
+                    } else {
+                        handoverDocs.forEach(docUrl => {
+                            const cleanUrl = docUrl.split('?')[0];
+                            const isPdf = cleanUrl.toLowerCase().endsWith('.pdf');
+                            const previewUrl = `${cleanUrl}?t=${Date.now()}`;
+                            const deleteBtnHtml = (proj.phase === 4 && isAuthorized) ? `
+                                <button class="btn btn-danger-outline btn-xs" style="padding: 4px 8px; font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px; border-color: rgba(239,68,68,0.4);" onclick="deleteProjectHandoverDoc('${proj.id}', '${cleanUrl}')" title="Hapus Berita Acara Ini">
+                                    <i data-lucide="trash-2" style="width:12px;height:12px;"></i> Hapus
+                                </button>
+                            ` : '';
+
+                            if (isPdf) {
+                                gallery.insertAdjacentHTML('beforeend', `
+                                    <div class="card-glass" style="display: flex; flex-direction: column; width: 100%; gap: 10px; padding: 12px; border: 1px solid rgba(16,185,129,0.35); background: rgba(16,185,129,0.04); border-radius: var(--border-radius-md); box-sizing: border-box;">
+                                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <div style="width: 34px; height: 34px; border-radius: 8px; background: rgba(16,185,129,0.12); display: flex; align-items: center; justify-content: center; color: var(--color-green); flex-shrink: 0;">
+                                                    <i data-lucide="file-text" style="width:18px;height:18px;"></i>
+                                                </div>
+                                                <div style="display: flex; flex-direction: column; gap: 2px;">
+                                                    <span style="font-weight: 600; color: var(--text-primary);">Berita Acara (PDF)</span>
+                                                    <span style="font-size: 0.68rem; color: var(--text-muted);">Pratinjau Langsung Dokumen & Tanda Tangan</span>
+                                                </div>
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 6px;">
+                                                <button class="btn btn-outline btn-xs" style="padding: 4px 10px; font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px;" onclick="window.open('${previewUrl}', '_blank')" title="Buka di Tab Baru">
+                                                    <i data-lucide="external-link" style="width:12px;height:12px;"></i> Tab Baru
+                                                </button>
+                                                ${deleteBtnHtml}
+                                            </div>
+                                        </div>
+                                        <div style="width: 100%; height: 450px; border-radius: var(--border-radius-sm); overflow: hidden; border: 1px solid var(--card-border); background: #ffffff;">
+                                            <iframe src="${previewUrl}" style="width: 100%; height: 100%; border: none;"></iframe>
+                                        </div>
+                                    </div>
+                                `);
+                            } else {
+                                gallery.insertAdjacentHTML('beforeend', `
+                                    <div style="position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: var(--border-radius-md); border: 1px solid var(--card-border);">
+                                        <img src="${previewUrl}" style="width: 110px; height: 75px; object-fit: cover; border-radius: 4px; cursor: pointer;" onclick="openImagePreviewModal('${previewUrl}', 'Foto Berita Acara')" title="Klik untuk Review Foto Berita Acara" />
+                                        <div style="display: flex; gap: 4px; width: 100%; justify-content: space-between;">
+                                            <button class="btn btn-outline btn-xs" style="padding: 2px 6px; font-size: 0.65rem; flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 2px;" onclick="openImagePreviewModal('${previewUrl}', 'Foto Berita Acara')">
+                                                <i data-lucide="image" style="width:10px;height:10px;"></i> Review
+                                            </button>
+                                            ${deleteBtnHtml}
+                                        </div>
+                                    </div>
+                                `);
+                            }
+                        });
+                    }
+                    if (canUploadHandover) {
+                        gallery.insertAdjacentHTML('beforeend', `
+                            <input type="file" id="modal-upload-handover-${proj.id}" accept=".pdf,image/*" style="display: none;" multiple onchange="uploadProjectHandoverDocFromCard('${proj.id}', this)">
+                            <button class="btn btn-warning btn-xs" style="padding: 10px 14px; display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; border-radius: var(--border-radius-md);" onclick="document.getElementById('modal-upload-handover-${proj.id}').click();">
+                                <i data-lucide="upload-cloud" style="width:15px;height:15px;"></i> + Upload Form BA
+                            </button>
+                        `);
+                    }
+
+                    // ponytail: Render Handover Multi-Role Signatures (ONLY when Berita Acara document is uploaded)
+                    const sigSec = document.getElementById("project-handover-signatures-sec");
+                    if (sigSec) {
+                        sigSec.style.display = (handoverDocs.length > 0) ? "flex" : "none";
+                    }
+
+                    const handoverSigs = proj.handover_approvals || {};
+                    const handoverRoles = ['staff_eng', 'spv_eng', 'manager_eng', 'manager_user', 'spv_user', 'staff_user'];
+                    const roleLabels = {
+                        staff_eng: "Staff ENG",
+                        spv_eng: "SPV ENG",
+                        manager_eng: "Manager ENG",
+                        manager_user: "Manager User",
+                        spv_user: "SPV User",
+                        staff_user: "Staff User"
+                    };
+
+                    // Find next pending role in exact sequential order
+                    let nextPendingRole = null;
+                    for (const r of handoverRoles) {
+                        if (!handoverSigs[r] || !handoverSigs[r].signature) {
+                            nextPendingRole = r;
+                            break;
+                        }
+                    }
+
+                    const currentUserFullname = state.currentUser ? (state.currentUser.fullname && state.currentUser.fullname.trim() !== '' ? state.currentUser.fullname : state.currentUser.username) : 'Pengguna';
+                    const currentUserRole = state.currentUser ? state.currentUser.role : '';
+                    const currentUserUsername = state.currentUser ? state.currentUser.username : '';
+                    const currentUserDept = state.currentUser ? normalizeDepartmentCode(state.currentUser.dept) : '';
+                    const projDept = normalizeDepartmentCode(proj.dept);
+
+                    const deptInRole = projDept && (currentUserRole.toLowerCase().includes(projDept.toLowerCase()) || currentUserDept === projDept);
+
+                    // Check if current logged-in user strictly matches nextPendingRole
+                    let userMatchesNextRole = false;
+                    if (nextPendingRole === 'staff_eng') {
+                        userMatchesNextRole = (currentUserRole === 'Staff Eng' || currentUserRole === 'Drafter' || currentUserRole === 'Foreman Eng' || currentUserRole === 'Admin Eng' || currentUserFullname === proj.pic || currentUserUsername === proj.pic);
+                    } else if (nextPendingRole === 'spv_eng') {
+                        userMatchesNextRole = (currentUserRole === 'SPV Eng' || currentUserRole === 'Supervisor Eng' || (/spv|supervisor/i.test(currentUserRole) && !currentUserRole.toLowerCase().includes('foreman')));
+                    } else if (nextPendingRole === 'manager_eng') {
+                        userMatchesNextRole = (currentUserRole === 'Manager Eng');
+                    } else if (nextPendingRole === 'manager_user') {
+                        userMatchesNextRole = (deptInRole || currentUserDept === projDept || currentUserRole === 'Plant Manager' || currentUserRole === 'Server') && (currentUserRole === 'Manager User' || currentUserRole.toLowerCase().includes('manager'));
+                    } else if (nextPendingRole === 'spv_user') {
+                        userMatchesNextRole = (deptInRole || currentUserDept === projDept || currentUserRole === 'Server') && (currentUserRole.toLowerCase().includes('spv') || currentUserRole.toLowerCase().includes('supervisor') || currentUserRole.toLowerCase().includes('foreman') || currentUserRole === 'SPV User');
+                    } else if (nextPendingRole === 'staff_user') {
+                        userMatchesNextRole = (deptInRole || currentUserDept === projDept || currentUserFullname === proj.requester || currentUserUsername === proj.requester || currentUserRole === 'Server') && (currentUserRole.toLowerCase().includes('staff') || currentUserRole.toLowerCase().includes('user') || currentUserRole === 'User' || currentUserRole === 'Staff User');
+                    }
+
+                    // Server or admin user can sign the current active pending slot if needed
+                    if (currentUserRole === 'Server' || currentUserUsername === 'server' || currentUserUsername === 'admin') {
+                        userMatchesNextRole = true;
+                    }
+
+                    let signedCount = 0;
+                    handoverRoles.forEach(r => {
+                        const cardEl = document.getElementById(`card-proj-handover-sig-${r}`);
+                        const infoEl = document.getElementById(`proj-handover-sig-info-${r}`);
+                        const imgContainer = document.getElementById(`proj-handover-sig-img-container-${r}`);
+                        const sigObj = handoverSigs[r];
+
+                        if (cardEl) {
+                            cardEl.style.border = "1px solid var(--card-border)";
+                            cardEl.style.background = "var(--bg-secondary)";
+                        }
+
+                        if (sigObj && sigObj.signature) {
+                            signedCount++;
+                            if (cardEl) {
+                                cardEl.style.border = "1px solid var(--color-green)";
+                                cardEl.style.background = "rgba(16, 185, 129, 0.08)";
+                            }
+                            const displayName = (sigObj.signer && sigObj.signer.trim() !== '') ? sigObj.signer : (sigObj.username || 'Pengguna');
+                            if (infoEl) infoEl.innerHTML = `<span style="color: var(--color-green); font-weight: 600;">✓ Disetujui oleh:</span><br><strong style="color: var(--text-primary);">${displayName}</strong><br><span style="font-size:0.68rem; color:var(--text-muted);">${sigObj.date}</span>`;
+                            if (imgContainer) imgContainer.innerHTML = `<img src="${sigObj.signature}" style="max-height: 40px; background: #ffffff; padding: 2px; border: 1px solid var(--card-border); border-radius: 4px; object-fit: contain;" />`;
+                        } else if (r === nextPendingRole) {
+                            if (cardEl) {
+                                cardEl.style.border = userMatchesNextRole ? "1.5px solid var(--color-cyan)" : "1px solid var(--card-border)";
+                                cardEl.style.background = userMatchesNextRole ? "rgba(14, 165, 233, 0.12)" : "rgba(14, 165, 233, 0.04)";
+                            }
+                            const turnText = userMatchesNextRole ? "⏱️ GILIRAN ANDA TTD" : "⏱️ Menunggu TTD";
+                            const slotStatus = userMatchesNextRole ? "🎯 Siap TTD" : "Menunggu TTD";
+                            if (infoEl) infoEl.innerHTML = `<span style="color: var(--color-cyan); font-weight: 700;">${turnText}</span><br><span style="font-size:0.68rem; color:var(--text-secondary);">${roleLabels[r]}</span>`;
+                            if (imgContainer) imgContainer.innerHTML = `<span style="font-size: 0.68rem; color: var(--color-cyan); font-weight: 700;">${slotStatus}</span>`;
+                        } else {
+                            if (infoEl) infoEl.innerHTML = `<span style="color: var(--text-muted);">Menunggu TTD</span><br><span style="font-size:0.68rem; color:var(--text-muted);">${roleLabels[r]}</span>`;
+                            if (imgContainer) imgContainer.innerHTML = `<span style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum TTD</span>`;
+                        }
+                    });
+
+                    const sigStatusEl = document.getElementById("project-handover-sig-status");
+                    if (sigStatusEl) {
+                        if (signedCount === 6) {
+                            sigStatusEl.textContent = "✓ Lengkap (6/6 TTD)";
+                            sigStatusEl.className = "badge status-completed";
+                        } else {
+                            const currentTargetLabel = nextPendingRole ? roleLabels[nextPendingRole] : "-";
+                            if (userMatchesNextRole) {
+                                sigStatusEl.textContent = `🎯 GILIRAN ANDA TTD (${currentTargetLabel})`;
+                                sigStatusEl.className = "badge badge-primary";
+                            } else {
+                                sigStatusEl.textContent = `Terisi ${signedCount}/6 TTD (${currentTargetLabel})`;
+                                sigStatusEl.className = "badge badge-accent";
+                            }
+                        }
+                    }
+
+                    const signActionBar = document.getElementById("proj-handover-sign-action-bar");
+                    const signBtn = document.getElementById("proj-handover-btn-sign");
+
+                    if (signActionBar && signBtn) {
+                        const canSignNow = (handoverDocs.length > 0) && nextPendingRole && userMatchesNextRole && (proj.phase === 4);
+                        if (canSignNow) {
+                            signActionBar.style.display = "flex";
+                            signBtn.disabled = false;
+                            signBtn.removeAttribute("disabled");
+                            signBtn.innerHTML = `<i data-lucide="pen-tool" style="width: 14px; height: 14px;"></i><span>Tanda Tangani Berita Acara (${roleLabels[nextPendingRole]})</span>`;
+                            if (window.lucide) window.lucide.createIcons();
+
+                            signBtn.onclick = async () => {
+                                const confirmSign = await showCustomConfirm(
+                                    `Apakah Anda yakin ingin menyetujui dan menandatangani Berita Acara Serah Terima Pekerjaan ini sebagai ${roleLabels[nextPendingRole]}?`
+                                );
+                                if (!confirmSign) return;
+
+                                const sig = await showSignatureModal(
+                                    `Konfirmasi Tanda Tangan (${roleLabels[nextPendingRole]})`,
+                                    `Silakan periksa atau bubuhkan tanda tangan digital Anda untuk memberikan persetujuan resmi sebagai ${roleLabels[nextPendingRole]}.`,
+                                    false
+                                );
+
+                                if (!sig) {
+                                    return;
+                                }
+
+                                try {
+                                    signBtn.disabled = true;
+                                    signBtn.textContent = "Menyimpan Persetujuan...";
+
+                                    const now = new Date().toLocaleString('id-ID', { hour12: false }).replace(/\//g, '-');
+                                    const updatedHandoverSigs = { ...handoverSigs };
+                                    const userInState = (state.users && state.currentUser) ? state.users.find(u => u.username === state.currentUser.username) : null;
+                                    const signerDisplayName = (userInState && userInState.fullname && userInState.fullname.trim() !== '') 
+                                        ? userInState.fullname 
+                                        : ((state.currentUser && state.currentUser.fullname && state.currentUser.fullname.trim() !== '') ? state.currentUser.fullname : (state.currentUser ? state.currentUser.username : 'Pengguna'));
+                                    updatedHandoverSigs[nextPendingRole] = {
+                                        signer: signerDisplayName,
+                                        username: currentUserUsername,
+                                        role: currentUserRole,
+                                        date: now,
+                                        signature: sig
+                                    };
+
+                                    const res = await fetch(`/api/projects/${encodeURIComponent(proj.id)}`, {
+                                        method: "PUT",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ handover_approvals: updatedHandoverSigs })
+                                    });
+                                    if (!res.ok) throw new Error("Gagal menyimpan persetujuan tanda tangan");
+
+                                    showToast(`Persetujuan Berita Acara berhasil diberikan oleh ${currentUserFullname} (${roleLabels[nextPendingRole]})!`, "success");
+                                    await initData();
+                                    openProjectDetails(null, proj.id);
+                                } catch (err) {
+                                    console.error(err);
+                                    showToast(`Gagal menyimpan persetujuan: ${err.message}`, "error");
+                                } finally {
+                                    signBtn.disabled = false;
+                                    signBtn.removeAttribute("disabled");
+                                    signBtn.innerHTML = `<i data-lucide="pen-tool" style="width: 14px; height: 14px;"></i><span>Tanda Tangani Berita Acara (${roleLabels[nextPendingRole]})</span>`;
+                                    if (window.lucide) window.lucide.createIcons();
+                                }
+                            };
+                        } else {
+                            signActionBar.style.display = "none";
+                        }
+                    }
+                }
+            } else {
+                handoverSec.style.display = "none";
+            }
         }
     }
 
     const modal = document.getElementById("project-detail-modal");
     if (modal) {
         modal.style.display = "flex";
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+        }
     }
 }
 
@@ -10161,21 +16217,36 @@ async function signProjectRole(roleKey) {
         }
 
         if (confirm(`Apakah Anda yakin ingin menghapus persetujuan ${roleKey.toUpperCase()}?`)) {
-            // Sequential check: if we delete, we must also delete all higher levels that depend on it!
+            // Strict Serial Un-signing: deleting an earlier step clears all subsequent steps in series
             if (roleKey === 'pic') {
                 delete approvals.pic;
                 delete approvals.foreman;
                 delete approvals.supervisor;
                 delete approvals.manager;
-            } else if (roleKey === 'foreman') {
+                delete approvals.manager_user;
+                delete approvals.spv_user;
+                delete approvals.staff_user;
+            } else if (roleKey === 'foreman' || roleKey === 'supervisor') {
                 delete approvals.foreman;
                 delete approvals.supervisor;
                 delete approvals.manager;
-            } else if (roleKey === 'supervisor') {
-                delete approvals.supervisor;
-                delete approvals.manager;
+                delete approvals.manager_user;
+                delete approvals.spv_user;
+                delete approvals.staff_user;
             } else if (roleKey === 'manager') {
                 delete approvals.manager;
+                delete approvals.manager_user;
+                delete approvals.spv_user;
+                delete approvals.staff_user;
+            } else if (roleKey === 'manager_user') {
+                delete approvals.manager_user;
+                delete approvals.spv_user;
+                delete approvals.staff_user;
+            } else if (roleKey === 'spv_user') {
+                delete approvals.spv_user;
+                delete approvals.staff_user;
+            } else if (roleKey === 'staff_user') {
+                delete approvals.staff_user;
             }
 
             await saveProjectApprovals(proj.id, approvals);
@@ -10184,17 +16255,25 @@ async function signProjectRole(roleKey) {
         return;
     }
 
-    // Checking sequence (Persetujuan Bertingkat)
-    if (roleKey === 'foreman' && !approvals.pic) {
-        showToast("Persetujuan bertingkat! Pengusul / Requestor harus menandatangani terlebih dahulu.", "warning");
+    // Checking strict SERIAL sequence (Persetujuan Bertingkat / Seri dari Kiri ke Kanan)
+    if ((roleKey === 'foreman' || roleKey === 'supervisor') && !approvals.pic) {
+        showToast("Sistem Seri! Pengusul / Requestor (Kolom 1) harus menandatangani terlebih dahulu.", "warning");
         return;
     }
-    if (roleKey === 'supervisor' && !approvals.foreman) {
-        showToast("Persetujuan bertingkat! Foreman harus menandatangani terlebih dahulu.", "warning");
+    if (roleKey === 'manager' && !approvals.foreman && !approvals.supervisor) {
+        showToast("Sistem Seri! SPV / Foreman ENG (Kolom 2) harus menandatangani terlebih dahulu.", "warning");
         return;
     }
-    if (roleKey === 'manager' && !approvals.supervisor) {
-        showToast("Persetujuan bertingkat! Supervisor harus menandatangani terlebih dahulu.", "warning");
+    if (roleKey === 'manager_user' && !approvals.manager) {
+        showToast("Sistem Seri! Manager ENG (Kolom 3) harus menandatangani terlebih dahulu.", "warning");
+        return;
+    }
+    if (roleKey === 'spv_user' && !approvals.manager_user) {
+        showToast("Sistem Seri! Manager User (Kolom 4) harus menandatangani terlebih dahulu.", "warning");
+        return;
+    }
+    if (roleKey === 'staff_user' && !approvals.spv_user) {
+        showToast("Sistem Seri! SPV User (Kolom 5) harus menandatangani terlebih dahulu.", "warning");
         return;
     }
 
@@ -10209,29 +16288,34 @@ async function signProjectRole(roleKey) {
         roleLabel = "Tanda Tangan Pengusul / Requestor";
     } else if (roleKey === 'foreman') {
         // ponytail: only Foreman/Admin/Server can sign foreman slot
-        if (userRole !== 'Foreman' && userRole !== 'Admin' && userRole !== 'Server') {
+        if (userRole !== 'Foreman Eng' && userRole !== 'Admin Eng' && userRole !== 'Server') {
             showToast("Hanya Foreman yang dapat menyetujui!", "warning");
             return;
         }
         roleLabel = "Persetujuan Foreman";
     } else if (roleKey === 'supervisor') {
         // ponytail: only Supervisor/Admin/Server can sign supervisor slot
-        if (userRole !== 'Supervisor' && userRole !== 'Admin' && userRole !== 'Server') {
+        if (userRole !== 'Supervisor Eng' && userRole !== 'Admin Eng' && userRole !== 'Server') {
             showToast("Hanya Supervisor yang dapat menyetujui!", "warning");
             return;
         }
         roleLabel = "Persetujuan Supervisor";
     } else if (roleKey === 'manager') {
         // ponytail: only Manager/Plant Manager/Admin/Server can sign manager slot
-        if (userRole !== 'Manager' && userRole !== 'Plant Manager' && userRole !== 'Admin' && userRole !== 'Server') {
+        if (userRole !== 'Manager Eng' && userRole !== 'Plant Manager' && userRole !== 'Admin Eng' && userRole !== 'Server') {
             showToast("Hanya Manager / Plant Manager yang dapat menyetujui!", "warning");
             return;
         }
         roleLabel = "Persetujuan Manager";
     }
 
-    // ponytail: pass false as 3rd parameter to showSignatureModal so users can upload signatures if not saved in profile!
-    const sig = await showSignatureModal(roleLabel, "Silakan bubuhkan tanda tangan untuk menyetujui gagasan proyek ini.", false);
+    // ponytail: Auto-use profile signature if available in user profile, fallback to popup modal if missing
+    let sig = (state.currentUser && state.currentUser.signature) ? state.currentUser.signature : null;
+    if (!sig) {
+        const valid = await ensureUserProfileSignature(roleLabel);
+        if (!valid) return;
+        sig = state.currentUser.signature;
+    }
     if (!sig) return;
 
     const now = new Date();
@@ -10254,7 +16338,7 @@ async function signProjectRole(roleKey) {
 
 async function saveProjectApprovals(projId, approvals) {
     try {
-        const res = await fetch(`/api/projects/${projId}`, {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projId)}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ approvals: approvals })
@@ -10323,22 +16407,24 @@ async function signProjectRoleDirect(event, projId, roleKey) {
     await signProjectRole(roleKey);
 }
 
-// Format Rupiah numbers for Capex display
 function formatRupiah(num) {
     return new Intl.NumberFormat('id-ID').format(num);
 }
 
+
+
 // ==========================================
 // Admin Panel: User Database Handlers
 // ==========================================
-async function renderUsers() {
+async function renderUsers(preFetchedUsers = null) {
     try {
-        const res = await fetch("/api/users");
-        if (!res.ok) throw new Error("Gagal mengambil data user");
-        const users = await res.json();
-
-        // ponytail: hide Server account and Server role users from all roles/positions
-        const filteredUsers = users.filter(u => u.role !== 'Server' && u.username !== 'server');
+        let filteredUsers = preFetchedUsers;
+        if (!filteredUsers) {
+            const res = await fetch("/api/users");
+            if (!res.ok) throw new Error("Gagal mengambil data user");
+            const users = await res.json();
+            filteredUsers = users.filter(u => u.role !== 'Server' && u.username !== 'server');
+        }
 
         // ponytail: Keep engineersList and state synced with database users dynamically
         state.users = filteredUsers;
@@ -10349,72 +16435,1163 @@ async function renderUsers() {
         }));
         populateEngineerDropdowns();
 
-        // ponytail: hide new user button and form for Foreman
+        // ponytail: show new user button for Lead roles (Admin, Foreman, Manager, etc.)
         const toggleBtn = document.getElementById("btn-toggle-new-user");
         if (toggleBtn) {
-            toggleBtn.style.display = (state.currentUser && state.currentUser.role === 'Foreman') ? 'none' : 'inline-flex';
-        }
-        const formContainer = document.getElementById("user-form-container");
-        if (formContainer && state.currentUser && state.currentUser.role === 'Foreman') {
-            formContainer.style.display = 'none';
+            const canManage = state.currentUser && (isLeadRole(state.currentUser.role) || state.currentUser.role === 'Foreman Eng');
+            toggleBtn.style.display = canManage ? 'inline-flex' : 'none';
         }
 
         const tbody = document.getElementById("user-table-body");
         if (!tbody) return;
 
-        // ponytail: Foreman can only see Drafter and Admin accounts in the user list
+        // ponytail: Display all users in the Admin Panel user table with live status
         let displayUsers = filteredUsers;
-        if (state.currentUser && state.currentUser.role === 'Foreman') {
-            displayUsers = filteredUsers.filter(u => isDrafterRole(u.role) || u.role === 'Admin');
+
+        if (displayUsers.length === 0) {
+            const emptyHtml = `<tr><td colspan="8" class="text-center" style="padding: 2rem; color: var(--text-muted);">Tidak ada data user.</td></tr>`;
+            if (tbody.innerHTML !== emptyHtml) {
+                tbody.innerHTML = emptyHtml;
+            }
+            return;
         }
 
-        tbody.innerHTML = displayUsers.map(u => {
+        const newHtml = displayUsers.map(u => {
             const userAvatar = u.avatar || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+            const isOnline = !!u.is_online;
+            const onlineBadgeHtml = isOnline
+                ? `<span class="user-status-badge online" title="Status: Online (Aktif)"><span class="status-indicator-dot online"></span> Online</span>`
+                : `<span class="user-status-badge offline" title="Status: Offline (Tidak Aktif)"><span class="status-indicator-dot offline"></span> Offline</span>`;
+
             return `
                 <tr>
                     <td data-label="Avatar">
-                        <img src="${userAvatar}" alt="${u.username}" class="user-table-avatar">
+                        <div class="user-avatar-wrapper" style="position: relative; display: inline-block;">
+                            <img src="${userAvatar}" alt="${u.username}" class="user-table-avatar">
+                            <span class="avatar-status-dot ${isOnline ? 'online' : 'offline'}" title="${isOnline ? 'Online' : 'Offline'}"></span>
+                        </div>
                     </td>
                     <td data-label="Username"><span class="user-username">${u.username}</span></td>
-                    <td data-label="Nama Lengkap">${u.fullname}</td>
+                    <td data-label="Nama Lengkap"><span>${u.fullname}</span></td>
+                    <td data-label="Departemen">${u.dept || '-'}</td>
                     <td data-label="Role / Jabatan"><span class="user-role-badge">${u.role}</span></td>
                     <td data-label="Kredensial">
                         <div class="password-cell-wrapper">
-                            ${state.currentUser && state.currentUser.role === 'Foreman' ? `
-                                <span class="password-text">••••••</span>
-                            ` : `
-                                <span class="password-text" data-password="${u.password}">••••••</span>
-                                <button type="button" class="btn-pw-toggle" onclick="toggleUserPasswordVisibility(this)" title="Tampilkan Password">
-                                    <i data-lucide="eye" style="width: 14px; height: 14px;"></i>
-                                </button>
-                            `}
+                            <span class="password-text" data-password="${u.password}">••••••</span>
+                            <button type="button" class="btn-pw-toggle" onclick="toggleUserPasswordVisibility(this)" title="Tampilkan Password">
+                                <i data-lucide="eye" style="width: 14px; height: 14px;"></i>
+                            </button>
+                        </div>
+                    </td>
+                    <td data-label="Status Device">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            ${onlineBadgeHtml}
+                            <button type="button" class="btn-logout-device" onclick="forceLogoutUser('${u.username}')" title="Logout Sesi Device Akun ${u.username}">
+                                <i data-lucide="log-out" style="width: 11px; height: 11px;"></i> Logout Device
+                            </button>
                         </div>
                     </td>
                     <td>
-                        ${state.currentUser && state.currentUser.role === 'Foreman' ? `
-                            <button class="btn btn-outline btn-xs" style="gap:4px;" onclick="contactAdminForUser('${u.username}')">
-                                <i data-lucide="message-square" style="width: 12px; height: 12px;"></i> Hubungi Admin
+                        <div class="user-actions-cell">
+                            <button class="btn-user-edit" onclick="editUser('${u.username}', '${u.fullname}', '${u.role}', '${u.avatar || ''}', '${u.password}', '${u.dept || ''}')">
+                                <i data-lucide="edit-3" style="width: 12px; height: 12px;"></i> Edit
                             </button>
-                        ` : `
-                            <div class="user-actions-cell">
-                                <button class="btn-user-edit" onclick="editUser('${u.username}', '${u.fullname}', '${u.role}', '${u.avatar || ''}', '${u.password}')">
-                                    <i data-lucide="edit-3" style="width: 12px; height: 12px;"></i> Edit
-                                </button>
-                                <button class="btn-user-delete" onclick="deleteUser('${u.username}')">
-                                    <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Hapus
-                                </button>
-                            </div>
-                        `}
+                            <button class="btn-user-delete" onclick="deleteUser('${u.username}')">
+                                <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i> Hapus
+                            </button>
+                        </div>
                     </td>
                 </tr>
             `;
         }).join('');
-        lucide.createIcons();
+
+        // ponytail: only update DOM if rendered table HTML actually changed (prevents UI flicker)
+        if (tbody.innerHTML !== newHtml) {
+            tbody.innerHTML = newHtml;
+            lucide.createIcons();
+        }
     } catch (err) {
         console.error("Gagal merender data user:", err);
         showToast("Gagal mengambil data user dari server!", "error");
     }
 }
+
+window.forceLogoutUser = async function (targetUsername) {
+    if (!targetUsername) return;
+    const confirmed = await showCustomConfirm(
+        `Apakah Anda yakin ingin mengeluarkan (logout) sesi device untuk akun "${targetUsername}"?`,
+        "Konfirmasi Force Logout"
+    );
+    if (!confirmed) return;
+    try {
+        const res = await fetch("/api/users/force-logout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                target_username: targetUsername,
+                requester: state.currentUser ? state.currentUser.username : ""
+            })
+        });
+        if (res.ok) {
+            showToast(`Sesi device untuk akun ${targetUsername} berhasil di-logout!`, "success");
+            renderUsers();
+        } else {
+            const errData = await res.json().catch(() => ({}));
+            showToast(errData.message || "Gagal melakukan logout device user.", "error");
+        }
+    } catch (err) {
+        console.error("Gagal force logout device:", err);
+        showToast("Gagal terhubung ke server!", "error");
+    }
+};
+
+// ==========================================
+// SERVER ACCESS MANAGEMENT (EKSKLUSIF SERVER)
+// ==========================================
+state.serverAccessUsers = [];
+state.serverAccessViewMode = 'role'; // Default mode per role & dept
+state.activeFlowchartSteps = [];
+
+function switchServerAccessViewMode(mode) {
+    state.serverAccessViewMode = mode;
+    const mainContainer = document.getElementById("server-access-main-container");
+    const flowchartContainer = document.getElementById("server-access-flowchart-container");
+    const btnRole = document.getElementById("server-access-mode-role");
+    const btnUser = document.getElementById("server-access-mode-user");
+    const btnBulk = document.getElementById("btn-server-access-bulk-default");
+    const thead = document.getElementById("server-access-table-head");
+
+    if (mode && mode.startsWith("flow-")) {
+        if (mainContainer) mainContainer.style.display = "none";
+        if (flowchartContainer) {
+            flowchartContainer.style.display = "block";
+            renderFlowchartEditor(mode);
+        }
+        return;
+    }
+
+    if (mainContainer) mainContainer.style.display = "block";
+    if (flowchartContainer) flowchartContainer.style.display = "none";
+
+    if (mode === 'role') {
+        if (btnBulk) btnBulk.style.display = "none";
+        if (btnRole) {
+            btnRole.style.background = "var(--color-cyan)";
+            btnRole.style.color = "#000";
+            btnRole.style.fontWeight = "600";
+        }
+        if (btnUser) {
+            btnUser.style.background = "transparent";
+            btnUser.style.color = "var(--text-secondary)";
+            btnUser.style.fontWeight = "500";
+        }
+        if (thead) {
+            thead.innerHTML = `
+                <tr>
+                    <th>Dept</th>
+                    <th>Role / Otoritas</th>
+                    <th>Jumlah Akun</th>
+                    <th>User Terkait / Member</th>
+                    <th>Hak Akses Modul Role</th>
+                    <th>Status Role</th>
+                    <th style="text-align: right;">Aksi Kontrol</th>
+                </tr>
+            `;
+        }
+    } else {
+        if (btnBulk) btnBulk.style.display = "inline-flex";
+        if (btnUser) {
+            btnUser.style.background = "var(--color-cyan)";
+            btnUser.style.color = "#000";
+            btnUser.style.fontWeight = "600";
+        }
+        if (btnRole) {
+            btnRole.style.background = "transparent";
+            btnRole.style.color = "var(--text-secondary)";
+            btnRole.style.fontWeight = "500";
+        }
+        if (thead) {
+            thead.innerHTML = `
+                <tr>
+                    <th>User Personel</th>
+                    <th>Username</th>
+                    <th>Dept</th>
+                    <th>Role / Otoritas</th>
+                    <th>Status Akun</th>
+                    <th>Status Session</th>
+                    <th>Akses Modul</th>
+                    <th style="text-align: right;">Aksi Kontrol</th>
+                </tr>
+            `;
+        }
+    }
+
+    renderServerAccessTab();
+}
+
+function renderFlowchartEditor(mode) {
+    const container = document.getElementById("server-access-flowchart-container");
+    if (!container) return;
+
+    let moduleTitle = "General EJO";
+    let settingKey = "approval_flowchart_gejo";
+    let moduleIcon = "file-text";
+
+    if (mode === "flow-drawing") {
+        moduleTitle = "Drawing EJO";
+        settingKey = "approval_flowchart_drawing";
+        moduleIcon = "image";
+    } else if (mode === "flow-project") {
+        moduleTitle = "Project Monitoring";
+        settingKey = "approval_flowchart_project";
+        moduleIcon = "folder-kanban";
+    }
+
+    let steps = [];
+    if (state.settings && state.settings[settingKey]) {
+        try {
+            steps = typeof state.settings[settingKey] === 'string' ? JSON.parse(state.settings[settingKey]) : state.settings[settingKey];
+        } catch (e) {
+            console.error("Error parsing flowchart settings:", e);
+        }
+    }
+
+    if (!Array.isArray(steps) || steps.length === 0) {
+        if (mode === "flow-drawing") {
+            steps = [
+                { step: 1, key: "drafter", label: "DRAFTER (ENG)", role: "Drafter", dept: "ENG", require_signature: 1 },
+                { step: 2, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
+                { step: 3, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                { step: 4, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 }
+            ];
+        } else if (mode === "flow-project") {
+            steps = [
+                { step: 1, key: "spv_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                { step: 2, key: "spv_prd", label: "SUPERVISOR PRD", role: "Supervisor PRD", dept: "PRD", require_signature: 1 },
+                { step: 3, key: "spv_epr", label: "SUPERVISOR EPR", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                { step: 4, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
+                { step: 5, key: "manager_prd", label: "MANAGER PRD", role: "Manager PRD", dept: "PRD", require_signature: 1 },
+                { step: 6, key: "manager_epr", label: "MANAGER EPR", role: "Manager EPR", dept: "EPR", require_signature: 1 }
+            ];
+        } else {
+            steps = [
+                { step: 1, key: "staff_epr", label: "STAFF (EPR)", role: "user_PRD", dept: "EPR", require_signature: 1 },
+                { step: 2, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                { step: 3, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
+                { step: 4, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
+                { step: 6, key: "factory_manager", label: "FACTORY MANAGER", role: "Manager EPR", dept: "ENG", require_signature: 1 }
+            ];
+        }
+    }
+
+    state.activeFlowchartSteps = JSON.parse(JSON.stringify(steps));
+
+    const rolesList = ['user_PRD', 'Supervisor PRD', 'Foreman Eng', 'Supervisor Eng', 'Drafter', 'Manager PRD', 'Manager EPR', 'Admin Eng', 'Sipil', 'Mekanik', 'Elektrik', 'Kalibrasi', 'Otomotif', 'Server'];
+    const deptsList = ['ENG', 'PRD', 'EPR', 'GA', 'QC', 'WRH'];
+
+    let html = `
+        <div class="card-glass" style="padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-left: 4px solid var(--color-cyan); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                    <i data-lucide="${moduleIcon}" style="color: var(--color-cyan); width: 22px; height: 22px;"></i>
+                    <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">Flowchart Approval & Tanda Tangan: ${moduleTitle}</h3>
+                    <span class="badge" style="background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.72rem; font-weight: 700; border-radius: 6px; padding: 3px 10px;">Synced Server Config</span>
+                </div>
+                <p class="text-secondary text-xs">Atur urutan persetujuan bertingkat, penandatangan wajib, serta nama tahapan yang akan dirender pada kartu Persetujuan Bertingkat & Stempel PDF.</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button type="button" class="btn btn-outline" onclick="addFlowchartStep('${settingKey}')" style="gap: 6px; font-size: 0.85rem;">
+                    <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i> Tambah Step
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveFlowchartConfig('${settingKey}')" style="gap: 6px; font-size: 0.85rem; background: var(--color-cyan); color: #000; font-weight: 700;">
+                    <i data-lucide="save" style="width: 16px; height: 16px;"></i> Simpan Flowchart
+                </button>
+            </div>
+        </div>
+
+        <div id="flowchart-steps-list" style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem;">
+    `;
+
+    state.activeFlowchartSteps.forEach((step, idx) => {
+        html += `
+            <div class="card-glass" style="padding: 1.25rem; border-radius: 12px; border: 1px solid var(--card-border); background: var(--bg-surface-elevated); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.25rem;">
+                <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 280px;">
+                    <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 1rem; border: 1px solid rgba(6, 182, 212, 0.3);">
+                        ${idx + 1}
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 4px; flex: 1;">
+                        <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Nama Tahapan / Label Card</label>
+                        <input type="text" value="${step.label || ''}" onchange="updateFlowchartStepField(${idx}, 'label', this.value)" placeholder="Nama Tahapan (misal: FOREMAN ENG)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-weight: 700; font-size: 0.9rem; width: 100%;">
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Target Role</label>
+                        <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
+                            ${rolesList.map(r => `<option value="${r}" ${step.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Dept</label>
+                        <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
+                            ${deptsList.map(d => `<option value="${d}" ${step.dept === d ? 'selected' : ''}>${d}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 6px; margin-top: 18px;">
+                        <input type="checkbox" id="chk-flow-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 16px; height: 16px; accent-color: var(--color-cyan); cursor: pointer;">
+                        <label for="chk-flow-sig-${idx}" style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); cursor: pointer;">Wajib TTD</label>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 4px; margin-top: 18px;">
+                        <button type="button" class="btn btn-outline btn-xs" onclick="moveFlowchartStep(${idx}, -1, '${settingKey}')" ${idx === 0 ? 'disabled style="opacity: 0.4;"' : ''} title="Naikkan Urutan">
+                            <i data-lucide="arrow-up" style="width: 14px; height: 14px;"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline btn-xs" onclick="moveFlowchartStep(${idx}, 1, '${settingKey}')" ${idx === state.activeFlowchartSteps.length - 1 ? 'disabled style="opacity: 0.4;"' : ''} title="Turunkan Urutan">
+                            <i data-lucide="arrow-down" style="width: 14px; height: 14px;"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline btn-xs" onclick="deleteFlowchartStep(${idx}, '${settingKey}')" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Hapus Step">
+                            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function updateFlowchartStepField(idx, field, value) {
+    if (state.activeFlowchartSteps && state.activeFlowchartSteps[idx]) {
+        state.activeFlowchartSteps[idx][field] = value;
+    }
+}
+
+function moveFlowchartStep(idx, direction, settingKey) {
+    if (!state.activeFlowchartSteps) return;
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= state.activeFlowchartSteps.length) return;
+    const temp = state.activeFlowchartSteps[idx];
+    state.activeFlowchartSteps[idx] = state.activeFlowchartSteps[targetIdx];
+    state.activeFlowchartSteps[targetIdx] = temp;
+    
+    state.activeFlowchartSteps.forEach((s, i) => s.step = i + 1);
+    
+    const mode = settingKey === 'approval_flowchart_gejo' ? 'flow-gejo' : (settingKey === 'approval_flowchart_drawing' ? 'flow-drawing' : 'flow-project');
+    renderFlowchartEditor(mode);
+}
+
+function deleteFlowchartStep(idx, settingKey) {
+    if (!state.activeFlowchartSteps || state.activeFlowchartSteps.length <= 1) {
+        showToast("Flowchart minimal harus memiliki 1 step approval", "warning");
+        return;
+    }
+    state.activeFlowchartSteps.splice(idx, 1);
+    state.activeFlowchartSteps.forEach((s, i) => s.step = i + 1);
+    
+    const mode = settingKey === 'approval_flowchart_gejo' ? 'flow-gejo' : (settingKey === 'approval_flowchart_drawing' ? 'flow-drawing' : 'flow-project');
+    renderFlowchartEditor(mode);
+}
+
+function addFlowchartStep(settingKey) {
+    if (!state.activeFlowchartSteps) state.activeFlowchartSteps = [];
+    const newStepNum = state.activeFlowchartSteps.length + 1;
+    state.activeFlowchartSteps.push({
+        step: newStepNum,
+        key: `step_${newStepNum}_${Date.now() % 1000}`,
+        label: `TENTATIVE APPROVAL ${newStepNum}`,
+        role: "Supervisor Eng",
+        dept: "ENG",
+        require_signature: 1
+    });
+    
+    const mode = settingKey === 'approval_flowchart_gejo' ? 'flow-gejo' : (settingKey === 'approval_flowchart_drawing' ? 'flow-drawing' : 'flow-project');
+    renderFlowchartEditor(mode);
+}
+
+async function saveFlowchartConfig(settingKey) {
+    if (!state.activeFlowchartSteps) return;
+    const serialized = JSON.stringify(state.activeFlowchartSteps);
+    try {
+        const res = await fetch("/api/settings", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ [settingKey]: serialized })
+        });
+        if (res.ok) {
+            if (!state.settings) state.settings = {};
+            state.settings[settingKey] = serialized;
+            showToast("Flowchart persetujuan berhasil disimpan & tersinkronisasi server!", "success");
+        } else {
+            showToast("Gagal menyimpan flowchart ke server", "error");
+        }
+    } catch (err) {
+        console.error("Save flowchart error:", err);
+        showToast("Terjadi kesalahan saat mengunggah konfigurasi flowchart", "error");
+    }
+}
+
+async function renderServerAccessTab() {
+    if (!canAccessServerAccessTab(state.currentUser)) return;
+
+    const tbody = document.getElementById("server-access-user-table-body");
+    if (!tbody) return;
+
+    try {
+        const res = await fetch("/api/users");
+        if (res.ok) {
+            state.serverAccessUsers = await res.json();
+        }
+    } catch (e) {
+        console.error("Error fetching users for server access tab:", e);
+    }
+
+    const users = state.serverAccessUsers || [];
+
+    // Stats calculations
+    const totalUsers = users.length;
+    const onlineUsers = users.filter(u => u.is_online).length;
+
+    const defaultSystemRoles = [
+        // ENG
+        { dept: 'ENG', role: 'Server' },
+        { dept: 'ENG', role: 'Manager Eng' },
+        { dept: 'ENG', role: 'Plant Manager' },
+        { dept: 'ENG', role: 'Factory Manager' },
+        { dept: 'ENG', role: 'Supervisor Eng' },
+        { dept: 'ENG', role: 'Foreman Eng' },
+        { dept: 'ENG', role: 'Admin Eng' },
+        { dept: 'ENG', role: 'Drafter' },
+        { dept: 'ENG', role: 'Sipil' },
+        { dept: 'ENG', role: 'Mekanik' },
+        { dept: 'ENG', role: 'Elektrik' },
+        { dept: 'ENG', role: 'Program' },
+        { dept: 'ENG', role: 'Kalibrasi' },
+        { dept: 'ENG', role: 'Otomotif' },
+        { dept: 'ENG', role: 'user_ENG' },
+
+        // PRD
+        { dept: 'PRD', role: 'Manager PRD' },
+        { dept: 'PRD', role: 'Supervisor PRD' },
+        { dept: 'PRD', role: 'user_PRD' },
+
+        // EPR
+        { dept: 'EPR', role: 'Manager EPR' },
+        { dept: 'EPR', role: 'Supervisor EPR' },
+        { dept: 'EPR', role: 'user_EPR' },
+
+        // GA
+        { dept: 'GA', role: 'Manager GA' },
+        { dept: 'GA', role: 'Supervisor GA' },
+        { dept: 'GA', role: 'user_GA' },
+
+        // QC
+        { dept: 'QC', role: 'Manager QC' },
+        { dept: 'QC', role: 'Supervisor QC' },
+        { dept: 'QC', role: 'user_QC' },
+
+        // WRH
+        { dept: 'WRH', role: 'Manager WRH' },
+        { dept: 'WRH', role: 'Supervisor WRH' },
+        { dept: 'WRH', role: 'user_WRH' }
+    ];
+
+    const deptsSet = new Set(users.map(u => (u.dept || 'ENG').toUpperCase()));
+    defaultSystemRoles.forEach(r => deptsSet.add(r.dept.toUpperCase()));
+    const totalDepts = deptsSet.size;
+
+    // Grouping by (Dept, Role)
+    const roleGroupsMap = {};
+
+    // Seed default system roles first so all system roles appear in table
+    defaultSystemRoles.forEach(r => {
+        const groupKey = `${r.dept.toUpperCase()}||${r.role}`;
+        roleGroupsMap[groupKey] = {
+            dept: r.dept.toUpperCase(),
+            role: r.role,
+            users: [],
+            onlineCount: 0,
+            activeCount: 0,
+            sampleUser: { dept: r.dept.toUpperCase(), role: r.role }
+        };
+    });
+
+    // Populate with actual users
+    users.forEach(u => {
+        const dept = (u.dept || 'ENG').toUpperCase();
+        const role = (u.role || 'User').trim();
+        const groupKey = `${dept}||${role}`;
+        if (!roleGroupsMap[groupKey]) {
+            roleGroupsMap[groupKey] = {
+                dept: dept,
+                role: role,
+                users: [],
+                onlineCount: 0,
+                activeCount: 0,
+                sampleUser: u
+            };
+        }
+        roleGroupsMap[groupKey].users.push(u);
+        roleGroupsMap[groupKey].sampleUser = u; // Use actual user if available for permission inspection
+        if (u.is_online) roleGroupsMap[groupKey].onlineCount++;
+        if (u.is_active !== 0) roleGroupsMap[groupKey].activeCount++;
+    });
+
+    const roleGroups = Object.values(roleGroupsMap);
+
+    const statRoles = document.getElementById("stat-server-total-roles");
+    const statDepts = document.getElementById("stat-server-total-depts");
+    const statTotal = document.getElementById("stat-server-total-users");
+    const statOnline = document.getElementById("stat-server-online-users");
+
+    if (statRoles) statRoles.textContent = roleGroups.length;
+    if (statDepts) statDepts.textContent = totalDepts;
+    if (statTotal) statTotal.textContent = totalUsers;
+    if (statOnline) statOnline.textContent = onlineUsers;
+
+    // Filter controls
+    const searchVal = (document.getElementById("server-access-search")?.value || "").toLowerCase().trim();
+    const deptVal = (document.getElementById("server-access-filter-dept")?.value || "").toUpperCase();
+    const statusVal = document.getElementById("server-access-filter-status")?.value || "";
+
+    const viewMode = state.serverAccessViewMode || 'role';
+
+    if (viewMode === 'role') {
+        const filteredGroups = roleGroups.filter(g => {
+            const matchSearch = !searchVal || 
+                g.role.toLowerCase().includes(searchVal) || 
+                g.dept.toLowerCase().includes(searchVal) ||
+                g.users.some(u => (u.username || "").toLowerCase().includes(searchVal) || (u.fullname || "").toLowerCase().includes(searchVal));
+
+            const matchDept = !deptVal || g.dept.toUpperCase() === deptVal;
+
+            let matchStatus = true;
+            if (statusVal === "active") matchStatus = g.activeCount > 0;
+            else if (statusVal === "suspended") matchStatus = g.users.length > 0 && g.activeCount < g.users.length;
+            else if (statusVal === "online") matchStatus = g.onlineCount > 0;
+
+            return matchSearch && matchDept && matchStatus;
+        });
+
+        if (filteredGroups.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Tidak ada data Role & Dept yang sesuai filter.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filteredGroups.map(g => {
+            const sample = g.sampleUser;
+            const perms = getUserPermissions(sample);
+
+            const gejoPerm = perms.gejo !== false;
+            const drawingPerm = perms.drawing !== false;
+            const projectPerm = perms.project !== false;
+            const partlistPerm = perms.partlist !== false;
+            const historyPerm = perms.history !== false;
+            const adminPerm = perms.admin === true || canAccessAdminPanel(sample);
+
+            const permBadges = `
+                <span class="perm-badge ${gejoPerm ? 'active' : ''}">GEJO</span>
+                <span class="perm-badge ${drawingPerm ? 'active' : ''}">DWG</span>
+                <span class="perm-badge ${projectPerm ? 'active' : ''}">PRJ</span>
+                <span class="perm-badge ${partlistPerm ? 'active' : ''}">PRT</span>
+                <span class="perm-badge ${historyPerm ? 'active' : ''}">HST</span>
+                <span class="perm-badge ${adminPerm ? 'active' : ''}">ADM</span>
+            `;
+
+            const isServerRole = g.role.toLowerCase() === 'server' || g.users.some(u => isServerAccount(u));
+
+            const hasUsers = g.users.length > 0;
+            const userTags = hasUsers ? g.users.map(u => {
+                const isOnline = Boolean(u.is_online);
+                const isAct = u.is_active !== 0;
+                return `<span class="badge" style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px;">
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: ${isOnline ? '#10b981' : (isAct ? '#94a3b8' : '#ef4444')};"></span>
+                    @${escapeHtml(u.username)}
+                </span>`;
+            }).join(" ") : `<span style="color: var(--text-muted); font-size: 0.78rem; font-style: italic;">Belum ada user</span>`;
+
+            const allActive = hasUsers && g.activeCount === g.users.length;
+            let statusText = 'Belum Ditugaskan';
+            let statusPillClass = 'offline';
+            let statusIcon = 'minus-circle';
+
+            if (hasUsers) {
+                if (allActive) {
+                    statusText = `Aktif (${g.users.length}/${g.users.length})`;
+                    statusPillClass = 'active';
+                    statusIcon = 'check-circle-2';
+                } else {
+                    statusText = `${g.activeCount}/${g.users.length} Aktif`;
+                    statusPillClass = 'suspended';
+                    statusIcon = 'alert-circle';
+                }
+            }
+
+            return `
+                <tr>
+                    <td>
+                        <span class="badge" style="background: rgba(6, 182, 212, 0.12); border: 1px solid rgba(6, 182, 212, 0.3); color: var(--color-cyan); font-weight: 700; font-size: 0.78rem; padding: 4px 10px; border-radius: 6px;">
+                            ${escapeHtml(g.dept)}
+                        </span>
+                    </td>
+                    <td>
+                        <div>
+                            <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">${escapeHtml(g.role)}</div>
+                            ${isServerRole ? '<span style="font-size:0.65rem; color:var(--color-cyan); font-weight:700;">[SUPER ADMIN SERVER]</span>' : ''}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge" style="background: rgba(255,255,255,0.06); font-size: 0.8rem; border: 1px solid var(--card-border); font-weight: ${hasUsers ? '600' : '400'}; color: ${hasUsers ? 'var(--text-primary)' : 'var(--text-muted)'};">
+                            <i data-lucide="users" style="width: 12px; height: 12px; margin-right: 4px; vertical-align: middle;"></i> ${g.users.length} Akun
+                        </span>
+                    </td>
+                    <td>
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 280px;">${userTags}</div>
+                    </td>
+                    <td>
+                        <div style="display: flex; flex-wrap: wrap; gap: 2px;">${permBadges}</div>
+                    </td>
+                    <td>
+                        <span class="user-status-pill ${statusPillClass}">
+                            <i data-lucide="${statusIcon}" style="width: 12px; height: 12px;"></i>
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td style="text-align: right;">
+                        <button class="btn btn-primary btn-xs" onclick="openRoleAccessModal('${escapeHtml(g.dept)}', '${escapeHtml(g.role)}')" title="Konfigurasi Akses Role & Dept" style="padding: 5px 12px; gap: 6px; font-weight: 600; font-size: 0.78rem;">
+                            <i data-lucide="sliders" style="width: 14px; height: 14px;"></i> Edit Akses Role
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    } else {
+        // Individual User View Mode
+        const filtered = users.filter(u => {
+            const nameMatch = (u.fullname || "").toLowerCase().includes(searchVal) || (u.username || "").toLowerCase().includes(searchVal);
+            const deptMatch = !deptVal || (u.dept || "").toUpperCase() === deptVal;
+            
+            let statusMatch = true;
+            if (statusVal === "online") statusMatch = Boolean(u.is_online);
+            else if (statusVal === "offline") statusMatch = !u.is_online;
+            else if (statusVal === "active") statusMatch = (u.is_active !== 0);
+            else if (statusVal === "suspended") statusMatch = (u.is_active === 0);
+
+            return nameMatch && deptMatch && statusMatch;
+        });
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Tidak ada data user yang sesuai filter.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(u => {
+            const avatarUrl = u.avatar || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+            const isOnline = Boolean(u.is_online);
+            const isActive = u.is_active !== 0;
+            const perms = getUserPermissions(u);
+
+            const permBadges = `
+                <span class="perm-badge ${perms.gejo ? 'active' : ''}">GEJO</span>
+                <span class="perm-badge ${perms.drawing ? 'active' : ''}">DWG</span>
+                <span class="perm-badge ${perms.project ? 'active' : ''}">PRJ</span>
+                <span class="perm-badge ${perms.partlist ? 'active' : ''}">PRT</span>
+                <span class="perm-badge ${perms.history ? 'active' : ''}">HST</span>
+                <span class="perm-badge ${perms.admin ? 'active' : ''}">ADM</span>
+            `;
+
+            const isServerAcc = isServerAccount(u);
+
+            return `
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <img src="${avatarUrl}" alt="${u.fullname}" style="width: 34px; height: 34px; border-radius: 50%; object-fit: cover; border: 1px solid var(--card-border);">
+                            <div>
+                                <div style="font-weight: 600; font-size: 0.88rem;">${escapeHtml(u.fullname || u.username)}</div>
+                                ${isServerAcc ? '<span style="font-size:0.65rem; color:var(--color-cyan); font-weight:700;">[SUPER ADMIN SERVER]</span>' : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td style="font-family: monospace; font-size: 0.85rem; font-weight: 600; color: var(--color-cyan);">${escapeHtml(u.username)}</td>
+                    <td><span class="badge" style="background: rgba(255,255,255,0.06); border: 1px solid var(--card-border); font-size: 0.75rem;">${escapeHtml(u.dept || 'ENG')}</span></td>
+                    <td><span style="font-size: 0.82rem; font-weight: 500;">${escapeHtml(u.role || '-')}</span></td>
+                    <td>
+                        <span class="user-status-pill ${isActive ? 'active' : 'suspended'}">
+                            <i data-lucide="${isActive ? 'check-circle-2' : 'ban'}" style="width: 12px; height: 12px;"></i>
+                            ${isActive ? 'Aktif' : 'Suspended'}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="user-status-pill ${isOnline ? 'online' : 'offline'}">
+                            <span style="width: 6px; height: 6px; border-radius: 50%; background: ${isOnline ? '#10b981' : '#94a3b8'};"></span>
+                            ${isOnline ? 'Online' : 'Offline'}
+                        </span>
+                    </td>
+                    <td>
+                        <div style="display: flex; flex-wrap: wrap; gap: 2px;">${permBadges}</div>
+                    </td>
+                    <td style="text-align: right;">
+                        <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+                            <button class="btn btn-outline btn-xs" onclick="openUserAccessModal('${escapeHtml(u.username)}')" title="Pengaturan Hak Akses Akun" style="padding: 4px 8px; gap: 4px;">
+                                <i data-lucide="sliders" style="width: 14px; height: 14px;"></i> Akses
+                            </button>
+                            <button class="btn btn-outline btn-xs" onclick="promptResetPassword('${escapeHtml(u.username)}')" title="Reset Password" style="padding: 4px 8px;">
+                                <i data-lucide="key" style="width: 14px; height: 14px;"></i>
+                            </button>
+                            ${!isServerAcc ? `
+                                <button class="btn btn-outline btn-xs ${isActive ? '' : 'btn-danger'}" onclick="toggleUserActiveStatus('${escapeHtml(u.username)}', ${isActive})" title="${isActive ? 'Suspend Akun' : 'Aktifkan Akun'}" style="padding: 4px 8px;">
+                                    <i data-lucide="${isActive ? 'user-x' : 'user-check'}" style="width: 14px; height: 14px;"></i>
+                                </button>
+                            ` : ''}
+                            ${isOnline && !isServerAcc ? `
+                                <button class="btn btn-danger-outline btn-xs" onclick="forceLogoutUserSession('${escapeHtml(u.username)}')" title="Force Logout Sesi Active" style="padding: 4px 8px; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);">
+                                    <i data-lucide="log-out" style="width: 14px; height: 14px;"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    }
+
+    lucide.createIcons();
+}
+
+function openRoleAccessModal(dept, role) {
+    if (!canAccessServerAccessTab(state.currentUser)) return;
+
+    const modal = document.getElementById("modal-user-access-edit");
+    if (!modal) return;
+
+    const targetDeptInput = document.getElementById("access-modal-target-dept");
+    const targetRoleInput = document.getElementById("access-modal-target-role");
+    const targetUserInput = document.getElementById("access-modal-target-username");
+
+    if (targetDeptInput) targetDeptInput.value = dept;
+    if (targetRoleInput) targetRoleInput.value = role;
+    if (targetUserInput) targetUserInput.value = ""; // Clear single username target
+
+    const usersInRole = (state.serverAccessUsers || []).filter(u => 
+        (u.dept || 'ENG').toUpperCase() === dept.toUpperCase() &&
+        (u.role || 'User').trim().toLowerCase() === role.trim().toLowerCase()
+    );
+
+    const sampleUser = usersInRole[0] || { dept, role };
+    const subTitleEl = document.getElementById("modal-user-access-subtitle");
+    if (subTitleEl) {
+        subTitleEl.textContent = `Konfigurasi Akses Role: ${role} (${dept}) • Berlaku untuk seluruh (${usersInRole.length}) akun personel.`;
+    }
+
+    const isActiveChk = document.getElementById("access-modal-is-active");
+    if (isActiveChk) isActiveChk.checked = true;
+
+    const perms = getUserPermissions(sampleUser);
+    document.getElementById("perm-overview").checked = perms.overview !== false;
+    document.getElementById("perm-gejo").checked = perms.gejo !== false;
+    document.getElementById("perm-drawing").checked = perms.drawing !== false;
+    document.getElementById("perm-project").checked = perms.project !== false;
+    document.getElementById("perm-partlist").checked = perms.partlist !== false;
+    document.getElementById("perm-history").checked = perms.history !== false;
+    document.getElementById("perm-admin").checked = perms.admin === true || (perms.admin === undefined && canAccessAdminPanel(sampleUser));
+    document.getElementById("perm-approval").checked = perms.approval !== false;
+    document.getElementById("perm-signature").checked = perms.signature !== false;
+
+    modal.style.display = "flex";
+    lucide.createIcons();
+}
+
+function openUserAccessModal(username) {
+    if (!canAccessServerAccessTab(state.currentUser)) return;
+
+    const user = (state.serverAccessUsers || []).find(u => u.username === username);
+    if (!user) {
+        showToast("User tidak ditemukan!", "error");
+        return;
+    }
+
+    const modal = document.getElementById("modal-user-access-edit");
+    if (!modal) return;
+
+    document.getElementById("access-modal-target-username").value = user.username;
+    if (document.getElementById("access-modal-target-dept")) document.getElementById("access-modal-target-dept").value = "";
+    if (document.getElementById("access-modal-target-role")) document.getElementById("access-modal-target-role").value = "";
+
+    const subTitleEl = document.getElementById("modal-user-access-subtitle");
+    const displayName = (user.fullname && user.fullname.trim()) ? user.fullname : user.username;
+    const userRole = (user.role && user.role.trim()) ? user.role : 'User';
+    const userDept = (user.dept && user.dept.trim()) ? user.dept : 'ENG';
+    if (subTitleEl) subTitleEl.textContent = `Konfigurasi Akses: ${displayName} (@${user.username}) • Dept: ${userDept} • Role: ${userRole}`;
+
+    const isActiveChk = document.getElementById("access-modal-is-active");
+    if (isActiveChk) isActiveChk.checked = (user.is_active !== 0);
+
+    const perms = getUserPermissions(user);
+    document.getElementById("perm-overview").checked = perms.overview !== false;
+    document.getElementById("perm-gejo").checked = perms.gejo !== false;
+    document.getElementById("perm-drawing").checked = perms.drawing !== false;
+    document.getElementById("perm-project").checked = perms.project !== false;
+    document.getElementById("perm-partlist").checked = perms.partlist !== false;
+    document.getElementById("perm-history").checked = perms.history !== false;
+    document.getElementById("perm-admin").checked = perms.admin === true || (perms.admin === undefined && canAccessAdminPanel(user));
+    document.getElementById("perm-approval").checked = perms.approval !== false;
+    document.getElementById("perm-signature").checked = perms.signature !== false;
+
+    modal.style.display = "flex";
+    lucide.createIcons();
+}
+
+function closeUserAccessModal() {
+    const modal = document.getElementById("modal-user-access-edit");
+    if (modal) modal.style.display = "none";
+}
+
+function getDefaultPermissionsForRole(dept, role) {
+    const deptKey = (dept || 'ENG').toUpperCase();
+    const roleKey = (role || 'User').trim().toLowerCase();
+
+    // 1. Check if there's any user in state.serverAccessUsers with explicit permissions configured for this (dept, role)
+    const usersInRole = (state.serverAccessUsers || []).filter(u => 
+        (u.dept || 'ENG').toUpperCase() === deptKey &&
+        (u.role || 'User').trim().toLowerCase() === roleKey &&
+        u.access_permissions
+    );
+
+    for (const u of usersInRole) {
+        try {
+            const parsed = typeof u.access_permissions === 'string' ? JSON.parse(u.access_permissions) : u.access_permissions;
+            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+                return {
+                    overview: parsed.overview !== false,
+                    gejo: parsed.gejo !== false,
+                    drawing: parsed.drawing !== false,
+                    project: parsed.project !== false,
+                    partlist: parsed.partlist !== false,
+                    history: parsed.history !== false,
+                    admin: parsed.admin === true || (roleKey === 'server' || roleKey.includes('admin')),
+                    approval: parsed.approval !== false,
+                    signature: parsed.signature !== false
+                };
+            }
+        } catch (e) {}
+    }
+
+    // 2. Default fallback rules by role category
+    if (roleKey === 'server' || roleKey.includes('admin')) {
+        return { overview: true, gejo: true, drawing: true, project: true, partlist: true, history: true, admin: true, approval: true, signature: true };
+    }
+    if (roleKey === 'drafter') {
+        return { overview: false, gejo: false, drawing: true, project: false, partlist: true, history: true, admin: false, approval: false, signature: false };
+    }
+    if (roleKey.includes('foreman') || roleKey.includes('spv') || roleKey.includes('supervisor')) {
+        return { overview: true, gejo: true, drawing: true, project: true, partlist: true, history: true, admin: true, approval: true, signature: true };
+    }
+    if (roleKey.includes('manager')) {
+        return { overview: true, gejo: true, drawing: true, project: true, partlist: true, history: true, admin: true, approval: true, signature: true };
+    }
+    if (roleKey.includes('staff') || roleKey.includes('user')) {
+        return { overview: false, gejo: true, drawing: true, project: false, partlist: false, history: true, admin: false, approval: false, signature: false };
+    }
+
+    return { overview: true, gejo: true, drawing: true, project: true, partlist: true, history: true, admin: false, approval: false, signature: false };
+}
+
+function applyAccessPreset(preset) {
+    if (preset === 'default_role') {
+        const username = document.getElementById("access-modal-target-username")?.value;
+        const targetDept = document.getElementById("access-modal-target-dept")?.value;
+        const targetRole = document.getElementById("access-modal-target-role")?.value;
+
+        let dept = targetDept;
+        let role = targetRole;
+
+        if (username) {
+            const user = (state.serverAccessUsers || []).find(u => u.username.toLowerCase() === username.toLowerCase());
+            if (user) {
+                dept = user.dept || 'ENG';
+                role = user.role || 'User';
+            }
+        }
+
+        const perms = getDefaultPermissionsForRole(dept, role);
+        document.getElementById("perm-overview").checked = perms.overview !== false;
+        document.getElementById("perm-gejo").checked = perms.gejo !== false;
+        document.getElementById("perm-drawing").checked = perms.drawing !== false;
+        document.getElementById("perm-project").checked = perms.project !== false;
+        document.getElementById("perm-partlist").checked = perms.partlist !== false;
+        document.getElementById("perm-history").checked = perms.history !== false;
+        document.getElementById("perm-admin").checked = perms.admin === true;
+        document.getElementById("perm-approval").checked = perms.approval !== false;
+        document.getElementById("perm-signature").checked = perms.signature !== false;
+
+        showToast(`Preset hak akses disesuaikan ke Default Role & Dept (${role || '-'} - ${dept || 'ENG'})`, "info");
+        return;
+    } else if (preset === 'all_access') {
+        document.getElementById("perm-overview").checked = true;
+        document.getElementById("perm-gejo").checked = true;
+        document.getElementById("perm-drawing").checked = true;
+        document.getElementById("perm-project").checked = true;
+        document.getElementById("perm-partlist").checked = true;
+        document.getElementById("perm-history").checked = true;
+        document.getElementById("perm-admin").checked = true;
+        document.getElementById("perm-approval").checked = true;
+        document.getElementById("perm-signature").checked = true;
+    } else if (preset === 'engineer') {
+        document.getElementById("perm-overview").checked = true;
+        document.getElementById("perm-gejo").checked = true;
+        document.getElementById("perm-drawing").checked = true;
+        document.getElementById("perm-project").checked = true;
+        document.getElementById("perm-partlist").checked = true;
+        document.getElementById("perm-history").checked = true;
+        document.getElementById("perm-admin").checked = true;
+        document.getElementById("perm-approval").checked = true;
+        document.getElementById("perm-signature").checked = true;
+    } else if (preset === 'staff') {
+        document.getElementById("perm-overview").checked = false;
+        document.getElementById("perm-gejo").checked = true;
+        document.getElementById("perm-drawing").checked = false;
+        document.getElementById("perm-project").checked = false;
+        document.getElementById("perm-partlist").checked = false;
+        document.getElementById("perm-history").checked = true;
+        document.getElementById("perm-admin").checked = false;
+        document.getElementById("perm-approval").checked = false;
+        document.getElementById("perm-signature").checked = false;
+    } else if (preset === 'readonly') {
+        document.getElementById("perm-overview").checked = true;
+        document.getElementById("perm-gejo").checked = true;
+        document.getElementById("perm-drawing").checked = true;
+        document.getElementById("perm-project").checked = true;
+        document.getElementById("perm-partlist").checked = true;
+        document.getElementById("perm-history").checked = true;
+        document.getElementById("perm-admin").checked = false;
+        document.getElementById("perm-approval").checked = false;
+        document.getElementById("perm-signature").checked = false;
+    }
+}
+
+async function saveUserAccessSettings() {
+    const targetUsername = document.getElementById("access-modal-target-username")?.value;
+    const targetDept = document.getElementById("access-modal-target-dept")?.value;
+    const targetRole = document.getElementById("access-modal-target-role")?.value;
+
+    const isActive = document.getElementById("access-modal-is-active")?.checked;
+    const permissions = {
+        overview: document.getElementById("perm-overview").checked,
+        gejo: document.getElementById("perm-gejo").checked,
+        drawing: document.getElementById("perm-drawing").checked,
+        project: document.getElementById("perm-project").checked,
+        partlist: document.getElementById("perm-partlist").checked,
+        history: document.getElementById("perm-history").checked,
+        admin: document.getElementById("perm-admin").checked,
+        approval: document.getElementById("perm-approval").checked,
+        signature: document.getElementById("perm-signature").checked
+    };
+
+    if (targetRole && targetDept) {
+        // Bulk save for Role & Dept
+        try {
+            const res = await fetch(`/api/roles/access`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    requester_username: state.currentUser ? state.currentUser.username : "server",
+                    dept: targetDept,
+                    role: targetRole,
+                    access_permissions: permissions
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                showToast(`Hak akses per Role '${targetRole}' (${targetDept}) berhasil diperbarui!`, "success");
+                closeUserAccessModal();
+
+                // Update in local state arrays for all users in target dept & role
+                const updateLocalUsers = (arr) => {
+                    if (!Array.isArray(arr)) return;
+                    arr.forEach(u => {
+                        if ((u.dept || 'ENG').toUpperCase() === targetDept.toUpperCase() && (u.role || 'User').trim().toLowerCase() === targetRole.trim().toLowerCase()) {
+                            u.access_permissions = JSON.stringify(permissions);
+                        }
+                    });
+                };
+                updateLocalUsers(state.users);
+                updateLocalUsers(state.serverAccessUsers);
+
+                if (state.currentUser && (state.currentUser.dept || 'ENG').toUpperCase() === targetDept.toUpperCase() && (state.currentUser.role || 'User').trim().toLowerCase() === targetRole.trim().toLowerCase()) {
+                    state.currentUser.access_permissions = JSON.stringify(permissions);
+                    applySidebarRoleRestrictions();
+                }
+
+                renderServerAccessTab();
+            } else {
+                showToast(data.message || "Gagal memperbarui hak akses role!", "error");
+            }
+        } catch (e) {
+            showToast("Terjadi kesalahan jaringan saat menyimpan hak akses role!", "error");
+        }
+    } else if (targetUsername) {
+        // Single user save
+        try {
+            const res = await fetch(`/api/users/${encodeURIComponent(targetUsername)}/access`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    requester_username: state.currentUser ? state.currentUser.username : "server",
+                    is_active: isActive,
+                    access_permissions: permissions
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.status === "success") {
+                showToast(`Hak akses akun '${targetUsername}' berhasil diperbarui!`, "success");
+                closeUserAccessModal();
+
+                if (Array.isArray(state.users)) {
+                    const uObj = state.users.find(u => u.username.toLowerCase() === targetUsername.toLowerCase());
+                    if (uObj) {
+                        uObj.access_permissions = JSON.stringify(permissions);
+                        uObj.is_active = isActive ? 1 : 0;
+                    }
+                }
+                if (Array.isArray(state.serverAccessUsers)) {
+                    const sObj = state.serverAccessUsers.find(u => u.username.toLowerCase() === targetUsername.toLowerCase());
+                    if (sObj) {
+                        sObj.access_permissions = JSON.stringify(permissions);
+                        sObj.is_active = isActive ? 1 : 0;
+                    }
+                }
+                if (state.currentUser && state.currentUser.username.toLowerCase() === targetUsername.toLowerCase()) {
+                    state.currentUser.access_permissions = JSON.stringify(permissions);
+                    state.currentUser.is_active = isActive ? 1 : 0;
+                    applySidebarRoleRestrictions();
+                }
+
+                renderServerAccessTab();
+            } else {
+                showToast(data.message || "Gagal memperbarui hak akses!", "error");
+            }
+        } catch (e) {
+            showToast("Terjadi kesalahan jaringan saat menyimpan hak akses!", "error");
+        }
+    }
+}
+
+async function bulkResetAllUsersToDefaultRole() {
+    if (!canAccessServerAccessTab(state.currentUser)) return;
+
+    const totalCount = (state.serverAccessUsers || []).filter(u => !isServerAccount(u)).length;
+    if (!confirm(`Apakah Anda yakin ingin ME-RESET MASSAL hak akses seluruh (${totalCount}) akun personel agar kembali ke matriks Default Role & Dept masing-masing?`)) return;
+
+    try {
+        const res = await fetch('/api/users/bulk-reset-access', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                requester_username: state.currentUser ? state.currentUser.username : 'server'
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            showToast(data.message || `Berhasil me-reset hak akses seluruh akun personel ke Default Role!`, "success");
+            renderServerAccessTab();
+        } else {
+            showToast(data.message || "Gagal melakukan bulk reset hak akses!", "error");
+        }
+    } catch(e) {
+        showToast("Terjadi kesalahan jaringan saat me-reset hak akses massal!", "error");
+    }
+}
+
+async function toggleUserActiveStatus(username, currentIsActive) {
+    const actionText = currentIsActive ? "menonaktifkan (suspend)" : "mengaktifkan kembali";
+    if (!confirm(`Apakah Anda yakin ingin ${actionText} akun '${username}'?`)) return;
+
+    try {
+        const res = await fetch(`/api/users/${encodeURIComponent(username)}/access`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                requester_username: state.currentUser ? state.currentUser.username : "server",
+                is_active: !currentIsActive,
+                access_permissions: {}
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+            showToast(`Status akun '${username}' berhasil diubah!`, "success");
+            renderServerAccessTab();
+        } else {
+            showToast(data.message || "Gagal mengubah status akun!", "error");
+        }
+    } catch(e) {
+        showToast("Terjadi kesalahan jaringan saat mengubah status akun!", "error");
+    }
+}
+
+async function forceLogoutUserSession(username) {
+    if (!confirm(`Apakah Anda yakin ingin melakukan Force Logout pada sesi aktif user '${username}'?`)) return;
+
+    try {
+        const res = await fetch("/api/users/force-logout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target_username: username })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+            showToast(`Sesi user '${username}' telah di-logout secara paksa!`, "success");
+            renderServerAccessTab();
+        } else {
+            showToast(data.message || "Gagal force logout user!", "error");
+        }
+    } catch(e) {
+        showToast("Terjadi kesalahan jaringan!", "error");
+    }
+}
+
+async function promptResetPassword(username) {
+    const newPass = prompt(`Masukkan password baru untuk user '${username}':`);
+    if (!newPass) return;
+    if (newPass.length < 4) {
+        showToast("Password minimal 4 karakter!", "error");
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                creator_username: state.currentUser ? state.currentUser.username : "server",
+                password: newPass
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+            showToast(`Password user '${username}' berhasil diperbarui!`, "success");
+            renderServerAccessTab();
+        } else {
+            showToast(data.message || "Gagal mereset password!", "error");
+        }
+    } catch(e) {
+        showToast("Terjadi kesalahan jaringan!", "error");
+    }
+}
+
 
 function resetUserForm() {
     const form = document.getElementById("user-admin-form");
@@ -10426,16 +17603,9 @@ function resetUserForm() {
     const pwContainer = document.getElementById("user-password-field-container");
     const pwInput = document.getElementById("usr-password");
     if (pwInput) {
-        if (state.currentUser && state.currentUser.role === 'Foreman') {
-            pwInput.value = "123456"; // Default password for new users created by Foreman
-            pwInput.disabled = true;
-            pwInput.removeAttribute("required");
-            if (pwContainer) pwContainer.style.display = "none";
-        } else {
-            pwInput.disabled = false;
-            pwInput.setAttribute("required", "required");
-            if (pwContainer) pwContainer.style.display = "block";
-        }
+        pwInput.disabled = false;
+        pwInput.setAttribute("required", "required");
+        if (pwContainer) pwContainer.style.display = "block";
     }
 
     const modeInput = document.getElementById("user-form-mode");
@@ -10447,10 +17617,13 @@ function resetUserForm() {
     const submitBtn = document.getElementById("btn-save-user-submit");
     if (submitBtn) submitBtn.innerHTML = '<i data-lucide="save"></i> Simpan User';
 
-    if (state.currentUser && state.currentUser.role === 'Foreman') {
+    if (state.currentUser && state.currentUser.role === 'Foreman Eng') {
         const roleSelect = document.getElementById("usr-role");
         if (roleSelect) roleSelect.value = "Drafter";
     }
+
+    // ponytail: Ensure role options are refreshed to match the reset department
+    filterUserRoleOptions();
 }
 
 async function saveUserData() {
@@ -10458,6 +17631,7 @@ async function saveUserData() {
     const username = document.getElementById("usr-username").value.trim().toLowerCase();
     const password = document.getElementById("usr-password").value;
     const fullname = document.getElementById("usr-fullname").value.trim();
+    const dept = document.getElementById("usr-dept").value;
     const role = document.getElementById("usr-role").value;
     const avatarInput = document.getElementById("usr-avatar").value.trim();
 
@@ -10470,6 +17644,7 @@ async function saveUserData() {
         fullname,
         role,
         avatar,
+        dept,
         creator_username: state.currentUser ? state.currentUser.username : ""
     };
 
@@ -10483,7 +17658,7 @@ async function saveUserData() {
             });
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.message || "Gagal mendaftarkan user baru");
+                throw new Error(errorData.message || errorData.error || "Gagal mendaftarkan user baru");
             }
             showToast(`User "${username}" berhasil didaftarkan`, "success");
         } else {
@@ -10493,7 +17668,10 @@ async function saveUserData() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(userData)
             });
-            if (!res.ok) throw new Error("Gagal memperbarui data user");
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.message || errorData.error || "Gagal memperbarui data user");
+            }
             showToast(`User "${username}" berhasil diperbarui`, "success");
         }
 
@@ -10509,43 +17687,87 @@ async function saveUserData() {
     }
 }
 
-// ponytail: Filter new user form role select options based on hierarchy level
+// ponytail: Filter new user form role select options based on hierarchy level and selected department
 function filterUserRoleOptions() {
     const select = document.getElementById("usr-role");
     if (!select) return;
     
-    // ponytail: fallback to safeSessionStorage if state.currentUser is not yet loaded
-    const currentUser = state.currentUser || (safeSessionStorage.getItem("PTBAS_USER") ? JSON.parse(safeSessionStorage.getItem("PTBAS_USER")) : null);
-    if (!currentUser) return;
-    
-    const role = currentUser.role || "";
-    const isForeman = role === 'Foreman';
-    const currentLevel = getRoleLevel(role);
-    const isServer = role === 'Server' || currentUser.username === 'server' || role.toLowerCase() === 'server';
+    const deptSelect = document.getElementById("usr-dept");
+    const selectedDept = deptSelect ? deptSelect.value : "";
+    const currentVal = select.value;
 
-    Array.from(select.options).forEach(opt => {
-        if (isForeman) {
-            // Foreman can only manage Drafter and Admin users
-            if (isDrafterRole(opt.value) || opt.value === 'Admin') {
-                opt.style.display = 'block';
-            } else {
-                opt.style.display = 'none';
-            }
-        } else {
-            const optLevel = getRoleLevel(opt.value);
-            if (isServer) {
-                opt.style.display = 'block';
-            } else if (currentLevel > optLevel) {
-                opt.style.display = 'block';
-            } else {
-                opt.style.display = 'none';
-            }
+    select.innerHTML = '';
+    const placeholder = document.createElement("option");
+    placeholder.id = "role-placeholder";
+    placeholder.disabled = true;
+    placeholder.value = "";
+
+    if (!selectedDept) {
+        select.disabled = true;
+        placeholder.textContent = "Pilih Departemen Terlebih Dahulu";
+        placeholder.selected = true;
+        select.appendChild(placeholder);
+        return;
+    } else {
+        select.disabled = false;
+        placeholder.textContent = "Pilih Jabatan / Level Otoritas";
+        placeholder.selected = !currentVal;
+        select.appendChild(placeholder);
+    }
+
+    const availableRoles = [];
+
+    if (selectedDept === 'ENG') {
+        availableRoles.push(
+            { value: 'user_ENG', label: 'user_ENG (Staff Engineering)' },
+            { value: 'Foreman Eng', label: 'Foreman Eng (Akses Administrator)' },
+            { value: 'Admin Eng', label: 'Admin Eng (Akses Administrator)' },
+            { value: 'Supervisor Eng', label: 'Supervisor Eng (Akses Administrator)' },
+            { value: 'Manager Eng', label: 'Manager Eng (Akses Administrator)' },
+            { value: 'Plant Manager', label: 'Plant Manager' },
+            { value: 'Factory Manager', label: 'Factory Manager' },
+            { value: 'Drafter', label: 'Drafter' },
+            { value: 'Sipil', label: 'Sipil' },
+            { value: 'Mekanik', label: 'Mekanik' },
+            { value: 'Elektrik', label: 'Elektrik' },
+            { value: 'Program', label: 'Program' },
+            { value: 'Kalibrasi', label: 'Kalibrasi' },
+            { value: 'Otomotif', label: 'Otomotif' }
+        );
+    } else {
+        const deptLabel = selectedDept;
+        availableRoles.push(
+            { value: `user_${selectedDept}`, label: `user_${selectedDept} (Staff ${deptLabel})` },
+            { value: `Supervisor ${selectedDept}`, label: `Supervisor ${deptLabel} (Akses Supervisor)` },
+            { value: `Manager ${selectedDept}`, label: `Manager ${deptLabel} (Akses Manager)` },
+            { value: 'Plant Manager', label: 'Plant Manager' },
+            { value: 'Factory Manager', label: 'Factory Manager' }
+        );
+    }
+
+    let valMatches = false;
+    availableRoles.forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r.value;
+        opt.textContent = r.label;
+        if (currentVal === r.value) {
+            opt.selected = true;
+            valMatches = true;
         }
+        select.appendChild(opt);
     });
+
+    if (currentVal && !valMatches && currentVal !== "") {
+        const opt = document.createElement("option");
+        opt.value = currentVal;
+        opt.textContent = currentVal;
+        opt.selected = true;
+        select.appendChild(opt);
+    }
 }
 
 // Global functions for table actions
-window.editUser = function (username, fullname, role, avatar, password) {
+window.editUser = function (username, fullname, role, avatar, password, dept) {
     const formContainer = document.getElementById("user-form-container");
     const toggleBtn = document.getElementById("btn-toggle-new-user");
     const titleEl = document.getElementById("user-form-title");
@@ -10569,17 +17791,12 @@ window.editUser = function (username, fullname, role, avatar, password) {
     const pwInput = document.getElementById("usr-password");
     if (pwInput) {
         pwInput.value = password;
-        if (state.currentUser && state.currentUser.role === 'Foreman') {
-            pwInput.disabled = true;
-            pwInput.removeAttribute("required");
-            if (pwContainer) pwContainer.style.display = "none";
-        } else {
-            pwInput.disabled = false;
-            pwInput.setAttribute("required", "required");
-            if (pwContainer) pwContainer.style.display = "block";
-        }
+        pwInput.disabled = false;
+        pwInput.setAttribute("required", "required");
+        if (pwContainer) pwContainer.style.display = "block";
     }
     document.getElementById("usr-fullname").value = fullname;
+    document.getElementById("usr-dept").value = dept || "";
     filterUserRoleOptions();
     document.getElementById("usr-role").value = role;
     document.getElementById("usr-avatar").value = avatar;
@@ -10633,11 +17850,125 @@ window.toggleUserPasswordVisibility = function (button) {
     lucide.createIcons();
 };
 
+// ponytail: Restore / Revert EJO, Drawing, or Project item from History back to Active State (Revision mode)
+window.restoreHistoryEJO = async function (id) {
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const isAuthorized = ['Admin Eng', 'Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Server'].includes(userRole) || (state.currentUser && (state.currentUser.username === 'server' || state.currentUser.username === 'admin'));
+
+    if (!isAuthorized) {
+        showToast("Jabatan Anda tidak berhak mengembalikan Riwayat EJO!", "error");
+        return;
+    }
+
+    const confirmRestore = await showCustomConfirm(`Apakah Anda yakin ingin mengembalikan ${id} dari Riwayat ke daftar aktif (direvisi / dikerjakan kembali)?`);
+    if (!confirmRestore) return;
+
+    const isProject = id.startsWith('PRJ');
+    const isDrawing = id.startsWith('DRW');
+    const isGeneral = state.generalEjos && state.generalEjos.some(ge => ge.id === id);
+
+    const now = new Date();
+    const timestamp = now.getFullYear() + "-" +
+        String(now.getMonth() + 1).padStart(2, '0') + "-" +
+        String(now.getDate()).padStart(2, '0') + " " +
+        String(now.getHours()).padStart(2, '0') + ":" +
+        String(now.getMinutes()).padStart(2, '0');
+    const userFullname = state.currentUser ? state.currentUser.fullname : 'user';
+
+    try {
+        if (isProject) {
+            const proj = state.projects ? state.projects.find(p => p.id === id) : null;
+            if (!proj) throw new Error("Project tidak ditemukan");
+
+            const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ phase: 3 })
+            });
+            if (!res.ok) throw new Error("Gagal mengembalikan fase project");
+
+            showToast(`Project ${id} berhasil dikembalikan ke Fase 3 (Tinggal Eksekusi)!`, "success");
+            const btnProjects = document.getElementById("btn-nav-projects");
+            if (btnProjects) btnProjects.click();
+
+        } else if (isDrawing) {
+            const drw = state.drawings ? state.drawings.find(d => d.id === id) : null;
+            if (!drw) throw new Error("Drawing EJO tidak ditemukan");
+
+            const logs = parseLogs(drw.logs);
+            logs.push({ date: timestamp, message: `Drawing EJO dikembalikan dari Riwayat ke status In Progress (Revisi) oleh ${userFullname}.` });
+
+            const res = await fetch(`/api/drawings/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    status: "In Progress (Revisi 1)",
+                    logs: JSON.stringify(logs)
+                })
+            });
+            if (!res.ok) throw new Error("Gagal mengembalikan Drawing EJO");
+
+            showToast(`Drawing EJO ${id} berhasil dikembalikan ke status aktif (In Progress / Revisi)!`, "success");
+            const btnDrawing = document.getElementById("btn-nav-drawing");
+            if (btnDrawing) btnDrawing.click();
+
+        } else if (isGeneral) {
+            const gejo = state.generalEjos ? state.generalEjos.find(ge => ge.id === id) : null;
+            if (!gejo) throw new Error("General EJO tidak ditemukan");
+
+            const logs = parseLogs(gejo.logs);
+            logs.push({ date: timestamp, message: `General EJO dikembalikan dari Riwayat ke status In Progress (Revisi) oleh ${userFullname}.` });
+
+            const res = await fetch(`/api/general-ejos/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    is_archived: 0,
+                    status: "In Progress (Revisi 1)",
+                    logs: JSON.stringify(logs)
+                })
+            });
+            if (!res.ok) throw new Error("Gagal mengembalikan General EJO");
+
+            showToast(`General EJO ${id} berhasil dikembalikan ke daftar aktif (In Progress / Revisi)!`, "success");
+            const btnGeneral = document.getElementById("btn-nav-general-ejo");
+            if (btnGeneral) btnGeneral.click();
+
+        } else {
+            const ejo = state.ejos ? state.ejos.find(e => e.id === id) : null;
+            if (!ejo) throw new Error("EJO tidak ditemukan");
+
+            const logs = parseLogs(ejo.logs);
+            logs.push({ date: timestamp, message: `EJO dikembalikan dari Riwayat ke status In Progress (Revisi) oleh ${userFullname}.` });
+
+            const res = await fetch(`/api/ejos/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    status: "In Progress (Revisi 1)",
+                    logs: JSON.stringify(logs)
+                })
+            });
+            if (!res.ok) throw new Error("Gagal mengembalikan EJO");
+
+            showToast(`EJO ${id} berhasil dikembalikan ke daftar aktif (In Progress / Revisi)!`, "success");
+            const btnGeneral = document.getElementById("btn-nav-general-ejo");
+            if (btnGeneral) btnGeneral.click();
+        }
+
+        await initData();
+    } catch (err) {
+        console.error("Error in restoreHistoryEJO:", err);
+        showToast(`Gagal mengembalikan item dari riwayat: ${err.message}`, "error");
+    }
+};
+
 // ponytail: Handle direct deletion of EJO history records (supporting regular, general EJO, drawing, and project types)
 window.deleteHistoryEJO = async function (id) {
-    // ponytail: restrict delete for restricted roles
-    const isRestrictedRole = state.currentUser && ['Foreman', 'Supervisor', 'Manager', 'Plant Manager'].includes(state.currentUser.role);
-    if (isRestrictedRole) {
+    // ponytail: allow delete for Admin Eng, Foreman Eng, and Server
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const isAuthorizedToDeleteHistory = ['Admin Eng', 'Foreman Eng', 'Server'].includes(userRole) || (state.currentUser && state.currentUser.username === 'server');
+    if (!isAuthorizedToDeleteHistory) {
         showToast("Jabatan Anda tidak berhak menghapus Riwayat EJO!", "error");
         return;
     }
@@ -10651,7 +17982,7 @@ window.deleteHistoryEJO = async function (id) {
     const queryParam = `?requester=${encodeURIComponent(state.currentUser.username)}`;
     let apiUrl;
     if (isProject) {
-        apiUrl = `/api/projects/${id}${queryParam}`;
+        apiUrl = `/api/projects/${encodeURIComponent(id)}${queryParam}`;
     } else if (isDrawing) {
         apiUrl = `/api/drawings/${id}${queryParam}`;
     } else if (isGeneral) {
@@ -10837,11 +18168,50 @@ function mapExcelToCategory(val) {
     if (clean === 'AUT' || clean === 'OTO') return 'Otomotif';
     if (clean === 'PRG') return 'Program';
     // ponytail: added Repair Part clean conversion mapping
-    if (clean === 'RPP' || clean === 'REP' || clean === 'RPT') return 'Repair Part';
+    if (clean === 'RPP' || clean === 'REP' || clean === 'RPT' || clean.includes('BQM-REPAIR') || clean.includes('BQM_REPAIR')) return 'Repair Part';
+    if (clean === 'BQM') return 'Mekanik';
+    // ponytail: map AC and MEC&ELC categories to Mekanik to prevent skip/miss-import
+    if (clean === 'AC' || clean === 'MEC&ELC') return 'Mekanik';
 
     const cats = ['Sipil', 'Elektrik', 'Kalibrasi', 'Mekanik', 'Otomotif', 'Program', 'Repair Part'];
     const found = cats.find(c => c.toUpperCase() === clean);
     return found || val;
+}
+
+// ponytail: helper to map Excel status to technical Drawing statuses
+function mapExcelToDrawingStatus(val) {
+    if (!val) return 'Pending Foreman Approval';
+    const clean = val.toUpperCase().trim();
+    if (clean.includes('UNPROCESSED') || clean.includes('CEK')) return 'Pending Foreman Approval';
+    if (clean.includes('SCHEDULE') || clean.includes('APPROV')) return 'Pending Foreman Approval';
+    if (clean.includes('PROGRES') || clean.includes('PLAY') || clean.includes('ON PROGRESS')) return 'On Progress';
+    if (clean.includes('COMPLET') || clean.includes('DONE') || clean.includes('CLOSE')) return 'Completed';
+    if (clean.includes('CANCEL')) return 'Cancelled';
+    return 'Pending Foreman Approval';
+}
+
+// ponytail: auto-detect technical drawing categories based on subject/desc keywords
+function autoDetectDrawingCategory(subject, description, excelCategory) {
+    const text = ((subject || "") + " " + (description || "") + " " + (excelCategory || "")).toLowerCase();
+    if (text.includes("sipil") || text.includes("dinding") || text.includes("lantai") || text.includes("semen") || text.includes("pagar") || text.includes("jalan") || text.includes("curving") || text.includes("bangunan")) {
+        return "Sipil";
+    }
+    if (text.includes("elektrik") || text.includes("listrik") || text.includes("kabel") || text.includes("lampu") || text.includes("panel") || text.includes("hmi") || text.includes("sensor") || text.includes("power") || text.includes("bect") || text.includes("control")) {
+        return "Elektrik";
+    }
+    if (text.includes("kalibrasi") || text.includes("calibration") || text.includes("thermocouple") || text.includes("pressure gauge") || text.includes(" pg ")) {
+        return "Kalibrasi";
+    }
+    if (text.includes("program") || text.includes("plc") || text.includes("scada") || text.includes("hmi program")) {
+        return "Program";
+    }
+    if (text.includes("repair part") || text.includes("rpp") || text.includes("part baru") || text.includes("suku cadang")) {
+        return "Repair Part";
+    }
+    if (text.includes("mobil") || text.includes("forklift") || text.includes("otomotif") || text.includes("vehicle")) {
+        return "Otomotif";
+    }
+    return "Mekanik"; // default fallback
 }
 
 function mapExcelToStatus(val) {
@@ -10850,7 +18220,7 @@ function mapExcelToStatus(val) {
     if (clean.includes('UNPROCESSED') || clean.includes('CEK')) return 'Requested';
     if (clean.includes('SCHEDULE') || clean.includes('APPROV')) return 'Approved';
     if (clean.includes('PROGRES') || clean.includes('PLAY')) return 'In Progress';
-    if (clean.includes('COMPLET') || clean.includes('DONE')) return 'Completed';
+    if (clean.includes('COMPLET') || clean.includes('DONE') || clean.includes('CLOSE')) return 'Completed';
     if (clean.includes('CANCEL')) return 'Cancelled';
     return 'Requested';
 }
@@ -10909,7 +18279,13 @@ async function importFromExcel(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            let sheetName = workbook.SheetNames[0];
+            if (workbook.SheetNames.includes("NEW MASTER") || (file.name && file.name.toUpperCase().includes("WSP"))) {
+                const count = parseWSPMasterWorkbook(e.target.result);
+                if (count > 0 && typeof showToast === "function") {
+                    showToast(`✓ Berhasil mengimpor WSP Master Material: ${count.toLocaleString('id-ID')} items!`, "success");
+                }
+                return;
+            }
             if (workbook.SheetNames.length > 1) {
                 sheetName = await new Promise((resolve) => {
                     const modal = document.getElementById("excel-sheet-modal");
@@ -11032,7 +18408,8 @@ async function importFromExcel(event) {
                 return;
             }
 
-            let importCount = 0;
+            let importCountGejo = 0;
+            let importCountDrawing = 0;
             const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
             for (const row of rows) {
@@ -11048,15 +18425,10 @@ async function importFromExcel(event) {
                 // Primary 'Tim' or 'Category', fallback to 'Tin'
                 const categoryVal = row['Tim'] || row['Category'] || row['Tin'];
 
-                // Skip rows where the category is 'AC' or 'MEC&ELC'
-                if (categoryVal) {
-                    const cleanCat = String(categoryVal).toUpperCase().trim();
-                    if (cleanCat === 'AC' || cleanCat === 'MEC&ELC') {
-                        continue;
-                    }
-                }
+                // ponytail: do not skip AC or MEC&ELC categories, they are mapped to Mekanik
 
-                const category = mapExcelToCategory(categoryVal);
+                // ponytail: Distinguish between EJO Drawing (Tim is 'DWG') and General EJO
+                const isDrawing = categoryVal && String(categoryVal).toUpperCase().trim() === 'DWG';
 
                 // ponytail: extract creation date (Date) and target date (Schedule) from spreadsheet
                 const parsedDate = parseExcelDate(row['Date']);
@@ -11065,9 +18437,8 @@ async function importFromExcel(event) {
                 const targetDate = parsedSchedule || parsedDate || new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0];
                 const description = row['Description'] ? String(row['Description']).trim() : 'Diimpor dari file Excel.';
                 const requester = row['Requestor'] ? String(row['Requestor']).trim() : (state.currentUser ? state.currentUser.fullname : 'System Import');
-                const status = mapExcelToStatus(row['Status']);
+                
                 const pic = row['PIC ACTION'] ? String(row['PIC ACTION']).trim() : 'Unassigned';
-
                 let matchedEngineer = 'Unassigned';
                 if (pic !== 'Unassigned') {
                     const cleanPic = pic.toUpperCase();
@@ -11079,97 +18450,133 @@ async function importFromExcel(event) {
                     }
                 }
 
-                const existing = (state.generalEjos || []).find(item => item.id.toLowerCase() === ticketId.toLowerCase());
-
-                // ponytail: safely clone/parse existing logs or initialize to an empty array
-                let logsList = [];
-                if (existing && existing.logs) {
-                    try {
-                        logsList = Array.isArray(existing.logs) ? [...existing.logs] : JSON.parse(existing.logs);
-                    } catch (err) {
-                        logsList = [];
-                    }
-                }
-
                 // Parse completion date if status is Completed
                 let completionDate = null;
                 if (row['Date Done']) {
                     completionDate = parseExcelDate(row['Date Done']);
                 }
 
-                if (status === 'Completed') {
-                    const hasCompletionLog = logsList.some(log => {
-                        if (!log) return false;
-                        const msgText = log.cleanMessage || log.message;
-                        return typeof msgText === 'string' &&
-                            (msgText.includes('selesai') || msgText.includes('Completed') || msgText.includes('selesai dilakukan'));
+                if (isDrawing) {
+                    const existing = (state.drawings || []).find(item => item.id.toLowerCase() === ticketId.toLowerCase());
+                    if (existing) {
+                        // ponytail: ignore if drawing request already exists in the system
+                        continue;
+                    }
+
+                    const drawingStatus = mapExcelToDrawingStatus(row['Status']);
+                    let logsList = [];
+                    if (drawingStatus === 'Completed') {
+                        const logDate = completionDate ? completionDate + " 00:00" : timestamp;
+                        logsList.push({
+                            date: logDate,
+                            message: "Drawing selesai dilakukan."
+                        });
+                    }
+
+                    const drawingData = {
+                        id: ticketId,
+                        title: title,
+                        dept: dept,
+                        category: autoDetectDrawingCategory(title, description, row['Category']),
+                        priority: 'Medium',
+                        location: 'Pabrik PT. BAS',
+                        targetDate: targetDate,
+                        status: drawingStatus,
+                        engineer: matchedEngineer,
+                        description: description,
+                        requester: requester,
+                        uploader: requester,
+                        drawing_type: 'import',
+                        logs: logsList,
+                        createdDate: createdDate
+                    };
+
+                    drawingData.logs.push({
+                        date: timestamp,
+                        message: `Drawing dibuat melalui import Excel oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
                     });
-                    if (!hasCompletionLog) {
+
+                    const res = await fetch("/api/drawings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(drawingData)
+                    });
+                    if (!res.ok) {
+                        console.error("Gagal membuat EJO Drawing: " + ticketId);
+                    } else {
+                        importCountDrawing++;
+                    }
+
+                } else {
+                    const existing = (state.generalEjos || []).find(item => item.id.toLowerCase() === ticketId.toLowerCase());
+                    if (existing) {
+                        // ponytail: ignore if general EJO already exists in the system
+                        continue;
+                    }
+
+                    const gejoStatus = mapExcelToStatus(row['Status']);
+                    let logsList = [];
+                    if (gejoStatus === 'Completed') {
                         const logDate = completionDate ? completionDate + " 00:00" : timestamp;
                         logsList.push({
                             date: logDate,
                             message: "EJO selesai dilakukan."
                         });
                     }
-                }
 
-                const ejoData = {
-                    id: ticketId,
-                    title: title,
-                    dept: dept,
-                    category: category,
-                    priority: 'Medium',
-                    location: 'Pabrik PT. BAS',
-                    targetDate: targetDate,
-                    status: status,
-                    engineer: matchedEngineer,
-                    estCost: existing ? existing.estCost : 0,
-                    actCost: existing ? existing.actCost : 0,
-                    description: description,
-                    requester: requester,
-                    logs: logsList,
-                    // ponytail: import the parsed creation date from Excel
-                    createdDate: createdDate
-                };
+                    const category = mapExcelToCategory(categoryVal);
 
-                if (existing) {
-                    ejoData.logs.push({
-                        date: timestamp,
-                        message: `EJO diperbarui melalui import Excel oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
-                    });
-                    const res = await fetch(`/api/general-ejos/${existing.id}`, {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(ejoData)
-                    });
-                    if (!res.ok) {
-                        console.error("Gagal mengupdate EJO: " + ticketId);
-                    } else {
-                        // ponytail: only increment count if response is ok
-                        importCount++;
-                    }
-                } else {
+                    const ejoData = {
+                        id: ticketId,
+                        title: title,
+                        dept: dept,
+                        category: category,
+                        priority: 'Medium',
+                        location: 'Pabrik PT. BAS',
+                        targetDate: targetDate,
+                        status: gejoStatus,
+                        engineer: matchedEngineer,
+                        estCost: 0,
+                        actCost: 0,
+                        description: description,
+                        requester: requester,
+                        logs: logsList,
+                        createdDate: createdDate
+                    };
+
                     ejoData.logs.push({
                         date: timestamp,
                         message: `EJO dibuat melalui import Excel oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
                     });
+
                     const res = await fetch("/api/general-ejos", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(ejoData)
                     });
                     if (!res.ok) {
-                        console.error("Gagal membuat EJO: " + ticketId);
+                        console.error("Gagal membuat General EJO: " + ticketId);
                     } else {
-                        // ponytail: only increment count if response is ok
-                        importCount++;
+                        importCountGejo++;
                     }
                 }
             }
 
-            showToast(`${importCount} EJO berhasil diproses!`, "success");
-            await initData();
-            switchTab("general-ejo");
+            if (importCountGejo > 0 && importCountDrawing > 0) {
+                showToast(`${importCountGejo} EJO & ${importCountDrawing} EJO Drawing berhasil diproses!`, "success");
+                await initData();
+                switchTab("general-ejo");
+            } else if (importCountDrawing > 0) {
+                showToast(`${importCountDrawing} EJO Drawing berhasil diproses!`, "success");
+                await initData();
+                switchTab("drawing");
+            } else if (importCountGejo > 0) {
+                showToast(`${importCountGejo} EJO berhasil diproses!`, "success");
+                await initData();
+                switchTab("general-ejo");
+            } else {
+                showToast("Tidak ada data baru yang diproses.", "info");
+            }
         } catch (err) {
             console.error(err);
             showToast("Gagal membaca atau memproses file Excel!", "error");
@@ -11221,9 +18628,55 @@ window.applyDashboardSettings = function () {
         toggleInput.checked = showProp;
     }
 
+    // ponytail: Hide Trend Chart & Dept Chart for Staff & Non-ENG Supervisor / Manager per dept
+    const user = state.currentUser;
+    const role = user ? (user.role || "") : "";
+    const dept = user ? (user.dept || "") : "";
+    const normalizedDept = typeof normalizeDepartmentCode === "function" ? normalizeDepartmentCode(dept) : String(dept || "").toUpperCase();
+
+    const isStaffUser = user && isOrdinaryUser(role);
+    const isEngUser = normalizedDept === "ENG" || / eng$/i.test(role) || / eng /i.test(role) || role === "Server" || (user && user.username === "server");
+    const isSpvOrManager = role === "Supervisor" || role === "Manager" || role.startsWith("Supervisor ") || role.startsWith("Manager ") || role.startsWith("SPV ") || role === "SPV" || role === "spv_user" || role === "manager_user" || role === "spv_dept" || role === "manager_dept" || /spv|supervisor|manager/i.test(role);
+    const isNonEngSpvOrManager = isSpvOrManager && !isEngUser;
+
+    const shouldHideTrend = isStaffUser || isNonEngSpvOrManager;
+    const shouldHideDeptChart = isStaffUser || isNonEngSpvOrManager;
+
+    if (grid) {
+        grid.classList.toggle("hide-trend-for-staff", shouldHideTrend);
+    }
+    const bottomGrid = document.getElementById("overview-bottom-grid");
+    if (bottomGrid) {
+        bottomGrid.classList.toggle("hide-dept-chart", shouldHideDeptChart);
+    }
+    const trendCard = document.getElementById("card-trend-chart");
+    if (trendCard) {
+        if (shouldHideTrend) {
+            trendCard.style.display = "none";
+            trendCard.style.setProperty("display", "none", "important");
+        } else {
+            trendCard.style.display = "";
+            trendCard.style.removeProperty("display");
+        }
+    }
+    const deptCard = document.getElementById("card-dept-chart");
+    if (deptCard) {
+        if (shouldHideDeptChart) {
+            deptCard.style.display = "none";
+            deptCard.style.setProperty("display", "none", "important");
+        } else {
+            deptCard.style.display = "";
+            deptCard.style.removeProperty("display");
+        }
+    }
+
     // ponytail: resize trend chart to adapt to the new full width
     if (state.charts.trend) {
         state.charts.trend.resize();
+    }
+
+    if (typeof applyDashboardWidgetPermissions === "function") {
+        applyDashboardWidgetPermissions();
     }
 };
 
@@ -11254,11 +18707,11 @@ async function completeEJODetails() {
     if (!ejo) return;
 
     // ponytail: restrict for Foreman and Admin per user request
-    if (state.currentUser && state.currentUser.role === 'Admin') {
+    if (state.currentUser && state.currentUser.role === 'Admin Eng') {
         showToast("Admin tidak berhak menyelesaikan pekerjaan!", "error");
         return;
     }
-    if (!isGeneral && state.currentUser && state.currentUser.role === 'Foreman') {
+    if (!isGeneral && state.currentUser && state.currentUser.role === 'Foreman Eng') {
         showToast("Foreman tidak berhak menyelesaikan pekerjaan!", "error");
         return;
     }
@@ -11360,3 +18813,1425 @@ window.openRejectionImage = function (base64) {
         showToast("Gagal membuka gambar, popup diblokir browser!", "warning");
     }
 };
+
+// ponytail: Global capture-phase event listener fallback to GUARANTEE BOQ modal pops up whenever "Barang Ready" button is clicked
+document.addEventListener("click", function (evt) {
+    const btn = evt.target ? evt.target.closest("button") : null;
+    if (!btn) return;
+
+    const btnText = btn.textContent || btn.innerText || "";
+    const onclickAttr = btn.getAttribute("onclick") || "";
+
+    // Do NOT intercept back/revert buttons (e.g. "← Fase 3" or moveProjectPhase with -1)
+    const isBackward = btnText.includes("←") || btnText.includes("<-") || onclickAttr.includes(", -1") || onclickAttr.includes(",-1");
+    if (isBackward) return;
+
+    if (btnText.includes("Barang Ready") || btnText.includes("Fase 3")) {
+        evt.preventDefault();
+        evt.stopPropagation();
+        if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
+
+        // Extract project ID from onclick attribute or parent project card
+        let projId = null;
+        const match = onclickAttr.match(/moveProjectPhase\s*\(\s*['"]([^'"]+)['"]/);
+        if (match) {
+            projId = match[1];
+        } else {
+            const card = btn.closest(".project-card");
+            if (card) {
+                const idEl = card.querySelector(".project-card-id");
+                if (idEl) projId = idEl.dataset.id || (idEl.textContent.match(/PRJ-[^\s]+/) || [idEl.textContent.trim()])[0];
+            }
+        }
+
+        if (!projId) {
+            // Fallback: search for any card with ID PRJ-
+            const card = btn.closest(".card-glass, .project-card");
+            if (card && card.innerText.includes("PRJ-")) {
+                const matchId = card.innerText.match(/PRJ-\d{4}-\d{3,4}/);
+                if (matchId) projId = matchId[0];
+            }
+        }
+
+        if (projId) {
+            console.log("Global capture listener triggered Barang Ready modal for projId:", projId);
+            window.moveProjectPhase(projId, 1);
+        } else {
+            console.warn("Global capture listener: could not find projId from button click", btn);
+        }
+    }
+}, true);
+
+// ponytail: WSP Master Material parsing focused strictly on Material and Description with O(1) fast lookup index
+function parseWSPMasterWorkbook(arrayBuffer) {
+    if (typeof XLSX === "undefined") {
+        console.warn("SheetJS XLSX library is not loaded.");
+        return 0;
+    }
+    try {
+        const data = new Uint8Array(arrayBuffer);
+        const workbook = XLSX.read(data, { type: "array", dense: true });
+        const sheetName = workbook.SheetNames.includes("NEW MASTER") ? "NEW MASTER" : workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) return 0;
+        
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        let headerIndex = -1;
+        
+        // Find header row (looks for 'Material' or 'Description')
+        for (let i = 0; i < Math.min(15, rawRows.length); i++) {
+            const rowStr = (rawRows[i] || []).join(" ").toLowerCase();
+            if (rowStr.includes("material") || rowStr.includes("description")) {
+                headerIndex = i;
+                break;
+            }
+        }
+        
+        if (headerIndex === -1) headerIndex = 2; // fallback row index 2
+        
+        const headers = (rawRows[headerIndex] || []).map(h => String(h || "").trim());
+        let matCol = headers.findIndex(h => /material/i.test(h));
+        let descCol = headers.findIndex(h => /desc/i.test(h));
+        let priceCol = headers.findIndex(h => /harga|price|sap/i.test(h));
+        
+        if (matCol === -1) matCol = 0;
+        if (descCol === -1) descCol = 1;
+        
+        const materials = [];
+        const wspMap = new Map();
+        
+        for (let i = headerIndex + 1; i < rawRows.length; i++) {
+            const row = rawRows[i];
+            if (!row || !row[matCol]) continue;
+            const matCode = String(row[matCol]).trim();
+            if (!matCode || matCode.toLowerCase() === "material") continue;
+            const desc = row[descCol] ? String(row[descCol]).trim() : "";
+            let price = 0;
+            if (priceCol !== -1 && row[priceCol]) {
+                const parsed = parseFloat(String(row[priceCol]).replace(/[^0-9.]/g, ""));
+                if (!isNaN(parsed)) price = parsed;
+            }
+            
+            const item = { material: matCode, description: desc, price: price };
+            materials.push(item);
+            
+            // ponytail: O(1) index map by exact material code & combo key for instant search
+            const codeKey = matCode.toLowerCase();
+            wspMap.set(codeKey, item);
+            wspMap.set(`${codeKey} - ${desc.toLowerCase()}`, item);
+        }
+        
+        state.wspMaterials = materials;
+        state.wspMap = wspMap;
+        
+        // ponytail: render lightweight top 50 datalist options using fast innerHTML string
+        populateWSPMaterialDatalist();
+        
+        const infoEl = document.getElementById("gejo-wsp-status-info");
+        if (infoEl) {
+            infoEl.style.display = "block";
+            infoEl.textContent = `✓ WSP Master Material dimuat (${materials.length.toLocaleString('id-ID')} items terdaftar)`;
+        }
+        return materials.length;
+    } catch (err) {
+        console.error("Error parsing WSP Master Material workbook:", err);
+        return 0;
+    }
+}
+
+// ponytail: Fast datalist population using innerHTML string with top 50 dynamic matches
+function populateWSPMaterialDatalist(filterQuery = "") {
+    const datalist = document.getElementById("gejo-wsp-datalist");
+    if (!datalist || !state.wspMaterials.length) return;
+    
+    let matches = state.wspMaterials;
+    if (filterQuery && filterQuery.length >= 2) {
+        const q = filterQuery.toLowerCase();
+        matches = state.wspMaterials.filter(item => 
+            item.material.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
+        );
+    }
+    
+    // ponytail: cap at top 50 items for instant DOM response without lagging browser input
+    const slice = matches.slice(0, 50);
+    datalist.innerHTML = slice.map(item => 
+        `<option value="${item.material} - ${item.description}" data-mat="${item.material}" data-desc="${item.description}" data-price="${item.price}"></option>`
+    ).join("");
+}
+
+function setupWSPMaterialEvents() {
+    const uploadBtn = document.getElementById("gejo-wsp-upload-btn");
+    const fileInput = document.getElementById("gejo-wsp-file-input");
+    const searchInput = document.getElementById("gejo-form-wsp-search");
+    
+    if (uploadBtn && fileInput) {
+        uploadBtn.addEventListener("click", () => fileInput.click());
+        fileInput.addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const count = parseWSPMasterWorkbook(evt.target.result);
+                if (count > 0 && typeof showToast === "function") {
+                    showToast(`✓ Berhasil memuat WSP Master Material: ${count.toLocaleString('id-ID')} items!`, "success");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    const adminUploadBtn = document.getElementById("btn-wsp-admin-import");
+    const adminFileInput = document.getElementById("wsp-admin-import-input");
+    if (adminUploadBtn && adminFileInput) {
+        adminUploadBtn.addEventListener("click", () => adminFileInput.click());
+        adminFileInput.addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const count = parseWSPMasterWorkbook(evt.target.result);
+                if (count > 0 && typeof showToast === "function") {
+                    showToast(`✓ Berhasil mengimpor WSP Master Material (${count.toLocaleString('id-ID')} items)!`, "success");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+    
+    if (searchInput) {
+        let debounceTimer = null;
+        const handleSearchMatch = (e) => {
+            const val = searchInput.value.trim();
+            const infoEl = document.getElementById("gejo-wsp-status-info");
+            
+            if (!val) {
+                if (infoEl) infoEl.style.display = "none";
+                return;
+            }
+            if (!state.wspMaterials || !state.wspMaterials.length) return;
+            
+            // ponytail: dynamically update datalist options on input with light 100ms debounce
+            if (e && e.type === "input") {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => populateWSPMaterialDatalist(val), 100);
+            }
+            
+            // ponytail: O(1) instant map lookup by key first, then fast array match fallback
+            const valLower = val.toLowerCase();
+            let matched = state.wspMap ? state.wspMap.get(valLower) : null;
+            if (!matched && state.wspMaterials) {
+                matched = state.wspMaterials.find(item => 
+                    item.material.toLowerCase() === valLower || 
+                    `${item.material} - ${item.description}`.toLowerCase() === valLower
+                ) || state.wspMaterials.find(item => 
+                    item.material.toLowerCase().includes(valLower) || 
+                    item.description.toLowerCase().includes(valLower)
+                );
+            }
+            
+            if (matched) {
+                // ponytail: auto-fill price only
+                const priceInput = document.getElementById("gejo-form-price-new");
+                if (priceInput && matched.price > 0) {
+                    priceInput.value = matched.price;
+                }
+                
+                // ponytail: update status info label (do not overwrite title or description)
+                if (infoEl) {
+                    infoEl.style.display = "block";
+                    infoEl.textContent = `✓ Terdeteksi WSP: ${matched.material} | ${matched.description}`;
+                }
+            }
+        };
+        
+        searchInput.addEventListener("input", handleSearchMatch);
+        searchInput.addEventListener("change", handleSearchMatch);
+    }
+    
+    // Auto-fetch default local WSP Master Material file on startup if present
+    fetch(encodeURI("/WSP MASTER MATERIAL 2025 (1).xlsx"))
+        .then(res => {
+            if (res.ok) return res.arrayBuffer();
+            throw new Error("Local WSP file not found");
+        })
+        .then(buf => {
+            const count = parseWSPMasterWorkbook(buf);
+            console.log(`Auto-loaded local WSP Master Material: ${count} items`);
+        })
+        .catch(err => {
+            console.log("No default WSP Master Material auto-loaded:", err.message);
+        });
+}
+
+// ponytail: initialize WSP events when DOM ready
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+        setupWSPMaterialEvents();
+        setupServerAccessEvents();
+    });
+} else {
+    setupWSPMaterialEvents();
+    setupServerAccessEvents();
+}
+
+function setupServerAccessEvents() {
+    const search = document.getElementById("server-access-search");
+    const dept = document.getElementById("server-access-filter-dept");
+    const status = document.getElementById("server-access-filter-status");
+
+    if (search) search.addEventListener("input", renderServerAccessTab);
+    if (dept) dept.addEventListener("change", renderServerAccessTab);
+    if (status) status.addEventListener("change", renderServerAccessTab);
+
+    const btnAdd = document.getElementById("btn-server-access-add-user");
+    if (btnAdd) {
+        btnAdd.addEventListener("click", () => {
+            switchTab('admin');
+            const btnToggleUser = document.getElementById("btn-toggle-new-user");
+            const formContainer = document.getElementById("user-form-container");
+            if (btnToggleUser && formContainer && formContainer.style.display === 'none') {
+                btnToggleUser.click();
+            }
+        });
+    }
+}
+
+
+// ponytail: Modal & Submit handlers for transferring Drawing EJO to Project Monitoring (Fase 1 Review Only)
+function openTransferDrawingToProjectModal(drawingId) {
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    if (!isForemanAdminRole(userRole)) {
+        showToast("Hanya Foreman dan Admin Eng yang dapat mengalihkan drawing ke Project!", "error");
+        return;
+    }
+    const d = state.drawings ? state.drawings.find(item => item.id === drawingId) : null;
+    if (!d) {
+        showToast("Drawing EJO tidak ditemukan", "error");
+        return;
+    }
+    const modal = document.getElementById("transfer-drawing-project-modal");
+    if (!modal) return;
+    document.getElementById("transfer-drawing-id").value = d.id;
+    const infoId = document.getElementById("transfer-drawing-info-id");
+    if (infoId) infoId.textContent = `${d.id} (${d.dept || 'ENG'})`;
+    const infoTitle = document.getElementById("transfer-drawing-info-title");
+    if (infoTitle) infoTitle.textContent = d.title || '-';
+    const descEl = document.getElementById("transfer-project-desc");
+    if (descEl) descEl.value = "";
+
+    modal.style.display = "flex";
+    if (window.lucide) lucide.createIcons();
+}
+window.openTransferDrawingToProjectModal = openTransferDrawingToProjectModal;
+
+function closeTransferDrawingToProjectModal() {
+    const modal = document.getElementById("transfer-drawing-project-modal");
+    if (modal) modal.style.display = "none";
+}
+window.closeTransferDrawingToProjectModal = closeTransferDrawingToProjectModal;
+
+function flexToProjectTab(drawingId) {
+    const projTabBtn = document.querySelector('[data-tab="projects"]');
+    if (projTabBtn) {
+        projTabBtn.click();
+    } else {
+        switchTab('projects');
+    }
+
+    const linkedProject = state.projects ? state.projects.find(p => p.drawing_id === drawingId || p.id === drawingId) : null;
+    if (linkedProject) {
+        openProjectDetails(null, linkedProject.id);
+        showToast(`Membuka Project (${linkedProject.id})`, "info");
+    } else {
+        showToast(`Membuka Project Review untuk Drawing ${drawingId}`, "info");
+    }
+}
+window.flexToProjectTab = flexToProjectTab;
+
+async function submitTransferDrawingToProject(e) {
+    if (e) e.preventDefault();
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    if (!isForemanAdminRole(userRole)) {
+        showToast("Hanya Foreman dan Admin Eng yang dapat mengalihkan drawing ke Project!", "error");
+        return;
+    }
+    const drawingId = document.getElementById("transfer-drawing-id")?.value;
+    const d = state.drawings ? state.drawings.find(item => item.id === drawingId) : null;
+    if (!d) {
+        showToast("Drawing EJO tidak ditemukan", "error");
+        return;
+    }
+    const manualDesc = document.getElementById("transfer-project-desc")?.value?.trim() || "";
+    const finalDesc = manualDesc || `[Drawing Review] ${d.title}`;
+
+    const btn = document.getElementById("btn-submit-transfer-drawing");
+    if (btn) btn.disabled = true;
+
+    try {
+        const payload = {
+            title: d.title,
+            dept: d.dept || 'ENG',
+            budget: 0,
+            targetDate: d.targetDate || '',
+            pic: d.uploader || (state.currentUser ? state.currentUser.fullname : 'System'),
+            desc: finalDesc,
+            phase: 1,
+            is_review_only: 1,
+            drawing_id: d.id,
+            drawing_file: d.file_path || '',
+            approvals: {},
+            docs: d.file_path ? [d.file_path] : []
+        };
+
+        const res = await fetch("/api/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || "Gagal mengalihkan ke project");
+        }
+
+        const resData = await res.json();
+        const newProjId = resData.id || (resData.data ? resData.data.id || resData.data.project_id : null);
+
+        // update local state
+        const newProj = {
+            id: newProjId,
+            title: payload.title,
+            dept: payload.dept,
+            budget: payload.budget,
+            targetDate: payload.targetDate,
+            pic: payload.pic,
+            desc: payload.desc,
+            phase: 1,
+            is_review_only: 1,
+            drawing_id: d.id,
+            drawing_file: d.file_path || '',
+            approvals: {},
+            docs: payload.docs,
+            createdDate: new Date().toISOString().substring(0, 10)
+        };
+
+        if (!state.projects) state.projects = [];
+        state.projects.unshift(newProj);
+
+        closeTransferDrawingToProjectModal();
+        renderProjects();
+        renderDrawings();
+        showToast(`Drawing ${d.id} berhasil dialihkan ke Project (Fase 1 - Review Only)`, "success");
+    } catch (err) {
+        console.error("Error transferring drawing to project:", err);
+        showToast(`Gagal: ${err.message}`, "error");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+window.submitTransferDrawingToProject = submitTransferDrawingToProject;
+
+// ponytail: Project Timeline helper functions for Phase 3
+window.closeProjectTimelineModal = function closeProjectTimelineModal() {
+    const modal = document.getElementById("project-timeline-edit-modal");
+    if (modal) modal.style.display = "none";
+    state._currentTimelineProjId = null;
+    state._editingTimeline = [];
+};
+
+window.updateProjectTimelineDesc = function updateProjectTimelineDesc(selectedIndex, projId, scope) {
+    const proj = state.projects.find(p => p.id === projId);
+    if (!proj) return;
+
+    const timelineList = proj.timeline || [];
+    let descText = "Belum ada data timeline untuk proyek ini.";
+
+    if (selectedIndex !== "" && selectedIndex !== null && selectedIndex !== undefined) {
+        const idx = parseInt(selectedIndex, 10);
+        if (!isNaN(idx) && timelineList[idx]) {
+            descText = timelineList[idx].desc || "Tidak ada deskripsi.";
+        }
+    }
+
+    const descElemId = scope === 'modal' ? `project-timeline-desc-modal-${projId}` : `project-timeline-desc-card-${projId}`;
+    const descElem = document.getElementById(descElemId);
+    if (descElem) {
+        descElem.textContent = descText;
+    }
+};
+
+window.openEditProjectTimelineModal = function openEditProjectTimelineModal(projId) {
+    const proj = state.projects.find(p => p.id === projId);
+    if (!proj) return;
+
+    state._currentTimelineProjId = proj.id;
+    state._editingTimeline = JSON.parse(JSON.stringify(proj.timeline || []));
+
+    const modalIdEl = document.getElementById("proj-timeline-modal-project-id");
+    if (modalIdEl) modalIdEl.textContent = proj.id;
+
+    renderEditingTimelineList();
+
+    const dateInp = document.getElementById("input-new-timeline-date");
+    const descInp = document.getElementById("input-new-timeline-desc");
+    if (dateInp) dateInp.value = "";
+    if (descInp) descInp.value = "";
+
+    const modal = document.getElementById("project-timeline-edit-modal");
+    if (modal) {
+        modal.style.display = "flex";
+        if (window.lucide) lucide.createIcons();
+    }
+};
+
+function renderEditingTimelineList() {
+    const container = document.getElementById("timeline-edit-items-container");
+    if (!container) return;
+
+    const items = state._editingTimeline || [];
+    if (items.length === 0) {
+        container.innerHTML = `<div style="padding: 12px; font-size: 0.78rem; color: var(--text-muted); text-align: center; font-style: italic;">Belum ada entri timeline. Gunakan form di bawah untuk menambah entri.</div>`;
+        return;
+    }
+
+    container.innerHTML = items.map((item, idx) => {
+        let dStr = item.date || "";
+        return `
+            <div style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 8px; align-items: center; background: var(--bg-primary); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--card-border);">
+                <div>
+                    <input type="date" class="input-sm" style="width: 100%; font-size: 0.8rem; box-sizing: border-box;" value="${dStr}" onchange="updateEditingTimelineField(${idx}, 'date', this.value)">
+                </div>
+                <div>
+                    <input type="text" class="input-sm" style="width: 100%; font-size: 0.8rem; box-sizing: border-box;" value="${item.desc || ''}" placeholder="Deskripsi timeline..." onchange="updateEditingTimelineField(${idx}, 'desc', this.value)">
+                </div>
+                <div>
+                    <button class="btn btn-outline btn-xs" onclick="removeEditingTimelineItem(${idx})" style="color: var(--color-red); border-color: rgba(239, 68, 68, 0.4); padding: 4px 6px;" title="Hapus Entri">
+                        <i data-lucide="trash-2" style="width: 12px; height: 12px;"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    if (window.lucide) lucide.createIcons();
+}
+window.renderEditingTimelineList = renderEditingTimelineList;
+
+window.updateEditingTimelineField = function updateEditingTimelineField(idx, field, value) {
+    if (state._editingTimeline && state._editingTimeline[idx]) {
+        state._editingTimeline[idx][field] = value;
+    }
+};
+
+window.removeEditingTimelineItem = function removeEditingTimelineItem(idx) {
+    if (state._editingTimeline && idx >= 0 && idx < state._editingTimeline.length) {
+        state._editingTimeline.splice(idx, 1);
+        renderEditingTimelineList();
+    }
+};
+
+window.addTimelineItemToEditing = function addTimelineItemToEditing() {
+    const dateInp = document.getElementById("input-new-timeline-date");
+    const descInp = document.getElementById("input-new-timeline-desc");
+    if (!dateInp || !descInp) return;
+
+    const dateVal = dateInp.value.trim();
+    const descVal = descInp.value.trim();
+
+    if (!dateVal) {
+        showToast("Mohon isi Tanggal, Bulan, Tahun terlebih dahulu!", "warning");
+        return;
+    }
+
+    if (!state._editingTimeline) state._editingTimeline = [];
+    state._editingTimeline.push({ date: dateVal, desc: descVal });
+
+    dateInp.value = "";
+    descInp.value = "";
+    renderEditingTimelineList();
+};
+
+window.saveProjectTimeline = async function saveProjectTimeline() {
+    const projId = state._currentTimelineProjId;
+    if (!projId) return;
+
+    const proj = state.projects.find(p => p.id === projId);
+    if (!proj) return;
+
+    const updatedTimeline = state._editingTimeline || [];
+
+    // Sort timeline by date ascending
+    updatedTimeline.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(projId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timeline: updatedTimeline })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.message || "Gagal menyimpan timeline");
+        }
+
+        proj.timeline = updatedTimeline;
+
+        window.closeProjectTimelineModal();
+        showToast("Timeline proyek berhasil disimpan!", "success");
+
+        renderProjects();
+
+        // Refresh detail modal if currently open for this project
+        const detailModal = document.getElementById("project-detail-modal");
+        if (detailModal && detailModal.style.display !== "none" && state.currentDetailProjectId === projId) {
+            openProjectDetails(null, projId);
+        }
+    } catch (err) {
+        console.error("Save timeline error:", err);
+        showToast(err.message || "Gagal menyimpan timeline proyek!", "error");
+    }
+};
+
+// =========================================================================
+// EKSKLUSIF SERVER: Dashboard Widget Display Permission Management
+// =========================================================================
+const DASHBOARD_WIDGETS_CONFIG = [
+    { key: "widget_kpi_scorecards", title: "Top KPI Scorecards (Ringkasan EJO)", desc: "Menampilkan 4 kartu statistik utama: Total EJO, Menunggu Persetujuan, Sedang Dikerjakan, dan Selesai." },
+    { key: "widget_summary_cards", title: "Kartu Summary General EJO & Drawing", desc: "Menampilkan kartu ringkasan kuota limit dan persentase KPI General EJO & Drawing." },
+    { key: "widget_kpi_edit_setting", title: "Hak Akses Edit Target & Realisasi KPI", desc: "Menentukan role pengguna yang diizinkan untuk mengedit/mengubah nilai persentase KPI Target dan KPI Terealisasi." },
+    { key: "widget_bdg_schedule", title: "Badge Status: Schedule", desc: "Menampilkan badge hitungan EJO status Schedule pada Kartu Summary General & Drawing EJO." },
+    { key: "widget_bdg_progress", title: "Badge Status: On Progress", desc: "Menampilkan badge hitungan EJO status On Progress pada Kartu Summary General & Drawing EJO." },
+    { key: "widget_bdg_done", title: "Badge Status: Done", desc: "Menampilkan badge hitungan EJO status Selesai / Done pada Kartu Summary General & Drawing EJO." },
+    { key: "widget_bdg_history", title: "Badge Status: History", desc: "Menampilkan badge hitungan EJO status History / Arsip pada Kartu Summary General & Drawing EJO." },
+    { key: "widget_trend_chart", title: "Chart Volume EJO, Selesai & OS", desc: "Grafik garis tren perbandingan EJO masuk, selesai, dan outstanding." },
+    { key: "widget_status_prop", title: "Chart Proporsi Status EJO", desc: "Grafik doughnut dan persentase distribusi status EJO." },
+    { key: "widget_dept_chart", title: "Chart EJO per Departemen Pemohon", desc: "Grafik batang distribusi permintaan EJO berdasarkan unit kerja asal." },
+    { key: "widget_urgent_ejo", title: "Kartu EJO URGENT!", desc: "Panel peringatan EJO dengan prioritas mendesak (Emergency / High)." },
+    { key: "widget_cost_saving", title: "Chart Analisis Hemat Cost Partlist", desc: "Grafik & ringkasan hemat biaya perbaikan repair part." },
+    { key: "widget_projects_summary", title: "Ringkasan Project Monitoring Board", desc: "Statistik proyek aktif 4 fase dan indikator progres." },
+    { key: "widget_recent_ejos", title: "Tabel Aktivitas & EJO Terbaru", desc: "Daftar rincian tiket EJO dan Drawing EJO terbaru." }
+];
+
+function getDashboardWidgetPermissions() {
+    let raw = state.settings?.dashboard_widget_permissions || '{}';
+    let parsed = {};
+    try {
+        if (typeof raw === 'string') parsed = JSON.parse(raw);
+        else if (typeof raw === 'object' && raw !== null) parsed = raw;
+    } catch (e) {
+        parsed = {};
+    }
+    return parsed;
+}
+
+async function renderServerDashboardAccessTab() {
+    if (!canAccessServerAccessTab(state.currentUser)) return;
+
+    const container = document.getElementById("dashboard-access-widgets-container");
+    if (!container) return;
+
+    const currentPermissions = getDashboardWidgetPermissions();
+
+    const getBadgeInfo = (key) => {
+        const conf = currentPermissions[key] || { mode: "all", roles: [] };
+        const mode = conf.mode || "all";
+        if (mode === "exclude") {
+            const count = (conf.roles || []).length;
+            return {
+                text: `Disembunyikan dari ${count} Role`,
+                color: "var(--color-rose)",
+                bg: "rgba(244, 63, 94, 0.15)"
+            };
+        } else if (mode === "custom") {
+            const count = (conf.roles || []).length;
+            return {
+                text: `${count} Role Diberi Akses`,
+                color: "#8b5cf6",
+                bg: "rgba(139, 92, 246, 0.15)"
+            };
+        } else {
+            return {
+                text: "Semua Role & Akun",
+                color: "var(--color-cyan)",
+                bg: "rgba(6, 182, 212, 0.12)"
+            };
+        }
+    };
+
+    // Gather metrics for live dashboard visual representation
+    const allEjos = getVisibleOverviewEjos();
+    const allDrawings = getVisibleDrawings();
+
+    const totalEjoCount = allEjos.length + allDrawings.length;
+    const pendingEjoCount = allEjos.filter(isApprovalPendingForCurrentUser).length + allDrawings.filter(isDrawingApprovalPendingForCurrentUser).length;
+    const progressEjoCount = allEjos.filter(e => e.status.startsWith('In Progress') || (e.status.startsWith('Pending') && e.status !== 'Pending Revision')).length + allDrawings.filter(d => d.status === 'On Progress' || d.status.startsWith('Pending')).length;
+
+    const now = new Date();
+    const thisMonth = now.getMonth();
+    const thisYear = now.getFullYear();
+    const completedEjoCount = allEjos.filter(e => {
+        if (e.status !== 'Completed' && e.status !== 'Cancelled') return false;
+        const logs = parseLogs(e.logs);
+        const dateStr = logs.length > 0 ? logs[logs.length - 1].date : e.targetDate;
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    }).length;
+
+    const gejoTotalCount = allEjos.length;
+    const gejoSchedule = allEjos.filter(e => ['Waiting Dept Approval', 'Requested', 'Pending Approval', 'Checking'].includes(e.status)).length;
+    const gejoProgress = allEjos.filter(e => e.status.startsWith('In Progress')).length;
+    const gejoDone = allEjos.filter(e => e.status === 'Completed').length;
+    const gejoHistory = allEjos.filter(e => e.status === 'Cancelled').length;
+
+    const drawingTotalCount = allDrawings.length;
+    const drawingSchedule = allDrawings.filter(d => d.status.startsWith('Pending')).length;
+    const drawingProgress = allDrawings.filter(d => d.status === 'On Progress').length;
+    const drawingDone = allDrawings.filter(d => d.status === 'Completed').length;
+    const drawingHistory = allDrawings.filter(d => d.status === 'Cancelled').length;
+
+    const gejoTargetPct = state.settings?.kpi_target_gejo || 0;
+    const gejoRealisasiPct = state.settings?.kpi_realisasi_gejo || 0;
+    const drawingTargetPct = state.settings?.kpi_target_drawing || 0;
+    const drawingRealisasiPct = state.settings?.kpi_realisasi_drawing || 0;
+
+    const bKPI = getBadgeInfo('widget_kpi_scorecards');
+    const bSummary = getBadgeInfo('widget_summary_cards');
+    const bKPIEdit = getBadgeInfo('widget_kpi_edit_setting');
+    const bBdgSchedule = getBadgeInfo('widget_bdg_schedule');
+    const bBdgProgress = getBadgeInfo('widget_bdg_progress');
+    const bBdgDone = getBadgeInfo('widget_bdg_done');
+    const bBdgHistory = getBadgeInfo('widget_bdg_history');
+    const bTrend = getBadgeInfo('widget_trend_chart');
+    const bProp = getBadgeInfo('widget_status_prop');
+    const bDept = getBadgeInfo('widget_dept_chart');
+    const bUrgent = getBadgeInfo('widget_urgent_ejo');
+    const bCost = getBadgeInfo('widget_cost_saving');
+    const bProj = getBadgeInfo('widget_projects_summary');
+    const bRecent = getBadgeInfo('widget_recent_ejos');
+
+    container.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 1.75rem; width: 100%;">
+            <!-- 1. Row 1: Top KPI Scorecards Section -->
+            <div class="card-glass" style="padding: 1.25rem; border-left: 4px solid ${bKPI.color};">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); display: flex; align-items: center; justify-content: center;">
+                            <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
+                        </div>
+                        <div>
+                            <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-primary);">Top KPI Scorecards (Ringkasan EJO)</h4>
+                            <p class="text-secondary text-xs" style="margin: 2px 0 0 0;">Menampilkan 4 kartu statistik utama: Total EJO, Menunggu Persetujuan, Sedang Dikerjakan, dan Selesai.</p>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="badge" style="background: ${bKPI.bg}; color: ${bKPI.color}; border: 1px solid ${bKPI.color}40; font-size: 0.75rem; font-weight: 700; border-radius: 6px; padding: 4px 10px;">
+                            ${bKPI.text}
+                        </span>
+                        <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_kpi_scorecards')" style="gap: 6px; font-weight: 600; cursor: pointer; position: relative; z-index: 5;">
+                            <i data-lucide="sliders" style="width: 14px; height: 14px; pointer-events: none;"></i> Atur Perizinan Tampil
+                        </button>
+                    </div>
+                </div>
+
+                <div class="kpi-grid" style="margin-bottom: 0;">
+                    <div class="kpi-card card-glass glow-blue">
+                        <div class="kpi-icon icon-blue"><i data-lucide="file-text"></i></div>
+                        <div class="kpi-data">
+                            <span class="kpi-label">Total EJO</span>
+                            <h3 class="kpi-value">${totalEjoCount}</h3>
+                            <span class="kpi-trend text-blue"><i data-lucide="trending-up"></i> +10% dari bulan lalu</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card card-glass glow-yellow">
+                        <div class="kpi-icon icon-yellow"><i data-lucide="clock-alert"></i></div>
+                        <div class="kpi-data">
+                            <span class="kpi-label">Menunggu Persetujuan</span>
+                            <h3 class="kpi-value">${pendingEjoCount}</h3>
+                            <span class="kpi-trend text-yellow">${pendingEjoCount} Butuh Tindakan</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card card-glass glow-cyan">
+                        <div class="kpi-icon icon-cyan"><i data-lucide="loader"></i></div>
+                        <div class="kpi-data">
+                            <span class="kpi-label">Sedang Dikerjakan</span>
+                            <h3 class="kpi-value">${progressEjoCount}</h3>
+                            <span class="kpi-trend text-cyan">${progressEjoCount} sedang berjalan</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card card-glass glow-green">
+                        <div class="kpi-icon icon-green"><i data-lucide="check-circle2"></i></div>
+                        <div class="kpi-data">
+                            <span class="kpi-label">Selesai Bulan Ini</span>
+                            <h3 class="kpi-value">${completedEjoCount}</h3>
+                            <span class="kpi-trend text-green"><i data-lucide="trending-up"></i> 100% Success Rate</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Row 2: Summary Cards Section (General EJO & Drawing EJO) -->
+            <div class="card-glass" style="padding: 1.25rem; border-left: 4px solid ${bSummary.color};">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(139, 92, 246, 0.12); color: #8b5cf6; display: flex; align-items: center; justify-content: center;">
+                            <i data-lucide="layers" style="width: 18px; height: 18px;"></i>
+                        </div>
+                        <div>
+                            <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-primary);">Kartu Summary General EJO & Drawing EJO</h4>
+                            <p class="text-secondary text-xs" style="margin: 2px 0 0 0;">Menampilkan kartu ringkasan kuota limit dan persentase KPI General EJO & Drawing.</p>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span class="badge" style="background: ${bSummary.bg}; color: ${bSummary.color}; border: 1px solid ${bSummary.color}40; font-size: 0.75rem; font-weight: 700; border-radius: 6px; padding: 4px 10px;">
+                                Tampil: ${bSummary.text}
+                            </span>
+                            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_summary_cards')" style="gap: 6px; font-weight: 600; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 14px; height: 14px; pointer-events: none;"></i> Perizinan Tampil
+                            </button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span class="badge" style="background: ${bKPIEdit.bg}; color: ${bKPIEdit.color}; border: 1px solid ${bKPIEdit.color}40; font-size: 0.75rem; font-weight: 700; border-radius: 6px; padding: 4px 10px;">
+                                Edit KPI: ${bKPIEdit.text}
+                            </span>
+                            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_kpi_edit_setting')" style="gap: 6px; font-weight: 600; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="edit-3" style="width: 14px; height: 14px; pointer-events: none;"></i> Perizinan Edit Angka KPI
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Perizinan Komponen Masing-Masing Badge Breakdown -->
+                <div style="margin-bottom: 1.25rem; padding: 0.85rem 1rem; background: var(--bg-tertiary); border: 1px solid var(--card-border); border-radius: 12px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="sliders" style="width: 14px; height: 14px; color: var(--color-cyan);"></i> Perizinan Tampil Masing-Masing Badge Component:
+                        </span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                        <!-- Schedule Badge Control -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--card-border); border-radius: 8px;">
+                            <div>
+                                <span class="badge" style="background: rgba(234, 179, 8, 0.12); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.3); font-size: 0.72rem; font-weight: 700;">Schedule</span>
+                                <div style="font-size: 0.7rem; color: ${bBdgSchedule.color}; margin-top: 3px; font-weight: 600;">${bBdgSchedule.text}</div>
+                            </div>
+                            <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_bdg_schedule')" style="cursor: pointer;">Atur</button>
+                        </div>
+
+                        <!-- On Progress Badge Control -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--card-border); border-radius: 8px;">
+                            <div>
+                                <span class="badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.72rem; font-weight: 700;">On Progress</span>
+                                <div style="font-size: 0.7rem; color: ${bBdgProgress.color}; margin-top: 3px; font-weight: 600;">${bBdgProgress.text}</div>
+                            </div>
+                            <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_bdg_progress')" style="cursor: pointer;">Atur</button>
+                        </div>
+
+                        <!-- Done Badge Control -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--card-border); border-radius: 8px;">
+                            <div>
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem; font-weight: 700;">Done</span>
+                                <div style="font-size: 0.7rem; color: ${bBdgDone.color}; margin-top: 3px; font-weight: 600;">${bBdgDone.text}</div>
+                            </div>
+                            <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_bdg_done')" style="cursor: pointer;">Atur</button>
+                        </div>
+
+                        <!-- History Badge Control -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--card-border); border-radius: 8px;">
+                            <div>
+                                <span class="badge" style="background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); font-size: 0.72rem; font-weight: 700;">History</span>
+                                <div style="font-size: 0.7rem; color: ${bBdgHistory.color}; margin-top: 3px; font-weight: 600;">${bBdgHistory.text}</div>
+                            </div>
+                            <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_bdg_history')" style="cursor: pointer;">Atur</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="kpi-grid" style="margin-bottom: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+                    <!-- General EJO Card -->
+                    <div class="kpi-card card-glass glow-cyan dashboard-summary-card">
+                        <div class="summary-card-header">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div class="kpi-icon icon-cyan"><i data-lucide="layers"></i></div>
+                                <div>
+                                    <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">GENERAL EJO</h4>
+                                    <span class="text-secondary" style="font-size: 0.72rem; font-weight: 500;">Pekerjaan Langsung</span>
+                                </div>
+                            </div>
+                            <span class="kpi-trend text-cyan"><i data-lucide="shield-alert"></i> Limit: Unlimited</span>
+                        </div>
+                        <div class="summary-card-body">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                    <span class="total-label" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total EJO</span>
+                                    <span class="kpi-value" style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">${gejoTotalCount}</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                        <span class="total-label" style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">KPI TARGET</span>
+                                        <span class="kpi-value" style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">${gejoTargetPct}%</span>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                        <span class="total-label" style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">KPI TEREALISASI</span>
+                                        <span class="kpi-value" style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">${gejoRealisasiPct}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="summary-card-footer" style="display: flex; gap: 8px; flex-wrap: wrap; padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--card-border);">
+                            <span class="badge" style="background: rgba(234, 179, 8, 0.12); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.3); font-size: 0.72rem;">Schedule: ${gejoSchedule}</span>
+                            <span class="badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.72rem;">On Progress: ${gejoProgress}</span>
+                            <span class="badge" style="background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem;">Done: ${gejoDone}</span>
+                            <span class="badge" style="background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); font-size: 0.72rem;">History: ${gejoHistory}</span>
+                        </div>
+                    </div>
+
+                    <!-- Drawing EJO Card -->
+                    <div class="kpi-card card-glass glow-blue dashboard-summary-card">
+                        <div class="summary-card-header">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div class="kpi-icon icon-blue"><i data-lucide="image"></i></div>
+                                <div>
+                                    <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">DRAWING EJO</h4>
+                                    <span class="text-secondary" style="font-size: 0.72rem; font-weight: 500;">Gambar Teknik & Design</span>
+                                </div>
+                            </div>
+                            <span class="kpi-trend text-blue"><i data-lucide="shield-alert"></i> Limit: Unlimited</span>
+                        </div>
+                        <div class="summary-card-body">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                    <span class="total-label" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total Drawing</span>
+                                    <span class="kpi-value" style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">${drawingTotalCount}</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                        <span class="total-label" style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">KPI TARGET</span>
+                                        <span class="kpi-value" style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">${drawingTargetPct}%</span>
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                        <span class="total-label" style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">KPI TEREALISASI</span>
+                                        <span class="kpi-value" style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">${drawingRealisasiPct}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="summary-card-footer" style="display: flex; gap: 8px; flex-wrap: wrap; padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--card-border);">
+                            <span class="badge" style="background: rgba(234, 179, 8, 0.12); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.3); font-size: 0.72rem;">Schedule: ${drawingSchedule}</span>
+                            <span class="badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.72rem;">On Progress: ${drawingProgress}</span>
+                            <span class="badge" style="background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem;">Done: ${drawingDone}</span>
+                            <span class="badge" style="background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); font-size: 0.72rem;">History: ${drawingHistory}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Row 3: Chart Trend & Proporsi Status Grid -->
+            <div class="analytics-layout-grid">
+                <!-- Trend Chart Section -->
+                <div class="chart-card card-glass" style="border-left: 4px solid ${bTrend.color};">
+                    <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="card-header-left">
+                            <div class="card-icon-wrap card-icon-cyan"><i data-lucide="bar-chart-3"></i></div>
+                            <div>
+                                <h3 style="font-size: 1rem; font-weight: 700;">Project, EJO Masuk, Selesai dan OS</h3>
+                                <p class="text-secondary text-xs">Perbandingan volume EJO masuk, selesai & outstanding.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge" style="background: ${bTrend.bg}; color: ${bTrend.color}; border: 1px solid ${bTrend.color}40; font-size: 0.72rem; font-weight: 700;">${bTrend.text}</span>
+                            <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_trend_chart')" style="gap: 4px; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 13px; height: 13px; pointer-events: none;"></i> Atur Perizinan
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body chart-container" style="height: 220px; position: relative;">
+                        <canvas id="serverAccessTrendChartCanvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- Proporsi Status Section -->
+                <div class="chart-card card-glass" style="border-left: 4px solid ${bProp.color};">
+                    <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="card-header-left">
+                            <div class="card-icon-wrap card-icon-purple"><i data-lucide="pie-chart"></i></div>
+                            <div>
+                                <h3 style="font-size: 1rem; font-weight: 700;">Proporsi Status EJO</h3>
+                                <p class="text-secondary text-xs">Distribusi penanganan order saat ini.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge" style="background: ${bProp.bg}; color: ${bProp.color}; border: 1px solid ${bProp.color}40; font-size: 0.72rem; font-weight: 700;">${bProp.text}</span>
+                            <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_status_prop')" style="gap: 4px; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 13px; height: 13px; pointer-events: none;"></i> Atur Perizinan
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body chart-container doughnut-wrap" style="height: 220px; position: relative;">
+                        <canvas id="serverAccessStatusChartCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. Row 4: Department Load & Urgent EJO Grid -->
+            <div class="analytics-layout-grid grid-main-bottom">
+                <!-- Dept Chart Section -->
+                <div class="chart-card card-glass" style="border-left: 4px solid ${bDept.color};">
+                    <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="card-header-left">
+                            <div class="card-icon-wrap card-icon-blue"><i data-lucide="building-2"></i></div>
+                            <div>
+                                <h3 style="font-size: 1rem; font-weight: 700;">EJO per Departemen Pemohon</h3>
+                                <p class="text-secondary text-xs">Distribusi permintaan berdasarkan unit kerja asal.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge" style="background: ${bDept.bg}; color: ${bDept.color}; border: 1px solid ${bDept.color}40; font-size: 0.72rem; font-weight: 700;">${bDept.text}</span>
+                            <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_dept_chart')" style="gap: 4px; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 13px; height: 13px; pointer-events: none;"></i> Atur Perizinan
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body chart-container" style="height: 200px; position: relative;">
+                        <canvas id="serverAccessDeptChartCanvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- Urgent EJO Section -->
+                <div class="list-card card-glass urgent-card" style="border-left: 4px solid ${bUrgent.color};">
+                    <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="urgent-header-left">
+                            <div class="urgent-icon-wrap"><i data-lucide="alert-triangle"></i></div>
+                            <div>
+                                <h3 class="urgent-title" style="font-size: 1rem;">EJO URGENT!</h3>
+                                <p class="text-secondary text-xs">EJO dengan prioritas mendesak (Emergency / High).</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge" style="background: ${bUrgent.bg}; color: ${bUrgent.color}; border: 1px solid ${bUrgent.color}40; font-size: 0.72rem; font-weight: 700;">${bUrgent.text}</span>
+                            <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_urgent_ejo')" style="gap: 4px; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 13px; height: 13px; pointer-events: none;"></i> Atur Perizinan
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body text-scroll" style="display: flex; align-items: center; justify-content: center; height: 160px;">
+                        <div style="text-align: center; color: var(--text-muted);">
+                            <i data-lucide="shield-check" style="width: 32px; height: 32px; color: #10b981; margin-bottom: 6px;"></i>
+                            <p style="margin: 0; font-size: 0.85rem; font-weight: 600;">Aman: Tidak ada EJO urgent saat ini.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. Row 5: Additional Modules Grid (Cost Saving, Projects Summary, Recent Ejos) -->
+            <div class="analytics-layout-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem;">
+                <!-- Cost Saving -->
+                <div class="chart-card card-glass" style="border-left: 4px solid ${bCost.color};">
+                    <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="card-header-left">
+                            <div class="card-icon-wrap" style="background: rgba(16, 185, 129, 0.12); color: #10b981;"><i data-lucide="piggy-bank"></i></div>
+                            <div>
+                                <h3 style="font-size: 0.95rem; font-weight: 700;">Chart Analisis Hemat Cost Partlist</h3>
+                                <p class="text-secondary text-xs">Grafik & ringkasan hemat biaya perbaikan repair part.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge" style="background: ${bCost.bg}; color: ${bCost.color}; border: 1px solid ${bCost.color}40; font-size: 0.72rem; font-weight: 700;">${bCost.text}</span>
+                            <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_cost_saving')" style="gap: 4px; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 13px; height: 13px; pointer-events: none;"></i> Atur Perizinan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Projects Summary -->
+                <div class="chart-card card-glass" style="border-left: 4px solid ${bProj.color};">
+                    <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="card-header-left">
+                            <div class="card-icon-wrap" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;"><i data-lucide="kanban"></i></div>
+                            <div>
+                                <h3 style="font-size: 0.95rem; font-weight: 700;">Ringkasan Project Monitoring Board</h3>
+                                <p class="text-secondary text-xs">Statistik proyek aktif 4 fase dan indikator progres.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge" style="background: ${bProj.bg}; color: ${bProj.color}; border: 1px solid ${bProj.color}40; font-size: 0.72rem; font-weight: 700;">${bProj.text}</span>
+                            <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_projects_summary')" style="gap: 4px; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 13px; height: 13px; pointer-events: none;"></i> Atur Perizinan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent EJOs Table -->
+                <div class="chart-card card-glass" style="border-left: 4px solid ${bRecent.color};">
+                    <div class="card-header" style="padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); margin-bottom: 1rem; flex-wrap: wrap; gap: 10px;">
+                        <div class="card-header-left">
+                            <div class="card-icon-wrap card-icon-cyan"><i data-lucide="list"></i></div>
+                            <div>
+                                <h3 style="font-size: 0.95rem; font-weight: 700;">Tabel Aktivitas & EJO Terbaru</h3>
+                                <p class="text-secondary text-xs">Daftar rincian tiket EJO dan Drawing EJO terbaru.</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge" style="background: ${bRecent.bg}; color: ${bRecent.color}; border: 1px solid ${bRecent.color}40; font-size: 0.72rem; font-weight: 700;">${bRecent.text}</span>
+                            <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); openDashboardWidgetAccessModal('widget_recent_ejos')" style="gap: 4px; cursor: pointer; position: relative; z-index: 5;">
+                                <i data-lucide="sliders" style="width: 13px; height: 13px; pointer-events: none;"></i> Atur Perizinan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    lucide.createIcons();
+
+    // Render Preview Charts
+    try {
+        state.serverPreviewCharts = state.serverPreviewCharts || {};
+
+        // 1. Trend Line Chart Preview
+        const ctxTrend = document.getElementById("serverAccessTrendChartCanvas")?.getContext("2d");
+        if (ctxTrend) {
+            if (state.serverPreviewCharts.trend) state.serverPreviewCharts.trend.destroy();
+            state.serverPreviewCharts.trend = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: ['Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'],
+                    datasets: [
+                        { label: 'OS', data: [0, 3, 0, 0, 0, 0, 0], borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.2)', fill: true, tension: 0.4 },
+                        { label: 'Masuk', data: [0, 3, 0, 0, 0, 0, 0], backgroundColor: '#ef4444', type: 'bar' },
+                        { label: 'Selesai', data: [0, 0, 0, 0, 0, 0, 0], borderColor: '#10b981', backgroundColor: '#10b981', fill: false }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, color: '#94a3b8' } } } }
+            });
+        }
+
+        // 2. Status Doughnut Chart Preview
+        const ctxStatus = document.getElementById("serverAccessStatusChartCanvas")?.getContext("2d");
+        if (ctxStatus) {
+            if (state.serverPreviewCharts.status) state.serverPreviewCharts.status.destroy();
+            state.serverPreviewCharts.status = new Chart(ctxStatus, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Menunggu (3)', 'Berjalan (1)', 'Selesai (0)'],
+                    datasets: [{ data: [3, 1, 0], backgroundColor: ['#eab308', '#06b6d4', '#10b981'], borderWidth: 0 }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, color: '#94a3b8' } } } }
+            });
+        }
+
+        // 3. Dept Bar Chart Preview
+        const ctxDept = document.getElementById("serverAccessDeptChartCanvas")?.getContext("2d");
+        if (ctxDept) {
+            if (state.serverPreviewCharts.dept) state.serverPreviewCharts.dept.destroy();
+            state.serverPreviewCharts.dept = new Chart(ctxDept, {
+                type: 'bar',
+                data: {
+                    labels: ['PRD', 'ENG', 'EPR', 'GA', 'QC', 'WRH'],
+                    datasets: [{ label: 'EJO', data: [0, 0, 3, 0, 0, 0], backgroundColor: '#06b6d4', borderRadius: 6 }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } } }
+            });
+        }
+    } catch (err) {
+        console.warn("Server preview chart render error:", err);
+    }
+}
+window.renderServerDashboardAccessTab = renderServerDashboardAccessTab;
+
+function openDashboardWidgetAccessModal(arg1, arg2) {
+    let widgetKey = typeof arg1 === 'string' ? arg1 : arg2;
+    if (arg1 && typeof arg1 === 'object' && typeof arg1.stopPropagation === 'function') {
+        arg1.stopPropagation();
+    }
+
+    try {
+        const modal = document.getElementById("modal-dashboard-widget-access");
+        if (!modal) {
+            console.warn("Modal #modal-dashboard-widget-access not found");
+            return;
+        }
+
+        const widget = DASHBOARD_WIDGETS_CONFIG.find(w => w.key === widgetKey);
+        if (!widget) {
+            console.warn("Widget configuration not found for key:", widgetKey);
+            return;
+        }
+
+        const targetKeyInput = document.getElementById("widget-access-target-key");
+        if (targetKeyInput) targetKeyInput.value = widgetKey;
+
+        const titleEl = document.getElementById("widget-access-modal-title");
+        if (titleEl) titleEl.textContent = `Konfigurasi Akses: ${widget.title}`;
+
+        const subtitleEl = document.getElementById("widget-access-modal-subtitle");
+        if (subtitleEl) subtitleEl.textContent = widget.desc;
+
+        const isEditSetting = widgetKey === 'widget_kpi_edit_setting';
+        const modeLabelEl = document.getElementById("widget-access-mode-label");
+        const lblAllEl = document.getElementById("widget-access-label-all");
+        const lblCustomEl = document.getElementById("widget-access-label-custom");
+        const lblExcludeEl = document.getElementById("widget-access-label-exclude");
+
+        if (modeLabelEl) modeLabelEl.textContent = isEditSetting ? "Mode Hak Akses Pengeditan Angka KPI:" : "Mode Akses Tampil Widget:";
+        if (lblAllEl) lblAllEl.innerHTML = isEditSetting ? "<strong>Hak Akses Default (Admin Eng, Foreman Eng, & Server)</strong> (Bisa Mengedit)" : "<strong>Tampilkan ke Semua Role & Akun</strong> (Default)";
+        if (lblCustomEl) lblCustomEl.innerHTML = isEditSetting ? "<strong>Batasi Hak Akses Edit</strong> (Pilih Role tertentu yang BISA MENGEDIT angka)" : "<strong>Batasi Akses Tampil</strong> (Pilih Role tertentu yang BISA melihat)";
+        if (lblExcludeEl) lblExcludeEl.innerHTML = isEditSetting ? "<strong>Bisa Mengedit untuk Semua, KECUALI...</strong> (Pilih Role yang DILARANG MENGEDIT angka)" : "<strong>Tampilkan ke Semua, KECUALI...</strong> (Pilih Role yang DISEMBUNYIKAN / TIDAK BISA melihat)";
+
+        const perms = getDashboardWidgetPermissions();
+        const conf = perms[widgetKey] || { mode: "all", roles: [] };
+
+        const radios = document.getElementsByName("widget-access-mode");
+        for (const r of radios) {
+            r.checked = (r.value === (conf.mode || "all"));
+        }
+
+        const allRoles = [
+            "Server", "Manager Eng", "Plant Manager", "Factory Manager", "Supervisor Eng", "Foreman Eng", "Admin Eng", "Drafter",
+            "Sipil", "Mekanik", "Elektrik", "Program", "Kalibrasi", "Otomotif", "user_ENG",
+            "Manager PRD", "Supervisor PRD", "user_PRD",
+            "Manager EPR", "Supervisor EPR", "user_EPR",
+            "Manager GA", "Supervisor GA", "user_GA",
+            "Manager QC", "Supervisor QC", "user_QC",
+            "Manager WRH", "Supervisor WRH", "user_WRH"
+        ];
+
+        const allowedSet = new Set(conf.roles || []);
+
+        const grid = document.getElementById("widget-roles-checkbox-grid");
+        if (grid) {
+            grid.innerHTML = allRoles.map(role => {
+                const checked = allowedSet.has(role) ? "checked" : "";
+                const isServer = role === "Server";
+                return `
+                    <label class="widget-role-chk-label">
+                        <input type="checkbox" class="widget-role-chk" value="${escapeHtml(role)}" ${checked} ${isServer ? 'checked disabled' : ''}>
+                        <span>${escapeHtml(role)}</span>
+                    </label>
+                `;
+            }).join("");
+        }
+
+        toggleWidgetRoleSelector();
+        modal.classList.add("active");
+        modal.style.display = "flex";
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+        }
+    } catch (err) {
+        console.error("Error opening dashboard widget access modal:", err);
+    }
+}
+window.openDashboardWidgetAccessModal = openDashboardWidgetAccessModal;
+
+function closeDashboardWidgetAccessModal() {
+    const modal = document.getElementById("modal-dashboard-widget-access");
+    if (modal) {
+        modal.classList.remove("active");
+        modal.style.display = "none";
+    }
+}
+window.closeDashboardWidgetAccessModal = closeDashboardWidgetAccessModal;
+
+function toggleWidgetRoleSelector() {
+    const container = document.getElementById("widget-role-selector-container");
+    if (!container) return;
+    const mode = document.querySelector('input[name="widget-access-mode"]:checked')?.value || "all";
+    const isCustomOrExclude = (mode === "custom" || mode === "exclude");
+    container.style.display = isCustomOrExclude ? "flex" : "none";
+
+    const widgetKey = document.getElementById("widget-access-target-key")?.value || "";
+    const isEditSetting = widgetKey === 'widget_kpi_edit_setting';
+
+    const titleEl = document.getElementById("widget-role-selector-title");
+    if (titleEl) {
+        if (mode === "exclude") {
+            titleEl.textContent = isEditSetting
+                ? "Pilih Role Yang DILARANG Mengedit Angka KPI Ini:"
+                : "Pilih Role Yang TIDAK BISA Melihat Widget Ini (Disembunyikan):";
+        } else {
+            titleEl.textContent = isEditSetting
+                ? "Pilih Role Yang Diizinkan Mengedit Angka KPI Ini:"
+                : "Pilih Role Yang Diizinkan Melihat Widget Ini:";
+        }
+    }
+}
+window.toggleWidgetRoleSelector = toggleWidgetRoleSelector;
+
+function selectAllWidgetRoles(select) {
+    document.querySelectorAll(".widget-role-chk").forEach(chk => {
+        if (!chk.disabled) chk.checked = select;
+    });
+}
+window.selectAllWidgetRoles = selectAllWidgetRoles;
+
+async function saveDashboardWidgetPermission() {
+    const widgetKey = document.getElementById("widget-access-target-key")?.value;
+    if (!widgetKey) return;
+
+    const mode = document.querySelector('input[name="widget-access-mode"]:checked')?.value || "all";
+    const selectedRoles = [];
+
+    if (mode === "custom" || mode === "exclude") {
+        document.querySelectorAll(".widget-role-chk:checked").forEach(chk => {
+            selectedRoles.push(chk.value);
+        });
+    }
+
+    const currentPermissions = getDashboardWidgetPermissions();
+    currentPermissions[widgetKey] = {
+        mode: mode,
+        roles: selectedRoles
+    };
+
+    const newSettingVal = JSON.stringify(currentPermissions);
+
+    try {
+        const res = await fetch("/api/settings", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dashboard_widget_permissions: newSettingVal })
+        });
+
+        if (res.ok) {
+            if (!state.settings) state.settings = {};
+            state.settings.dashboard_widget_permissions = newSettingVal;
+
+            showToast("Perizinan tampil widget dashboard berhasil disimpan!", "success");
+            closeDashboardWidgetAccessModal();
+            renderServerDashboardAccessTab();
+            applyDashboardWidgetPermissions();
+        } else {
+            showToast("Gagal menyimpan perizinan tampil widget!", "error");
+        }
+    } catch (e) {
+        showToast("Terjadi kesalahan jaringan saat menyimpan setting!", "error");
+    }
+}
+window.saveDashboardWidgetPermission = saveDashboardWidgetPermission;
+
+async function resetAllDashboardWidgetPermissions() {
+    if (!canAccessServerAccessTab(state.currentUser)) return;
+    if (!confirm("Apakah Anda yakin ingin mereset seluruh perizinan tampil widget ke 'Tampilkan ke Semua Role'?")) return;
+
+    try {
+        const res = await fetch("/api/settings", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dashboard_widget_permissions: "{}" })
+        });
+
+        if (res.ok) {
+            if (!state.settings) state.settings = {};
+            state.settings.dashboard_widget_permissions = "{}";
+
+            showToast("Seluruh perizinan widget berhasil di-reset ke default!", "success");
+            renderServerDashboardAccessTab();
+            applyDashboardWidgetPermissions();
+        } else {
+            showToast("Gagal me-reset perizinan widget!", "error");
+        }
+    } catch (e) {
+        showToast("Terjadi kesalahan jaringan saat mereset setting!", "error");
+    }
+}
+window.resetAllDashboardWidgetPermissions = resetAllDashboardWidgetPermissions;
+
+function applyDashboardWidgetPermissions() {
+    if (!state.currentUser) return;
+
+    const userRole = String(state.currentUser.role || 'User').trim();
+    const isServer = isServerAccount(state.currentUser) || (state.currentUser.username && state.currentUser.username.toLowerCase() === 'server');
+
+    const perms = getDashboardWidgetPermissions();
+
+    const checkWidgetAccess = (widgetKey) => {
+        if (isServer) return true; // Server account always sees all widgets
+        const conf = perms[widgetKey];
+        if (!conf) return true;
+
+        const mode = conf.mode || "all";
+        if (mode === "all") return true; // Default show all
+
+        const rolesList = conf.roles || [];
+        const isMatched = rolesList.some(r => String(r).trim().toLowerCase() === userRole.toLowerCase());
+
+        if (mode === "exclude") {
+            // Checked roles CANNOT see the widget (hidden if matched)
+            return !isMatched;
+        } else {
+            // Mode "custom": Checked roles CAN see the widget (visible if matched)
+            return isMatched;
+        }
+    };
+
+    const toggleDisplay = (el, show) => {
+        if (!el) return;
+        if (show) {
+            el.style.removeProperty("display");
+            if (el.style.display === "none") el.style.display = "";
+        } else {
+            el.style.setProperty("display", "none", "important");
+        }
+    };
+
+    // 1. KPI scorecards
+    const kpiGrid = document.querySelector("#tab-overview .kpi-grid");
+    toggleDisplay(kpiGrid, checkWidgetAccess("widget_kpi_scorecards"));
+
+    // 2. Summary cards (General EJO & Drawing)
+    const summaryCardsRow = document.querySelectorAll("#tab-overview .kpi-grid")[1] || document.querySelector("#tab-overview .dashboard-summary-card")?.parentElement;
+    toggleDisplay(summaryCardsRow, checkWidgetAccess("widget_summary_cards"));
+
+    // 3. Trend chart
+    const trendCard = document.getElementById("card-trend-chart");
+    toggleDisplay(trendCard, checkWidgetAccess("widget_trend_chart"));
+
+    // 4. Status prop widget
+    const statusPropEl = document.getElementById("card-status-prop") || document.getElementById("kpi-proporsi-container")?.parentElement || document.querySelector("#tab-overview .status-prop-card");
+    toggleDisplay(statusPropEl, checkWidgetAccess("widget_status_prop"));
+
+    // 5. Dept chart
+    const deptCard = document.getElementById("card-dept-chart");
+    toggleDisplay(deptCard, checkWidgetAccess("widget_dept_chart"));
+
+    // 6. Urgent EJO card
+    const urgentCard = document.querySelector("#tab-overview .urgent-card");
+    toggleDisplay(urgentCard, checkWidgetAccess("widget_urgent_ejo"));
+
+    // 7. Cost saving chart widget
+    const costSavingEl = document.getElementById("partlist-cost-saving-card") || document.querySelector("#tab-overview .partlist-chart-card");
+    toggleDisplay(costSavingEl, checkWidgetAccess("widget_cost_saving"));
+
+    // 8. Projects summary widget
+    const projectsSummaryEl = document.getElementById("projects-summary-card") || document.querySelector("#tab-overview .projects-summary-card");
+    toggleDisplay(projectsSummaryEl, checkWidgetAccess("widget_projects_summary"));
+
+    // 9. Recent EJOs table widget
+    const recentEjosEl = document.getElementById("recent-ejos-card") || document.querySelector("#tab-overview .recent-ejos-card");
+    toggleDisplay(recentEjosEl, checkWidgetAccess("widget_recent_ejos"));
+
+    // 10. Individual Component Badges (Schedule, On Progress, Done, History)
+    document.querySelectorAll(".bdg-status-schedule").forEach(el => toggleDisplay(el, checkWidgetAccess("widget_bdg_schedule")));
+    document.querySelectorAll(".bdg-status-progress").forEach(el => toggleDisplay(el, checkWidgetAccess("widget_bdg_progress")));
+    document.querySelectorAll(".bdg-status-done").forEach(el => toggleDisplay(el, checkWidgetAccess("widget_bdg_done")));
+    document.querySelectorAll(".bdg-status-history").forEach(el => toggleDisplay(el, checkWidgetAccess("widget_bdg_history")));
+
+    // 11. KPI Edit Buttons (Target & Terealisasi for General EJO & Drawing)
+    const canEditKpi = typeof canUserEditKpiNumbers === "function" ? canUserEditKpiNumbers() : false;
+    const gejoKpiEditBtn = document.getElementById("overview-gejo-kpi-edit-btn");
+    const gejoKpiRealisasiEditBtn = document.getElementById("overview-gejo-kpi-realisasi-edit-btn");
+    const drawingKpiEditBtn = document.getElementById("overview-drawing-kpi-edit-btn");
+    const drawingKpiRealisasiEditBtn = document.getElementById("overview-drawing-kpi-realisasi-edit-btn");
+    toggleDisplay(gejoKpiEditBtn, canEditKpi);
+    toggleDisplay(gejoKpiRealisasiEditBtn, canEditKpi);
+    toggleDisplay(drawingKpiEditBtn, canEditKpi);
+    toggleDisplay(drawingKpiRealisasiEditBtn, canEditKpi);
+}
+window.applyDashboardWidgetPermissions = applyDashboardWidgetPermissions;
+
+
