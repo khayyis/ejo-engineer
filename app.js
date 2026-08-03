@@ -16838,22 +16838,23 @@ function renderFlowchartEditor(mode) {
         // n8n Node Workflow Canvas View
         html += `
             <div class="n8n-canvas-wrapper" id="n8n-canvas-wrapper">
-                <svg class="n8n-svg-layer" id="n8n-svg-layer"></svg>
-                <div class="n8n-nodes-row" id="n8n-nodes-row">
-                    <!-- Start Node -->
-                    <div class="n8n-node-card n8n-start-node" id="n8n-node-start">
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <span style="font-size: 0.65rem; font-weight: 800; background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">TRIGGER</span>
-                            <i data-lucide="zap" style="color: #22c55e; width: 16px; height: 16px;"></i>
+                <div class="n8n-canvas-inner" id="n8n-canvas-inner">
+                    <svg class="n8n-svg-layer" id="n8n-svg-layer"></svg>
+                    <div class="n8n-nodes-row" id="n8n-nodes-row">
+                        <!-- Start Node -->
+                        <div class="n8n-node-card n8n-start-node" id="n8n-node-start">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 0.65rem; font-weight: 800; background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">TRIGGER</span>
+                                <i data-lucide="zap" style="color: #22c55e; width: 16px; height: 16px;"></i>
+                            </div>
+                            <div>
+                                <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Inisiator EJO</h4>
+                                <p style="font-size: 0.72rem; color: var(--text-muted);">EJO Ticket Created</p>
+                            </div>
+                            <div class="n8n-port n8n-port-right" id="port-start"></div>
                         </div>
-                        <div>
-                            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Inisiator EJO</h4>
-                            <p style="font-size: 0.72rem; color: var(--text-muted);">EJO Ticket Created</p>
-                        </div>
-                        <div class="n8n-port n8n-port-right" id="port-start"></div>
-                    </div>
 
-                    <!-- Dynamic Approval Step Nodes -->
+                        <!-- Dynamic Approval Step Nodes -->
         `;
 
         state.activeFlowchartSteps.forEach((step, idx) => {
@@ -16905,16 +16906,17 @@ function renderFlowchartEditor(mode) {
         });
 
         html += `
-                    <!-- End Node -->
-                    <div class="n8n-node-card n8n-end-node" id="n8n-node-end">
-                        <div class="n8n-port n8n-port-left" id="port-end"></div>
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <span style="font-size: 0.65rem; font-weight: 800; background: rgba(6, 182, 212, 0.2); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">COMPLETE</span>
-                            <i data-lucide="check-circle-2" style="color: var(--color-cyan); width: 16px; height: 16px;"></i>
-                        </div>
-                        <div>
-                            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Persetujuan Final</h4>
-                            <p style="font-size: 0.72rem; color: var(--text-muted);">Stempel PDF Ready</p>
+                        <!-- End Node -->
+                        <div class="n8n-node-card n8n-end-node" id="n8n-node-end">
+                            <div class="n8n-port n8n-port-left" id="port-end"></div>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 0.65rem; font-weight: 800; background: rgba(6, 182, 212, 0.2); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">COMPLETE</span>
+                                <i data-lucide="check-circle-2" style="color: var(--color-cyan); width: 16px; height: 16px;"></i>
+                            </div>
+                            <div>
+                                <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Persetujuan Final</h4>
+                                <p style="font-size: 0.72rem; color: var(--text-muted);">Stempel PDF Ready</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -16926,7 +16928,14 @@ function renderFlowchartEditor(mode) {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 
     if (viewMode === 'visual') {
-        setTimeout(drawN8nBezierConnections, 60);
+        setTimeout(drawN8nBezierConnections, 50);
+        setTimeout(drawN8nBezierConnections, 200);
+
+        const wrapper = document.getElementById("n8n-canvas-wrapper");
+        if (wrapper && !wrapper.dataset.scrollBound) {
+            wrapper.dataset.scrollBound = "true";
+            wrapper.addEventListener("scroll", drawN8nBezierConnections);
+        }
     }
 }
 
@@ -16937,10 +16946,10 @@ function toggleFlowchartEditorView(viewType, mode) {
 
 function drawN8nBezierConnections() {
     const svg = document.getElementById("n8n-svg-layer");
-    const wrapper = document.getElementById("n8n-canvas-wrapper");
-    if (!svg || !wrapper) return;
+    const inner = document.getElementById("n8n-canvas-inner");
+    if (!svg || !inner) return;
 
-    const wrapperRect = wrapper.getBoundingClientRect();
+    const innerRect = inner.getBoundingClientRect();
     const ports = [];
 
     // Collect start port
@@ -16971,25 +16980,35 @@ function drawN8nBezierConnections() {
             const rRect = curr.el.getBoundingClientRect();
             const lRect = next.el.getBoundingClientRect();
 
-            const x1 = rRect.left + rRect.width / 2 - wrapperRect.left + wrapper.scrollLeft;
-            const y1 = rRect.top + rRect.height / 2 - wrapperRect.top + wrapper.scrollTop;
-            const x2 = lRect.left + lRect.width / 2 - wrapperRect.left + wrapper.scrollLeft;
-            const y2 = lRect.top + lRect.height / 2 - wrapperRect.top + wrapper.scrollTop;
+            const x1 = rRect.left + rRect.width / 2 - innerRect.left;
+            const y1 = rRect.top + rRect.height / 2 - innerRect.top;
+            const x2 = lRect.left + lRect.width / 2 - innerRect.left;
+            const y2 = lRect.top + lRect.height / 2 - innerRect.top;
 
             const dx = Math.max(25, Math.abs(x2 - x1) * 0.45);
             pathD += `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2} `;
         }
     }
 
+    svg.setAttribute("width", innerRect.width);
+    svg.setAttribute("height", innerRect.height);
+
     svg.innerHTML = `
         <defs>
             <linearGradient id="n8n-line-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#22c55e" />
-                <stop offset="50%" stop-color="#06b6d4" />
-                <stop offset="100%" stop-color="#3b82f6" />
+                <stop offset="0%" stop-color="#059669" />
+                <stop offset="40%" stop-color="#0891b2" />
+                <stop offset="80%" stop-color="#2563eb" />
+                <stop offset="100%" stop-color="#0891b2" />
             </linearGradient>
+            <marker id="n8n-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#0891b2" />
+            </marker>
         </defs>
-        <path d="${pathD}" stroke="url(#n8n-line-grad)" stroke-width="3.5" fill="none" stroke-dasharray="6 4" opacity="0.9" style="filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.6));" />
+        <!-- Darker outline stroke for high contrast -->
+        <path d="${pathD}" stroke="rgba(15, 23, 42, 0.6)" stroke-width="6" fill="none" stroke-linecap="round" />
+        <!-- Vibrant animated cyan-blue gradient stroke -->
+        <path d="${pathD}" stroke="url(#n8n-line-grad)" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-dasharray="8 4" marker-end="url(#n8n-arrow)" style="filter: drop-shadow(0 0 5px rgba(8, 145, 178, 0.7));" />
     `;
 }
 
