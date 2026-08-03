@@ -16616,7 +16616,7 @@ function switchServerAccessViewMode(mode) {
         if (flowchartSubmenu) {
             flowchartSubmenu.classList.add("open");
             flowchartSubmenu.style.display = "flex";
-            flowchartSubmenu.style.maxHeight = "500px";
+            flowchartSubmenu.style.maxHeight = "1000px";
             if (chevron) chevron.style.transform = "rotate(180deg)";
         }
         if (flowchartBtn) flowchartBtn.classList.add("active");

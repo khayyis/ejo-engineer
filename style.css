@@ -5188,7 +5188,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
 }
 
 .submenu.open {
-    max-height: 300px;
+    max-height: 1000px;
     opacity: 1;
     margin-top: 4px;
 }
