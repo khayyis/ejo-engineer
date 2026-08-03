@@ -16768,14 +16768,15 @@ function renderFlowchartEditor(mode) {
         { value: 'ROLE_REQUESTOR', label: 'ROLE_REQUESTOR (User Pemohon)' },
         { value: 'ROLE_SPV_REQUESTOR', label: 'ROLE_SPV_REQUESTOR (SPV Pemohon)' },
         { value: 'ROLE_MGR_REQUESTOR', label: 'ROLE_MGR_REQUESTOR (Manager Pemohon)' },
+        { value: 'ROLE_FOREMAN_ADMIN', label: 'ROLE_FOREMAN_ADMIN (Foreman & Admin Eng)' },
+        { value: 'Foreman Eng', label: 'Foreman Eng (Admin / Foreman)' },
+        { value: 'Admin Eng', label: 'Admin Eng (Admin / Foreman)' },
         { value: 'user_PRD', label: 'user_PRD' },
         { value: 'Supervisor PRD', label: 'Supervisor PRD' },
-        { value: 'Foreman Eng', label: 'Foreman Eng' },
         { value: 'Supervisor Eng', label: 'Supervisor Eng' },
         { value: 'Drafter', label: 'Drafter' },
         { value: 'Manager PRD', label: 'Manager PRD' },
         { value: 'Manager EPR', label: 'Manager EPR' },
-        { value: 'Admin Eng', label: 'Admin Eng' },
         { value: 'Sipil', label: 'Sipil' },
         { value: 'Mekanik', label: 'Mekanik' },
         { value: 'Elektrik', label: 'Elektrik' },
@@ -16841,7 +16842,7 @@ function renderFlowchartEditor(mode) {
                     <ul style="margin: 0; padding-left: 14px; font-size: 0.75rem; line-height: 1.4; color: var(--text-secondary);">
                         <li><code style="font-weight: 700;">ROLE_REQUESTOR</code>: User Pemohon Ticket</li>
                         <li><code style="font-weight: 700;">ROLE_SPV_REQUESTOR</code>: SPV Pemohon Ticket</li>
-                        <li><code style="font-weight: 700;">ROLE_MGR_REQUESTOR</code>: Manager Pemohon Ticket</li>
+                        <li><code style="font-weight: 700;">ROLE_FOREMAN_ADMIN</code>: Dual Role (Foreman / Admin Eng)</li>
                     </ul>
                 </div>
                 <div style="background: var(--bg-surface); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border);">
@@ -16856,6 +16857,8 @@ function renderFlowchartEditor(mode) {
         // Detailed Form List View
         html += `<div id="flowchart-steps-list" style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem;">`;
         state.activeFlowchartSteps.forEach((step, idx) => {
+            const isForemanOrAdmin = step.role === 'Foreman Eng' || step.role === 'Admin Eng' || step.role === 'ROLE_FOREMAN_ADMIN' || step.key === 'foreman_eng' || (step.label && /foreman/i.test(step.label));
+
             html += `
                 <div class="card-glass" style="padding: 1.25rem; border-radius: 12px; border: 1px solid var(--card-border); background: var(--bg-surface-elevated); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.25rem;">
                     <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 280px;">
@@ -16900,6 +16903,12 @@ function renderFlowchartEditor(mode) {
                             </button>
                         </div>
                     </div>
+                    ${isForemanOrAdmin ? `
+                        <div style="width: 100%; display: flex; align-items: center; gap: 6px; background: rgba(59, 130, 246, 0.1); border: 1px dashed rgba(59, 130, 246, 0.3); border-radius: 6px; padding: 6px 12px; margin-top: -4px;">
+                            <i data-lucide="users" style="width: 14px; height: 14px; color: #3b82f6; flex-shrink: 0;"></i>
+                            <span style="font-size: 0.76rem; font-weight: 700; color: #3b82f6;">Dual Role TTD: Admin Eng / Foreman Eng (Bisa di-TTD oleh salah satu dari 2 role ini)</span>
+                        </div>
+                    ` : ''}
                 </div>
             `;
         });
@@ -16908,26 +16917,29 @@ function renderFlowchartEditor(mode) {
         // n8n Node Workflow Canvas View
         html += `
             <div class="n8n-canvas-wrapper" id="n8n-canvas-wrapper">
-                <div class="n8n-canvas-inner" id="n8n-canvas-inner">
-                    <svg class="n8n-svg-layer" id="n8n-svg-layer"></svg>
-                    <div class="n8n-nodes-row" id="n8n-nodes-row">
-                        <!-- Start Node -->
-                        <div class="n8n-node-card n8n-start-node" id="n8n-node-start">
+                <div class="n8n-canvas" id="n8n-canvas">
+                    <svg class="n8n-svg-connections" id="n8n-svg-layer"></svg>
+
+                    <div style="display: flex; align-items: center; gap: 3rem; position: relative; z-index: 2; padding: 2rem;">
+                        <!-- Trigger Node -->
+                        <div class="n8n-node-card n8n-trigger-node" id="n8n-node-trigger">
                             <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 0.75rem; font-weight: 800; background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1.5px solid rgba(34, 197, 94, 0.4); padding: 3px 8px; border-radius: 6px; text-transform: uppercase;">TRIGGER</span>
-                                <i data-lucide="zap" style="color: #22c55e; width: 22px; height: 22px;"></i>
+                                <span style="font-size: 0.75rem; font-weight: 800; background: rgba(16, 185, 129, 0.2); color: var(--color-green); border: 1.5px solid rgba(16, 185, 129, 0.4); padding: 3px 8px; border-radius: 6px;">TRIGGER</span>
+                                <i data-lucide="zap" style="color: var(--color-green); width: 18px; height: 18px;"></i>
                             </div>
                             <div>
                                 <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">Inisiator EJO</h4>
-                                <p style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">EJO Ticket Created</p>
+                                <p style="font-size: 0.82rem; color: var(--text-muted);">EJO Ticket Created</p>
                             </div>
-                            <div class="n8n-port n8n-port-right" id="port-start"></div>
+                            <div class="n8n-port n8n-port-right" id="port-trigger"></div>
                         </div>
 
-                        <!-- Dynamic Approval Step Nodes -->
+                        <!-- Dynamic Nodes -->
         `;
 
         state.activeFlowchartSteps.forEach((step, idx) => {
+            const isForemanOrAdmin = step.role === 'Foreman Eng' || step.role === 'Admin Eng' || step.role === 'ROLE_FOREMAN_ADMIN' || step.key === 'foreman_eng' || (step.label && /foreman/i.test(step.label));
+
             html += `
                 <div class="n8n-node-card" id="n8n-node-${idx}">
                     <div class="n8n-port n8n-port-left" id="port-in-${idx}"></div>
@@ -16968,6 +16980,13 @@ function renderFlowchartEditor(mode) {
                                 <input type="checkbox" id="n8n-chk-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 18px; height: 18px; accent-color: var(--color-cyan); cursor: pointer;">
                                 <label for="n8n-chk-sig-${idx}" style="font-size: 0.88rem; font-weight: 700; color: var(--text-primary); cursor: pointer;">Wajib TTD Stempel</label>
                             </div>
+
+                            ${isForemanOrAdmin ? `
+                                <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; background: rgba(59, 130, 246, 0.12); padding: 6px 10px; border-radius: 8px; border: 1px dashed rgba(59, 130, 246, 0.3);">
+                                    <i data-lucide="users" style="width: 14px; height: 14px; color: #3b82f6; flex-shrink: 0;"></i>
+                                    <span style="font-size: 0.74rem; font-weight: 800; color: #3b82f6;">Dual Role TTD: Admin Eng / Foreman Eng</span>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
 
@@ -17143,6 +17162,8 @@ function resolveFlowchartStepForTicket(step, requestorDept) {
         resolved.effectiveRole = `Supervisor ${effectiveDept}`;
     } else if (resolved.role === 'ROLE_MGR_REQUESTOR') {
         resolved.effectiveRole = `Manager ${effectiveDept}`;
+    } else if (resolved.role === 'ROLE_FOREMAN_ADMIN') {
+        resolved.effectiveRole = `Foreman / Admin Eng`;
     } else {
         resolved.effectiveRole = resolved.role;
     }
