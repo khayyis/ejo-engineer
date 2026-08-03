@@ -16904,7 +16904,9 @@ function renderFlowchartEditor(mode) {
             `;
         });
         html += `</div>`;
-    } else {
+        const triggerTitle = settingKey === 'approval_flowchart_drawing' ? 'Inisiator Drawing' : (settingKey === 'approval_flowchart_project' ? 'Inisiator Project' : 'Inisiator EJO');
+        const triggerSubtitle = settingKey === 'approval_flowchart_drawing' ? 'Drawing Ticket Created' : (settingKey === 'approval_flowchart_project' ? 'Project Created' : 'EJO Ticket Created');
+
         // n8n Node Workflow Canvas View
         html += `
             <div class="n8n-canvas-wrapper" id="n8n-canvas-wrapper">
@@ -16918,8 +16920,8 @@ function renderFlowchartEditor(mode) {
                                 <i data-lucide="zap" style="color: #22c55e; width: 22px; height: 22px;"></i>
                             </div>
                             <div>
-                                <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">Inisiator EJO</h4>
-                                <p style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">EJO Ticket Created</p>
+                                <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">${triggerTitle}</h4>
+                                <p style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">${triggerSubtitle}</p>
                             </div>
                             <div class="n8n-port n8n-port-right" id="port-start"></div>
                         </div>
@@ -16966,7 +16968,7 @@ function renderFlowchartEditor(mode) {
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; background: rgba(6, 182, 212, 0.08); padding: 8px 12px; border-radius: 8px; border: 1px dashed rgba(6, 182, 212, 0.25);">
                                 <input type="checkbox" id="n8n-chk-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 18px; height: 18px; accent-color: var(--color-cyan); cursor: pointer;">
-                                <label for="n8n-chk-sig-${idx}" style="font-size: 0.88rem; font-weight: 700; color: var(--text-primary); cursor: pointer;">Wajib TTD Stempel</label>
+                                <label for="n8n-chk-sig-${idx}" style="font-size: 0.88rem; font-weight: 700; color: var(--text-primary); cursor: pointer;">${settingKey === 'approval_flowchart_drawing' ? 'Wajib TTD & Stempel PDF' : 'Wajib TTD Persetujuan'}</label>
                             </div>
                         </div>
                     </div>
@@ -16975,6 +16977,8 @@ function renderFlowchartEditor(mode) {
                 </div>
             `;
         });
+
+        const endNodeSubtitle = settingKey === 'approval_flowchart_drawing' ? 'Stempel PDF Ready' : 'Persetujuan Selesai';
 
         html += `
                         <!-- End Node -->
@@ -16986,7 +16990,7 @@ function renderFlowchartEditor(mode) {
                             </div>
                             <div>
                                 <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--text-primary); margin-bottom: 4px;">Persetujuan Final</h4>
-                                <p style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Stempel PDF Ready</p>
+                                <p style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">${endNodeSubtitle}</p>
                             </div>
                         </div>
                     </div>
