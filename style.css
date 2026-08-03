@@ -5224,6 +5224,102 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
     width: 100%;
 }
 
+/* ==========================================
+   n8n VISUAL WORKFLOW CANVAS STYLING
+   ========================================== */
+.n8n-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    min-height: 480px;
+    background-color: #121519;
+    background-image: radial-gradient(#2a2e37 1.5px, transparent 1.5px);
+    background-size: 24px 24px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow-x: auto;
+    padding: 2.5rem 2rem;
+    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] .n8n-canvas-wrapper {
+    background-color: #f8fafc;
+    background-image: radial-gradient(#cbd5e1 1.5px, transparent 1.5px);
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.03);
+}
+
+.n8n-svg-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.n8n-nodes-row {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 50px;
+    min-width: max-content;
+    padding: 25px 15px;
+}
+
+.n8n-node-card {
+    position: relative;
+    width: 230px;
+    background: #1e222b;
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    padding: 1.1rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+[data-theme="light"] .n8n-node-card {
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.n8n-node-card:hover {
+    border-color: var(--color-cyan);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 28px rgba(6, 182, 212, 0.25);
+}
+
+.n8n-start-node {
+    border-color: rgba(34, 197, 94, 0.4);
+    background: linear-gradient(145deg, #132419 0%, #1e222b 100%);
+}
+
+.n8n-end-node {
+    border-color: rgba(6, 182, 212, 0.4);
+    background: linear-gradient(145deg, #10252d 0%, #1e222b 100%);
+}
+
+.n8n-port {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-cyan);
+    border: 2px solid #121519;
+    box-shadow: 0 0 8px var(--color-cyan);
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+}
+
+.n8n-port-left { left: -6px; }
+.n8n-port-right { right: -6px; }
+
 /* ponytail: Toggle Switch for Visual Settings */
 .switch {
     position: relative;

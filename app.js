@@ -16688,6 +16688,8 @@ function switchServerAccessViewMode(mode) {
     renderServerAccessTab();
 }
 
+state.flowchartViewMode = 'visual'; // Default: 'visual' or 'form'
+
 function renderFlowchartEditor(mode) {
     const container = document.getElementById("server-access-flowchart-container");
     if (!container) return;
@@ -16746,6 +16748,7 @@ function renderFlowchartEditor(mode) {
     }
 
     state.activeFlowchartSteps = JSON.parse(JSON.stringify(steps));
+    const viewMode = state.flowchartViewMode || 'visual';
 
     const rolesList = ['user_PRD', 'Supervisor PRD', 'Foreman Eng', 'Supervisor Eng', 'Drafter', 'Manager PRD', 'Manager EPR', 'Admin Eng', 'Sipil', 'Mekanik', 'Elektrik', 'Kalibrasi', 'Otomotif', 'Server'];
     const deptsList = ['ENG', 'PRD', 'EPR', 'GA', 'QC', 'WRH'];
@@ -16755,12 +16758,20 @@ function renderFlowchartEditor(mode) {
             <div>
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
                     <i data-lucide="${moduleIcon}" style="color: var(--color-cyan); width: 22px; height: 22px;"></i>
-                    <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">Flowchart Approval & Tanda Tangan: ${moduleTitle}</h3>
+                    <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">Flowchart Approval: ${moduleTitle}</h3>
                     <span class="badge" style="background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.72rem; font-weight: 700; border-radius: 6px; padding: 3px 10px;">Synced Server Config</span>
                 </div>
-                <p class="text-secondary text-xs">Atur urutan persetujuan bertingkat, penandatangan wajib, serta nama tahapan yang akan dirender pada kartu Persetujuan Bertingkat & Stempel PDF.</p>
+                <p class="text-secondary text-xs">Visualisasi alur persetujuan bertingkat n8n-style node canvas dengan SVG connecting bezier paths.</p>
             </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <div style="background: var(--bg-surface); padding: 4px; border-radius: 10px; border: 1px solid var(--card-border); display: flex; gap: 4px;">
+                    <button type="button" class="btn btn-xs ${viewMode === 'visual' ? 'btn-primary' : 'btn-outline'}" onclick="toggleFlowchartEditorView('visual', '${mode}')" style="gap: 4px; font-weight: 600; ${viewMode === 'visual' ? 'background: var(--color-cyan); color: #000;' : ''}">
+                        <i data-lucide="git-graph" style="width: 14px; height: 14px;"></i> Visual Canvas (n8n)
+                    </button>
+                    <button type="button" class="btn btn-xs ${viewMode === 'form' ? 'btn-primary' : 'btn-outline'}" onclick="toggleFlowchartEditorView('form', '${mode}')" style="gap: 4px; font-weight: 600; ${viewMode === 'form' ? 'background: var(--color-cyan); color: #000;' : ''}">
+                        <i data-lucide="list" style="width: 14px; height: 14px;"></i> Form List
+                    </button>
+                </div>
                 <button type="button" class="btn btn-outline" onclick="addFlowchartStep('${settingKey}')" style="gap: 6px; font-size: 0.85rem;">
                     <i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i> Tambah Step
                 </button>
@@ -16769,62 +16780,217 @@ function renderFlowchartEditor(mode) {
                 </button>
             </div>
         </div>
-
-        <div id="flowchart-steps-list" style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem;">
     `;
 
-    state.activeFlowchartSteps.forEach((step, idx) => {
-        html += `
-            <div class="card-glass" style="padding: 1.25rem; border-radius: 12px; border: 1px solid var(--card-border); background: var(--bg-surface-elevated); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.25rem;">
-                <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 280px;">
-                    <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 1rem; border: 1px solid rgba(6, 182, 212, 0.3);">
-                        ${idx + 1}
+    if (viewMode === 'form') {
+        // Detailed Form List View
+        html += `<div id="flowchart-steps-list" style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem;">`;
+        state.activeFlowchartSteps.forEach((step, idx) => {
+            html += `
+                <div class="card-glass" style="padding: 1.25rem; border-radius: 12px; border: 1px solid var(--card-border); background: var(--bg-surface-elevated); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.25rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 280px;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 1rem; border: 1px solid rgba(6, 182, 212, 0.3);">
+                            ${idx + 1}
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 4px; flex: 1;">
+                            <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Nama Tahapan / Label Card</label>
+                            <input type="text" value="${step.label || ''}" onchange="updateFlowchartStepField(${idx}, 'label', this.value)" placeholder="Nama Tahapan" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-weight: 700; font-size: 0.9rem; width: 100%;">
+                        </div>
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 4px; flex: 1;">
-                        <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Nama Tahapan / Label Card</label>
-                        <input type="text" value="${step.label || ''}" onchange="updateFlowchartStepField(${idx}, 'label', this.value)" placeholder="Nama Tahapan (misal: FOREMAN ENG)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-weight: 700; font-size: 0.9rem; width: 100%;">
+
+                    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Target Role</label>
+                            <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
+                                ${rolesList.map(r => `<option value="${r}" ${step.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Dept</label>
+                            <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
+                                ${deptsList.map(d => `<option value="${d}" ${step.dept === d ? 'selected' : ''}>${d}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 18px;">
+                            <input type="checkbox" id="chk-flow-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 16px; height: 16px; accent-color: var(--color-cyan); cursor: pointer;">
+                            <label for="chk-flow-sig-${idx}" style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); cursor: pointer;">Wajib TTD</label>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 4px; margin-top: 18px;">
+                            <button type="button" class="btn btn-outline btn-xs" onclick="moveFlowchartStep(${idx}, -1, '${settingKey}')" ${idx === 0 ? 'disabled style="opacity: 0.4;"' : ''} title="Naikkan Urutan">
+                                <i data-lucide="arrow-up" style="width: 14px; height: 14px;"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline btn-xs" onclick="moveFlowchartStep(${idx}, 1, '${settingKey}')" ${idx === state.activeFlowchartSteps.length - 1 ? 'disabled style="opacity: 0.4;"' : ''} title="Turunkan Urutan">
+                                <i data-lucide="arrow-down" style="width: 14px; height: 14px;"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline btn-xs" onclick="deleteFlowchartStep(${idx}, '${settingKey}')" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Hapus Step">
+                                <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
-
-                <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Target Role</label>
-                        <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
-                            ${rolesList.map(r => `<option value="${r}" ${step.role === r ? 'selected' : ''}>${r}</option>`).join('')}
-                        </select>
+            `;
+        });
+        html += `</div>`;
+    } else {
+        // n8n Node Workflow Canvas View
+        html += `
+            <div class="n8n-canvas-wrapper" id="n8n-canvas-wrapper">
+                <svg class="n8n-svg-layer" id="n8n-svg-layer"></svg>
+                <div class="n8n-nodes-row" id="n8n-nodes-row">
+                    <!-- Start Node -->
+                    <div class="n8n-node-card n8n-start-node" id="n8n-node-start">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-size: 0.65rem; font-weight: 800; background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">TRIGGER</span>
+                            <i data-lucide="zap" style="color: #22c55e; width: 16px; height: 16px;"></i>
+                        </div>
+                        <div>
+                            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Inisiator EJO</h4>
+                            <p style="font-size: 0.72rem; color: var(--text-muted);">EJO Ticket Created</p>
+                        </div>
+                        <div class="n8n-port n8n-port-right" id="port-start"></div>
                     </div>
 
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Dept</label>
-                        <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
-                            ${deptsList.map(d => `<option value="${d}" ${step.dept === d ? 'selected' : ''}>${d}</option>`).join('')}
-                        </select>
+                    <!-- Dynamic Approval Step Nodes -->
+        `;
+
+        state.activeFlowchartSteps.forEach((step, idx) => {
+            html += `
+                <div class="n8n-node-card" id="n8n-node-${idx}">
+                    <div class="n8n-port n8n-port-left" id="port-in-${idx}"></div>
+                    
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 0.65rem; font-weight: 800; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); padding: 2px 8px; border-radius: 4px;">STEP ${idx + 1}</span>
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <button type="button" onclick="moveFlowchartStep(${idx}, -1, '${settingKey}')" ${idx === 0 ? 'disabled style="opacity: 0.3; border: none; background: none; color: var(--text-muted); cursor: not-allowed;"' : 'style="border: none; background: none; color: var(--text-secondary); cursor: pointer;"'} title="Geser Kiri">
+                                <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
+                            </button>
+                            <button type="button" onclick="moveFlowchartStep(${idx}, 1, '${settingKey}')" ${idx === state.activeFlowchartSteps.length - 1 ? 'disabled style="opacity: 0.3; border: none; background: none; color: var(--text-muted); cursor: not-allowed;"' : 'style="border: none; background: none; color: var(--text-secondary); cursor: pointer;"'} title="Geser Kanan">
+                                <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
+                            </button>
+                            <button type="button" onclick="deleteFlowchartStep(${idx}, '${settingKey}')" style="border: none; background: none; color: #ef4444; cursor: pointer;" title="Hapus Step">
+                                <i data-lucide="trash-2" style="width: 13px; height: 13px;"></i>
+                            </button>
+                        </div>
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 6px; margin-top: 18px;">
-                        <input type="checkbox" id="chk-flow-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 16px; height: 16px; accent-color: var(--color-cyan); cursor: pointer;">
-                        <label for="chk-flow-sig-${idx}" style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); cursor: pointer;">Wajib TTD</label>
+                    <div>
+                        <input type="text" value="${step.label || ''}" onchange="updateFlowchartStepField(${idx}, 'label', this.value)" placeholder="Nama Tahapan" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-weight: 700; font-size: 0.85rem; width: 100%; margin-bottom: 8px;">
+                        
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 700;">ROLE:</span>
+                                <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 2px 6px; border-radius: 6px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.75rem;">
+                                    ${rolesList.map(r => `<option value="${r}" ${step.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 700;">DEPT:</span>
+                                <select onchange="updateFlowchartStepField(${idx}, 'dept', this.value)" style="padding: 2px 6px; border-radius: 6px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.75rem;">
+                                    ${deptsList.map(d => `<option value="${d}" ${step.dept === d ? 'selected' : ''}>${d}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                                <input type="checkbox" id="n8n-chk-sig-${idx}" ${step.require_signature ? 'checked' : ''} onchange="updateFlowchartStepField(${idx}, 'require_signature', this.checked ? 1 : 0)" style="width: 14px; height: 14px; accent-color: var(--color-cyan); cursor: pointer;">
+                                <label for="n8n-chk-sig-${idx}" style="font-size: 0.72rem; font-weight: 600; color: var(--text-primary); cursor: pointer;">Wajib TTD</label>
+                            </div>
+                        </div>
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 4px; margin-top: 18px;">
-                        <button type="button" class="btn btn-outline btn-xs" onclick="moveFlowchartStep(${idx}, -1, '${settingKey}')" ${idx === 0 ? 'disabled style="opacity: 0.4;"' : ''} title="Naikkan Urutan">
-                            <i data-lucide="arrow-up" style="width: 14px; height: 14px;"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline btn-xs" onclick="moveFlowchartStep(${idx}, 1, '${settingKey}')" ${idx === state.activeFlowchartSteps.length - 1 ? 'disabled style="opacity: 0.4;"' : ''} title="Turunkan Urutan">
-                            <i data-lucide="arrow-down" style="width: 14px; height: 14px;"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline btn-xs" onclick="deleteFlowchartStep(${idx}, '${settingKey}')" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" title="Hapus Step">
-                            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
-                        </button>
+                    <div class="n8n-port n8n-port-right" id="port-out-${idx}"></div>
+                </div>
+            `;
+        });
+
+        html += `
+                    <!-- End Node -->
+                    <div class="n8n-node-card n8n-end-node" id="n8n-node-end">
+                        <div class="n8n-port n8n-port-left" id="port-end"></div>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <span style="font-size: 0.65rem; font-weight: 800; background: rgba(6, 182, 212, 0.2); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.4); padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">COMPLETE</span>
+                            <i data-lucide="check-circle-2" style="color: var(--color-cyan); width: 16px; height: 16px;"></i>
+                        </div>
+                        <div>
+                            <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">Persetujuan Final</h4>
+                            <p style="font-size: 0.72rem; color: var(--text-muted);">Stempel PDF Ready</p>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
-    });
+    }
 
-    html += `</div>`;
     container.innerHTML = html;
     if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    if (viewMode === 'visual') {
+        setTimeout(drawN8nBezierConnections, 60);
+    }
+}
+
+function toggleFlowchartEditorView(viewType, mode) {
+    state.flowchartViewMode = viewType;
+    renderFlowchartEditor(mode);
+}
+
+function drawN8nBezierConnections() {
+    const svg = document.getElementById("n8n-svg-layer");
+    const wrapper = document.getElementById("n8n-canvas-wrapper");
+    if (!svg || !wrapper) return;
+
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const ports = [];
+
+    // Collect start port
+    const pStart = document.getElementById("port-start");
+    if (pStart) ports.push({ type: 'right', el: pStart });
+
+    // Collect step ports
+    if (state.activeFlowchartSteps) {
+        state.activeFlowchartSteps.forEach((s, idx) => {
+            const pIn = document.getElementById(`port-in-${idx}`);
+            const pOut = document.getElementById(`port-out-${idx}`);
+            if (pIn) ports.push({ type: 'left', el: pIn, stepIdx: idx });
+            if (pOut) ports.push({ type: 'right', el: pOut, stepIdx: idx });
+        });
+    }
+
+    // Collect end port
+    const pEnd = document.getElementById("port-end");
+    if (pEnd) ports.push({ type: 'left', el: pEnd });
+
+    let pathD = "";
+    // Connect right ports to subsequent left ports
+    for (let i = 0; i < ports.length - 1; i++) {
+        const curr = ports[i];
+        const next = ports[i + 1];
+
+        if (curr.type === 'right' && next.type === 'left') {
+            const rRect = curr.el.getBoundingClientRect();
+            const lRect = next.el.getBoundingClientRect();
+
+            const x1 = rRect.left + rRect.width / 2 - wrapperRect.left + wrapper.scrollLeft;
+            const y1 = rRect.top + rRect.height / 2 - wrapperRect.top + wrapper.scrollTop;
+            const x2 = lRect.left + lRect.width / 2 - wrapperRect.left + wrapper.scrollLeft;
+            const y2 = lRect.top + lRect.height / 2 - wrapperRect.top + wrapper.scrollTop;
+
+            const dx = Math.max(25, Math.abs(x2 - x1) * 0.45);
+            pathD += `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2} `;
+        }
+    }
+
+    svg.innerHTML = `
+        <defs>
+            <linearGradient id="n8n-line-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#22c55e" />
+                <stop offset="50%" stop-color="#06b6d4" />
+                <stop offset="100%" stop-color="#3b82f6" />
+            </linearGradient>
+        </defs>
+        <path d="${pathD}" stroke="url(#n8n-line-grad)" stroke-width="3.5" fill="none" stroke-dasharray="6 4" opacity="0.9" style="filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.6));" />
+    `;
 }
 
 function updateFlowchartStepField(idx, field, value) {
