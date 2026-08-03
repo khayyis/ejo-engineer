@@ -16708,46 +16708,49 @@ function renderFlowchartEditor(mode) {
         moduleIcon = "folder-kanban";
     }
 
-    let steps = [];
-    if (state.settings && state.settings[settingKey]) {
-        try {
-            steps = typeof state.settings[settingKey] === 'string' ? JSON.parse(state.settings[settingKey]) : state.settings[settingKey];
-        } catch (e) {
-            console.error("Error parsing flowchart settings:", e);
+    if (!state.activeFlowchartSteps || state.activeFlowchartSettingKey !== settingKey) {
+        let steps = [];
+        if (state.settings && state.settings[settingKey]) {
+            try {
+                steps = typeof state.settings[settingKey] === 'string' ? JSON.parse(state.settings[settingKey]) : state.settings[settingKey];
+            } catch (e) {
+                console.error("Error parsing flowchart settings:", e);
+            }
         }
-    }
 
-    if (!Array.isArray(steps) || steps.length === 0) {
-        if (mode === "flow-drawing") {
-            steps = [
-                { step: 1, key: "drafter", label: "DRAFTER (ENG)", role: "Drafter", dept: "ENG", require_signature: 1 },
-                { step: 2, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
-                { step: 3, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
-                { step: 4, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
-                { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 }
-            ];
-        } else if (mode === "flow-project") {
-            steps = [
-                { step: 1, key: "spv_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
-                { step: 2, key: "spv_prd", label: "SUPERVISOR PRD", role: "Supervisor PRD", dept: "PRD", require_signature: 1 },
-                { step: 3, key: "spv_epr", label: "SUPERVISOR EPR", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
-                { step: 4, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
-                { step: 5, key: "manager_prd", label: "MANAGER PRD", role: "Manager PRD", dept: "PRD", require_signature: 1 },
-                { step: 6, key: "manager_epr", label: "MANAGER EPR", role: "Manager EPR", dept: "EPR", require_signature: 1 }
-            ];
-        } else {
-            steps = [
-                { step: 1, key: "staff_epr", label: "STAFF (EPR)", role: "user_PRD", dept: "EPR", require_signature: 1 },
-                { step: 2, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
-                { step: 3, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
-                { step: 4, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
-                { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
-                { step: 6, key: "factory_manager", label: "FACTORY MANAGER", role: "Manager EPR", dept: "ENG", require_signature: 1 }
-            ];
+        if (!Array.isArray(steps) || steps.length === 0) {
+            if (mode === "flow-drawing") {
+                steps = [
+                    { step: 1, key: "drafter", label: "DRAFTER (ENG)", role: "Drafter", dept: "ENG", require_signature: 1 },
+                    { step: 2, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
+                    { step: 3, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                    { step: 4, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                    { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 }
+                ];
+            } else if (mode === "flow-project") {
+                steps = [
+                    { step: 1, key: "spv_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                    { step: 2, key: "spv_prd", label: "SUPERVISOR PRD", role: "Supervisor PRD", dept: "PRD", require_signature: 1 },
+                    { step: 3, key: "spv_epr", label: "SUPERVISOR EPR", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                    { step: 4, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
+                    { step: 5, key: "manager_prd", label: "MANAGER PRD", role: "Manager PRD", dept: "PRD", require_signature: 1 },
+                    { step: 6, key: "manager_epr", label: "MANAGER EPR", role: "Manager EPR", dept: "EPR", require_signature: 1 }
+                ];
+            } else {
+                steps = [
+                    { step: 1, key: "staff_epr", label: "STAFF (EPR)", role: "user_PRD", dept: "EPR", require_signature: 1 },
+                    { step: 2, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                    { step: 3, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
+                    { step: 4, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
+                    { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
+                    { step: 6, key: "factory_manager", label: "FACTORY MANAGER", role: "Manager EPR", dept: "ENG", require_signature: 1 }
+                ];
+            }
         }
-    }
 
-    state.activeFlowchartSteps = JSON.parse(JSON.stringify(steps));
+        state.activeFlowchartSteps = JSON.parse(JSON.stringify(steps));
+        state.activeFlowchartSettingKey = settingKey;
+    }
     const viewMode = state.flowchartViewMode || 'visual';
 
     const rolesList = ['user_PRD', 'Supervisor PRD', 'Foreman Eng', 'Supervisor Eng', 'Drafter', 'Manager PRD', 'Manager EPR', 'Admin Eng', 'Sipil', 'Mekanik', 'Elektrik', 'Kalibrasi', 'Otomotif', 'Server'];
