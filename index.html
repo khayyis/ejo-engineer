@@ -543,9 +543,9 @@
                     </div>
 
                     <!-- Bottom Section: Department Load & Recent Activities -->
-                    <div class="analytics-layout-grid grid-main-bottom" id="overview-bottom-grid">
+                    <div class="analytics-layout-grid grid-main-bottom" id="overview-bottom-grid" style="grid-template-columns: 1fr;">
                         <!-- Department Load Chart -->
-                        <div class="chart-card card-glass" id="card-dept-chart">
+                        <div class="chart-card card-glass" id="card-dept-chart" style="width: 100%;">
                             <div class="card-header">
                                 <div class="card-header-left">
                                     <div class="card-icon-wrap card-icon-blue">
@@ -561,25 +561,25 @@
                                 <canvas id="deptChart"></canvas>
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Recent EJO / Alerts -->
-                        <div class="list-card card-glass urgent-card">
-                            <div class="card-header">
-                                <div class="urgent-header-left">
-                                    <div class="urgent-icon-wrap">
-                                        <i data-lucide="alert-triangle"></i>
-                                    </div>
-                                    <div>
-                                        <h3 class="urgent-title">EJO URGENT! <span class="urgent-pulse-dot" id="urgent-pulse-dot"></span></h3>
-                                        <p class="text-secondary text-xs">EJO dengan prioritas mendesak (Emergency / High).</p>
-                                    </div>
+                    <!-- EJO URGENT! Standalone Full-Width Card -->
+                    <div class="list-card card-glass urgent-card" style="margin-top: 1.5rem; width: 100%;">
+                        <div class="card-header">
+                            <div class="urgent-header-left">
+                                <div class="urgent-icon-wrap">
+                                    <i data-lucide="alert-triangle"></i>
                                 </div>
-                                <span class="badge urgent-count-badge" id="urgent-count-badge" style="display:none;">0</span>
+                                <div>
+                                    <h3 class="urgent-title">EJO URGENT! <span class="urgent-pulse-dot" id="urgent-pulse-dot"></span></h3>
+                                    <p class="text-secondary text-xs">EJO dengan prioritas mendesak (Emergency / High).</p>
+                                </div>
                             </div>
-                            <div class="card-body text-scroll">
-                                <div class="recent-list" id="critical-ejo-list">
-                                    <!-- Dynamic list of critical EJOs -->
-                                </div>
+                            <span class="badge urgent-count-badge" id="urgent-count-badge" style="display:none;">0</span>
+                        </div>
+                        <div class="card-body text-scroll">
+                            <div class="recent-list" id="critical-ejo-list">
+                                <!-- Dynamic list of critical EJOs -->
                             </div>
                         </div>
                     </div>
