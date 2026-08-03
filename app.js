@@ -16753,7 +16753,24 @@ function renderFlowchartEditor(mode) {
     }
     const viewMode = state.flowchartViewMode || 'visual';
 
-    const rolesList = ['user_PRD', 'Supervisor PRD', 'Foreman Eng', 'Supervisor Eng', 'Drafter', 'Manager PRD', 'Manager EPR', 'Admin Eng', 'Sipil', 'Mekanik', 'Elektrik', 'Kalibrasi', 'Otomotif', 'Server'];
+    const rolesList = [
+        { value: 'ROLE_REQUESTOR', label: 'ROLE_REQUESTOR (User Pemohon)' },
+        { value: 'ROLE_SPV_REQUESTOR', label: 'ROLE_SPV_REQUESTOR (SPV Pemohon)' },
+        { value: 'user_PRD', label: 'user_PRD' },
+        { value: 'Supervisor PRD', label: 'Supervisor PRD' },
+        { value: 'Foreman Eng', label: 'Foreman Eng' },
+        { value: 'Supervisor Eng', label: 'Supervisor Eng' },
+        { value: 'Drafter', label: 'Drafter' },
+        { value: 'Manager PRD', label: 'Manager PRD' },
+        { value: 'Manager EPR', label: 'Manager EPR' },
+        { value: 'Admin Eng', label: 'Admin Eng' },
+        { value: 'Sipil', label: 'Sipil' },
+        { value: 'Mekanik', label: 'Mekanik' },
+        { value: 'Elektrik', label: 'Elektrik' },
+        { value: 'Kalibrasi', label: 'Kalibrasi' },
+        { value: 'Otomotif', label: 'Otomotif' },
+        { value: 'Server', label: 'Server' }
+    ];
     const deptsList = [
         { value: 'DEPT_REQUESTOR', label: 'DEPT_REQUESTOR (Dept Pemohon)' },
         { value: 'ENG', label: 'ENG' },
@@ -16813,7 +16830,7 @@ function renderFlowchartEditor(mode) {
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <label style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Target Role</label>
                             <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
-                                ${rolesList.map(r => `<option value="${r}" ${step.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                                ${rolesList.map(r => `<option value="${r.value}" ${step.role === r.value ? 'selected' : ''}>${r.label}</option>`).join('')}
                             </select>
                         </div>
 
@@ -16896,7 +16913,7 @@ function renderFlowchartEditor(mode) {
                             <div style="display: flex; align-items: center; justify-content: space-between;">
                                 <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 800; letter-spacing: 0.5px;">TARGET ROLE:</span>
                                 <select onchange="updateFlowchartStepField(${idx}, 'role', this.value)" style="padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.88rem; font-weight: 700; height: 36px; min-width: 140px;">
-                                    ${rolesList.map(r => `<option value="${r}" ${step.role === r ? 'selected' : ''}>${r}</option>`).join('')}
+                                    ${rolesList.map(r => `<option value="${r.value}" ${step.role === r.value ? 'selected' : ''}>${r.label}</option>`).join('')}
                                 </select>
                             </div>
                             <div style="display: flex; align-items: center; justify-content: space-between;">
