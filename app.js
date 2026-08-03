@@ -7348,35 +7348,46 @@ function openEJODetails(id) {
     // Re-render Timeline logs
     renderTimelineLogs(ejo);
 
-    // ponytail: Render General EJO approvals signature list if this is a General EJO
+    // ponytail: Render General EJO approvals signature list dynamically from active flowchart settings
     const sigSection = document.getElementById("general-ejo-signatures-section");
     const sigContainer = document.getElementById("general-ejo-signatures-container");
     if (sigSection && sigContainer) {
         if (isGeneral) {
             sigSection.style.display = "block";
             const app = ejo.approvals || {};
-            const roles = [
-                { key: 'user', label: 'User (Requester)' },
-                { key: 'foreman', label: 'Foreman / Admin' }
-            ];
+            
+            // Get dynamic flowchart steps configured for General EJO
+            const ticketDept = ejo.dept || ejo.department || 'PRD';
+            const steps = getFlowchartStepsForModule('approval_flowchart_gejo', ticketDept);
 
-            let html = roles.map(role => {
-                const approval = app[role.key];
-                if (approval && approval.signature) {
+            let html = steps.map((stepObj, idx) => {
+                const stepKey = stepObj.key || `step_${stepObj.step}`;
+                const stepLabel = stepObj.effectiveLabel || stepObj.label || `STEP ${idx + 1}`;
+                
+                // Check approval by key, step number, or role
+                let approval = app[stepKey] || app[stepObj.step] || app[stepObj.role] || app[stepObj.effectiveRole];
+
+                // Legacy fallback mapping for existing data
+                if (!approval) {
+                    if (idx === 0 && app.user) approval = app.user;
+                    else if (idx === 1 && app.foreman) approval = app.foreman;
+                }
+
+                if (approval && (approval.signature || approval.status === 'Approved')) {
                     return `
                         <div class="signature-card signature-approved">
-                            <span class="signature-role">${role.label}</span>
+                            <span class="signature-role">${stepLabel}</span>
                             <div class="signature-placeholder" style="border: 2px dashed rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.05); display: flex; align-items: center; justify-content: center; height: 60px; border-radius: var(--border-radius-md);">
                                 <span style="color: var(--color-green); font-weight: 800; font-size: 1.15rem; letter-spacing: 1px;">APPROVE</span>
                             </div>
-                            <span class="signature-name">${approval.name || approval.username}</span>
+                            <span class="signature-name">${approval.name || approval.username || '-'}</span>
                             <span class="signature-date">${approval.date || ''}</span>
                         </div>
                     `;
                 } else {
                     return `
                         <div class="signature-card signature-pending">
-                            <span class="signature-role">${role.label}</span>
+                            <span class="signature-role">${stepLabel}</span>
                             <div class="signature-placeholder">
                                 <i data-lucide="clock" class="signature-pending-icon"></i>
                                 <span class="signature-empty">Belum ada approval</span>
