@@ -4928,7 +4928,7 @@ function isGlobalLeadUser() {
     const role = state.currentUser.role || '';
     const userDept = getUserDepartmentCode();
     const isServer = role === 'Server' || state.currentUser.username === 'server';
-    return isServer || role === 'Plant Manager' || role === 'Factory Manager' || userDept === 'ENG';
+    return isServer || role === 'Plant Manager' || role === 'Factory Manager' || (userDept === 'ENG' && isLeadRole(role));
 }
 
 // ponytail: helper to get Drawings visible to the current user (department SPV/Manager only see items from their own department)
