@@ -16929,13 +16929,13 @@ function renderFlowchartEditor(mode) {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 
     if (viewMode === 'visual') {
-        setTimeout(drawN8nBezierConnections, 50);
-        setTimeout(drawN8nBezierConnections, 200);
+        setTimeout(() => drawN8nBezierConnections(mode), 50);
+        setTimeout(() => drawN8nBezierConnections(mode), 200);
 
         const wrapper = document.getElementById("n8n-canvas-wrapper");
         if (wrapper && !wrapper.dataset.scrollBound) {
             wrapper.dataset.scrollBound = "true";
-            wrapper.addEventListener("scroll", drawN8nBezierConnections);
+            wrapper.addEventListener("scroll", () => drawN8nBezierConnections(mode));
         }
     }
 }
@@ -16945,17 +16945,20 @@ function toggleFlowchartEditorView(viewType, mode) {
     renderFlowchartEditor(mode);
 }
 
-function drawN8nBezierConnections() {
+function drawN8nBezierConnections(mode) {
     const svg = document.getElementById("n8n-svg-layer");
     const inner = document.getElementById("n8n-canvas-inner");
     if (!svg || !inner) return;
+
+    // Remove existing cable add-step buttons
+    inner.querySelectorAll(".n8n-add-step-btn").forEach(btn => btn.remove());
 
     const innerRect = inner.getBoundingClientRect();
     const ports = [];
 
     // Collect start port
     const pStart = document.getElementById("port-start");
-    if (pStart) ports.push({ type: 'right', el: pStart });
+    if (pStart) ports.push({ type: 'right', el: pStart, insertIdx: 0 });
 
     // Collect step ports
     if (state.activeFlowchartSteps) {
@@ -16963,7 +16966,7 @@ function drawN8nBezierConnections() {
             const pIn = document.getElementById(`port-in-${idx}`);
             const pOut = document.getElementById(`port-out-${idx}`);
             if (pIn) ports.push({ type: 'left', el: pIn, stepIdx: idx });
-            if (pOut) ports.push({ type: 'right', el: pOut, stepIdx: idx });
+            if (pOut) ports.push({ type: 'right', el: pOut, stepIdx: idx, insertIdx: idx + 1 });
         });
     }
 
@@ -16972,7 +16975,12 @@ function drawN8nBezierConnections() {
     if (pEnd) ports.push({ type: 'left', el: pEnd });
 
     let pathD = "";
-    // Connect right ports to subsequent left ports
+    let cableCount = 0;
+
+    // Setting key resolution for cable add-step button
+    const currentMode = mode || state.activeServerAccessMode || 'flow-gejo';
+    const settingKey = currentMode === 'flow-drawing' ? 'approval_flowchart_drawing' : (currentMode === 'flow-project' ? 'approval_flowchart_project' : 'approval_flowchart_gejo');
+
     for (let i = 0; i < ports.length - 1; i++) {
         const curr = ports[i];
         const next = ports[i + 1];
@@ -16986,8 +16994,31 @@ function drawN8nBezierConnections() {
             const x2 = lRect.left + lRect.width / 2 - innerRect.left;
             const y2 = lRect.top + lRect.height / 2 - innerRect.top;
 
-            const dx = Math.max(25, Math.abs(x2 - x1) * 0.45);
-            pathD += `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2} `;
+            const dx = Math.max(30, Math.abs(x2 - x1) * 0.45);
+            // Organic S-curve dip & rise
+            const curveDip = (cableCount % 2 === 0) ? 14 : -14;
+            
+            pathD += `M ${x1} ${y1} C ${x1 + dx} ${y1 + curveDip}, ${x2 - dx} ${y2 - curveDip}, ${x2} ${y2} `;
+
+            // Render floating (+) add-step button on the cable
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2 + (curveDip * 0.4);
+            const insertIdx = curr.insertIdx !== undefined ? curr.insertIdx : i;
+
+            const addBtn = document.createElement("button");
+            addBtn.type = "button";
+            addBtn.className = "n8n-add-step-btn";
+            addBtn.style.left = `${midX}px`;
+            addBtn.style.top = `${midY}px`;
+            addBtn.title = "Sisipkan Step Di Sini";
+            addBtn.innerHTML = `<i data-lucide="plus" style="width: 14px; height: 14px; stroke-width: 3px;"></i>`;
+            addBtn.onclick = (e) => {
+                e.stopPropagation();
+                insertFlowchartStepAt(insertIdx, settingKey);
+            };
+            inner.appendChild(addBtn);
+
+            cableCount++;
         }
     }
 
@@ -16998,19 +17029,38 @@ function drawN8nBezierConnections() {
         <defs>
             <linearGradient id="n8n-line-grad" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stop-color="#059669" />
-                <stop offset="40%" stop-color="#0891b2" />
-                <stop offset="80%" stop-color="#2563eb" />
+                <stop offset="35%" stop-color="#0891b2" />
+                <stop offset="70%" stop-color="#2563eb" />
                 <stop offset="100%" stop-color="#0891b2" />
             </linearGradient>
-            <marker id="n8n-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <marker id="n8n-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                 <path d="M 0 1 L 10 5 L 0 9 z" fill="#0891b2" />
             </marker>
         </defs>
         <!-- Darker outline stroke for high contrast -->
-        <path d="${pathD}" stroke="rgba(15, 23, 42, 0.6)" stroke-width="6" fill="none" stroke-linecap="round" />
-        <!-- Vibrant animated cyan-blue gradient stroke -->
-        <path d="${pathD}" stroke="url(#n8n-line-grad)" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-dasharray="8 4" marker-end="url(#n8n-arrow)" style="filter: drop-shadow(0 0 5px rgba(8, 145, 178, 0.7));" />
+        <path d="${pathD}" stroke="rgba(15, 23, 42, 0.7)" stroke-width="6.5" fill="none" stroke-linecap="round" />
+        <!-- Vibrant animated cyan-blue flowing gradient stroke -->
+        <path class="n8n-cable-path" d="${pathD}" stroke="url(#n8n-line-grad)" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="10 6" marker-end="url(#n8n-arrow)" style="filter: drop-shadow(0 0 6px rgba(8, 145, 178, 0.75));" />
     `;
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function insertFlowchartStepAt(insertIdx, settingKey) {
+    if (!state.activeFlowchartSteps) return;
+    const newStep = {
+        step: insertIdx + 1,
+        key: `step_${Date.now().toString(36)}`,
+        label: `APPROVAL STEP ${insertIdx + 1}`,
+        role: "Supervisor Eng",
+        dept: "ENG",
+        require_signature: 1
+    };
+    state.activeFlowchartSteps.splice(insertIdx, 0, newStep);
+    state.activeFlowchartSteps.forEach((s, i) => s.step = i + 1);
+
+    const mode = settingKey === 'approval_flowchart_gejo' ? 'flow-gejo' : (settingKey === 'approval_flowchart_drawing' ? 'flow-drawing' : 'flow-project');
+    renderFlowchartEditor(mode);
 }
 
 function updateFlowchartStepField(idx, field, value) {
