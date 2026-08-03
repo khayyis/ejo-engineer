@@ -16783,7 +16783,7 @@ function renderFlowchartEditor(mode) {
     ];
 
     let html = `
-        <div class="card-glass" style="padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-left: 4px solid var(--color-cyan); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div class="card-glass" style="padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; border-left: 4px solid var(--color-cyan); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
             <div>
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
                     <i data-lucide="${moduleIcon}" style="color: var(--color-cyan); width: 22px; height: 22px;"></i>
@@ -16807,6 +16807,36 @@ function renderFlowchartEditor(mode) {
                 <button type="button" class="btn btn-primary" onclick="saveFlowchartConfig('${settingKey}')" style="gap: 6px; font-size: 0.85rem; background: var(--color-cyan); color: #000; font-weight: 700;">
                     <i data-lucide="save" style="width: 16px; height: 16px;"></i> Simpan Flowchart
                 </button>
+            </div>
+        </div>
+
+        <!-- Panduan Ringkas Tag Dinamis & Target Role -->
+        <div class="card-glass" style="padding: 1rem 1.25rem; margin-bottom: 1.5rem; border-left: 4px solid #3b82f6; background: rgba(59, 130, 246, 0.04); border-radius: 10px; border: 1px solid rgba(59, 130, 246, 0.15);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="help-circle" style="color: #3b82f6; width: 18px; height: 18px;"></i>
+                    <span style="font-size: 0.85rem; font-weight: 800; color: var(--text-primary); letter-spacing: 0.3px;">PANDUAN TAG DINAMIS & TARGET ROLE</span>
+                </div>
+                <span class="badge" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); font-size: 0.7rem; font-weight: 700; border-radius: 6px; padding: 2px 8px;">Quick Reference</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; font-size: 0.8rem; color: var(--text-secondary);">
+                <div style="background: var(--bg-surface); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border);">
+                    <strong style="color: var(--color-cyan); display: block; margin-bottom: 3px; font-size: 0.8rem;">🏷️ Tag Dinamis Label Tahapan:</strong>
+                    Gunakan <code style="background: rgba(6,182,212,0.15); color: var(--color-cyan); padding: 1px 5px; border-radius: 4px; font-weight: 700;">{DEPT}</code> atau <code style="background: rgba(6,182,212,0.15); color: var(--color-cyan); padding: 1px 5px; border-radius: 4px; font-weight: 700;">[DEPT]</code> pada Label Tahapan.<br>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">Contoh: <strong>STAFF ({DEPT})</strong> &rarr; Otomatis menjadi <strong>STAFF (EPR)</strong> atau <strong>STAFF (PRD)</strong>.</span>
+                </div>
+                <div style="background: var(--bg-surface); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border);">
+                    <strong style="color: #3b82f6; display: block; margin-bottom: 3px; font-size: 0.8rem;">👥 Dynamic Target Role:</strong>
+                    <ul style="margin: 0; padding-left: 14px; font-size: 0.75rem; line-height: 1.4; color: var(--text-secondary);">
+                        <li><code style="font-weight: 700;">ROLE_REQUESTOR</code>: User Pemohon Ticket</li>
+                        <li><code style="font-weight: 700;">ROLE_SPV_REQUESTOR</code>: SPV Pemohon Ticket</li>
+                        <li><code style="font-weight: 700;">ROLE_MGR_REQUESTOR</code>: Manager Pemohon Ticket</li>
+                    </ul>
+                </div>
+                <div style="background: var(--bg-surface); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border);">
+                    <strong style="color: #10b981; display: block; margin-bottom: 3px; font-size: 0.8rem;">🏢 Dynamic Departemen:</strong>
+                    Pilih <code style="background: rgba(16,185,129,0.15); color: #10b981; padding: 1px 5px; border-radius: 4px; font-weight: 700;">DEPT_REQUESTOR</code> pada dropdown DEPARTEMEN agar penandatangan mengikuti departemen asal pemohon ticket.
+                </div>
             </div>
         </div>
     `;
