@@ -16756,6 +16756,8 @@ function renderFlowchartEditor(mode) {
     const rolesList = [
         { value: 'ROLE_REQUESTOR', label: 'ROLE_REQUESTOR (User Pemohon)' },
         { value: 'ROLE_SPV_REQUESTOR', label: 'ROLE_SPV_REQUESTOR (SPV Pemohon)' },
+        { value: 'ROLE_MGR_REQUESTOR', label: 'ROLE_MGR_REQUESTOR (Manager Pemohon)' },
+        { value: 'ROLE_FOREMAN_REQUESTOR', label: 'ROLE_FOREMAN_REQUESTOR (Foreman Pemohon)' },
         { value: 'user_PRD', label: 'user_PRD' },
         { value: 'Supervisor PRD', label: 'Supervisor PRD' },
         { value: 'Foreman Eng', label: 'Foreman Eng' },
@@ -17096,6 +17098,16 @@ function resolveFlowchartStepForTicket(step, requestorDept) {
     const resolved = JSON.parse(JSON.stringify(step));
     const effectiveDept = (resolved.dept === 'DEPT_REQUESTOR' || !resolved.dept) ? (requestorDept || 'PRD') : resolved.dept;
     resolved.effectiveDept = effectiveDept;
+
+    if (resolved.role === 'ROLE_SPV_REQUESTOR') {
+        resolved.effectiveRole = `Supervisor ${effectiveDept}`;
+    } else if (resolved.role === 'ROLE_MGR_REQUESTOR') {
+        resolved.effectiveRole = `Manager ${effectiveDept}`;
+    } else if (resolved.role === 'ROLE_FOREMAN_REQUESTOR') {
+        resolved.effectiveRole = `Foreman ${effectiveDept}`;
+    } else {
+        resolved.effectiveRole = resolved.role;
+    }
 
     if (resolved.label) {
         resolved.label = resolved.label
