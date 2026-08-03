@@ -694,14 +694,16 @@ body {
     color: var(--text-primary);
     overflow: hidden;
     height: 100vh;
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
 }
 
 /* App Layout Structure */
 .app-container {
     display: flex;
     height: 100vh;
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
     background: radial-gradient(circle at 70% 20%, #1e294b 0%, var(--bg-main) 70%);
 }
 
@@ -2269,7 +2271,8 @@ select.form-control,
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
     height: 100vh;
     background-color: rgba(2, 6, 12, 0.85);
     backdrop-filter: blur(15px);
@@ -4529,7 +4532,8 @@ select.form-control,
     left: 0;
     right: 0;
     bottom: 0;
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
     height: 100vh;
     height: 100dvh;
     background: #0f172a;
@@ -6183,7 +6187,8 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
     height: 100vh;
     z-index: 99999;
     background: #ffffff;
@@ -6525,12 +6530,22 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
         flex-wrap: wrap !important;
         gap: 6px !important;
     }
-    .control-bar {
+    .control-bar,
+    #drawing-control-bar,
+    #tab-general-ejo .control-bar,
+    #tab-drawing .control-bar,
+    #tab-projects .control-bar,
+    #tab-partlist .control-bar,
+    #tab-admin .control-bar {
+        display: flex !important;
         flex-direction: column !important;
         align-items: stretch !important;
-        padding: 1rem !important;
+        padding: 0.85rem !important;
         gap: 12px !important;
         grid-template-columns: 1fr !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
     }
     .control-bar .search-wrapper,
     .control-bar .filters-wrapper {
@@ -6895,5 +6910,51 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
         grid-template-columns: 1fr !important;
     }
 }
+
+/* Core Layout & Overflow Shielding Across All Viewports */
+html,
+body,
+.app-container,
+.main-content,
+.workspace-body,
+.tab-pane,
+.modal-backdrop,
+.login-wrapper,
+.welcome-fullscreen-overlay {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+}
+
+img,
+video,
+canvas,
+svg,
+iframe,
+embed {
+    max-width: 100% !important;
+}
+
+.table-responsive,
+.data-table-container,
+.table-container,
+.data-table {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    box-sizing: border-box !important;
+}
+
+.control-bar,
+.filters-wrapper,
+.kpi-grid,
+.summary-grid,
+.charts-grid,
+.analytics-layout-grid,
+.grid-main-bottom,
+.modal-card {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
 
 
