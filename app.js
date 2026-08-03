@@ -3916,6 +3916,16 @@ function switchTab(tabId) {
                 } else if (state.activeDrawingPhase === null || state.activeDrawingPhase === undefined) {
                     b.classList.add("active");
                 }
+            } else if (tabId === 'server-access') {
+                const bServerView = b.getAttribute("data-server-view");
+                const currentViewMode = state.serverAccessViewMode || 'role';
+                if (bServerView) {
+                    if (bServerView === currentViewMode) {
+                        b.classList.add("active");
+                    }
+                } else if (b.id === 'btn-nav-server-access') {
+                    b.classList.add("active");
+                }
             } else {
                 b.classList.add("active");
             }
@@ -16560,6 +16570,16 @@ function switchServerAccessViewMode(mode) {
     const btnUser = document.getElementById("server-access-mode-user");
     const btnBulk = document.getElementById("btn-server-access-bulk-default");
     const thead = document.getElementById("server-access-table-head");
+
+    // Sync active highlight for server access submenu buttons
+    document.querySelectorAll("#server-access-submenu .sub-btn").forEach(btn => {
+        const v = btn.getAttribute("data-server-view");
+        if (v === mode) {
+            btn.classList.add("active");
+        } else {
+            btn.classList.remove("active");
+        }
+    });
 
     if (mode && mode.startsWith("flow-")) {
         if (mainContainer) mainContainer.style.display = "none";
