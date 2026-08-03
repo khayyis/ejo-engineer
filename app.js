@@ -17110,7 +17110,9 @@ function resolveFlowchartStepForTicket(step, requestorDept) {
         resolved.label = resolved.label
             .replace(/DEPT_REQUESTOR/gi, effectiveDept)
             .replace(/\{DEPT\}/gi, effectiveDept)
-            .replace(/\{DEPT_REQUESTOR\}/gi, effectiveDept);
+            .replace(/\{DEPT_REQUESTOR\}/gi, effectiveDept)
+            .replace(/\[DEPT\]/gi, effectiveDept)
+            .replace(/\[DEPT_REQUESTOR\]/gi, effectiveDept);
     }
     return resolved;
 }
@@ -17130,7 +17132,7 @@ function getFlowchartStepsForModule(settingKey, requestorDept) {
                 { step: 1, key: "drafter", label: "DRAFTER (ENG)", role: "Drafter", dept: "ENG", require_signature: 1 },
                 { step: 2, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
                 { step: 3, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
-                { step: 4, key: "spv_epr", label: "SPV (EPR)", role: "Supervisor PRD", dept: "EPR", require_signature: 1 },
+                { step: 4, key: "spv_requestor", label: "SPV ({DEPT})", role: "ROLE_SPV_REQUESTOR", dept: "DEPT_REQUESTOR", require_signature: 1 },
                 { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 }
             ];
         } else if (settingKey === "approval_flowchart_project") {
@@ -17144,8 +17146,8 @@ function getFlowchartStepsForModule(settingKey, requestorDept) {
             ];
         } else {
             rawSteps = [
-                { step: 1, key: "staff_requestor", label: "STAFF (DEPT_REQUESTOR)", role: "user_PRD", dept: "DEPT_REQUESTOR", require_signature: 1 },
-                { step: 2, key: "spv_requestor", label: "SPV (DEPT_REQUESTOR)", role: "Supervisor PRD", dept: "DEPT_REQUESTOR", require_signature: 1 },
+                { step: 1, key: "staff_requestor", label: "STAFF ({DEPT})", role: "ROLE_REQUESTOR", dept: "DEPT_REQUESTOR", require_signature: 1 },
+                { step: 2, key: "spv_requestor", label: "SPV ({DEPT})", role: "ROLE_SPV_REQUESTOR", dept: "DEPT_REQUESTOR", require_signature: 1 },
                 { step: 3, key: "foreman_eng", label: "FOREMAN ENG", role: "Foreman Eng", dept: "ENG", require_signature: 1 },
                 { step: 4, key: "supervisor_eng", label: "SUPERVISOR ENG", role: "Supervisor Eng", dept: "ENG", require_signature: 1 },
                 { step: 5, key: "manager_eng", label: "MANAGER ENG", role: "Manager PRD", dept: "ENG", require_signature: 1 },
