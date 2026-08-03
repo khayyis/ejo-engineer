@@ -1942,7 +1942,18 @@ function initEventListeners() {
                 e.preventDefault();
                 const submenu = document.getElementById("flowchart-submenu");
                 const chevron = btn.querySelector(".flowchart-chevron");
-                toggleSubmenuSmooth(submenu, chevron);
+                if (submenu) {
+                    const isOpen = submenu.classList.contains("open") || submenu.style.display === "flex";
+                    if (isOpen) {
+                        submenu.classList.remove("open");
+                        submenu.style.display = "none";
+                        if (chevron) chevron.style.transform = "rotate(0deg)";
+                    } else {
+                        submenu.classList.add("open");
+                        submenu.style.display = "flex";
+                        if (chevron) chevron.style.transform = "rotate(180deg)";
+                    }
+                }
                 return;
             }
 
@@ -16592,10 +16603,18 @@ function switchServerAccessViewMode(mode) {
     });
 
     if (mode && mode.startsWith("flow-")) {
+        const serverAccessSubmenu = document.getElementById("server-access-submenu");
+        const serverAccessChevron = document.querySelector("#btn-nav-server-access .server-access-chevron");
+        if (serverAccessSubmenu) {
+            serverAccessSubmenu.classList.add("open");
+            if (serverAccessChevron) serverAccessChevron.classList.add("rotated");
+        }
+
         const flowchartSubmenu = document.getElementById("flowchart-submenu");
         const flowchartBtn = document.getElementById("btn-nav-flowchart");
         const chevron = document.querySelector("#btn-nav-flowchart .flowchart-chevron");
-        if (flowchartSubmenu && flowchartSubmenu.style.display !== "flex") {
+        if (flowchartSubmenu) {
+            flowchartSubmenu.classList.add("open");
             flowchartSubmenu.style.display = "flex";
             flowchartSubmenu.style.maxHeight = "500px";
             if (chevron) chevron.style.transform = "rotate(180deg)";
