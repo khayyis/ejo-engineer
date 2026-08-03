@@ -1,0 +1,7 @@
+.worktrees/
+.superpowers/
+__pycache__/
+*.db
+*.log
+scratch/
+uploads/
