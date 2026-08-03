@@ -5005,7 +5005,7 @@ function getVisibleGeneralEjos() {
     const role = state.currentUser.role || '';
     const userDept = getUserDepartmentCode();
 
-    // Global cross-department roles (Server, Plant Manager, Factory Manager, ENG team) see all General EJOs
+    // Global cross-department roles (Server, Plant Manager, Factory Manager, ENG team leads) see all General EJOs
     if (isGlobalLeadUser()) {
         return allowedGejos;
     }
@@ -5013,12 +5013,24 @@ function getVisibleGeneralEjos() {
     const userFull = (state.currentUser.fullname || '').toLowerCase().trim();
     const userName = (state.currentUser.username || '').toLowerCase().trim();
     const isDeptLeader = role.includes('Supervisor') || role.includes('Manager') || isDepartmentApprover(state.currentUser, userDept);
+    const isTechNonDrafter = isDrafterRole(role) && role !== 'Drafter';
 
     return allowedGejos.filter(e => {
         const isRequester = checkIsRequester(e.requester);
         const engineers = (e.engineer || '').split(',').map(name => name.trim().toLowerCase());
         const isAssigned = engineers.includes(userFull) || (userName && engineers.includes(userName));
         
+        // ponytail: Non-Drafter technical engineers (Sipil, Elektrik, Mekanik, Kalibrasi, Program, Otomotif)
+        // should ONLY see items they requested OR items assigned to them that are already In Progress or past Schedule phase
+        if (isTechNonDrafter) {
+            if (isRequester) return true;
+            if (isAssigned) {
+                const isSchedulePhase = e.status === 'Requested' || e.status === 'Approved' || (e.status || '').startsWith('Checking') || e.status === 'Waiting Dept Approval';
+                return !isSchedulePhase;
+            }
+            return false;
+        }
+
         // Supervisor & Manager of specific department ONLY see items in their department
         if (isDeptLeader) {
             const reqUser = (state.users || []).find(u => u.username === e.requester || u.fullname === e.requester);
@@ -5053,12 +5065,22 @@ function getVisibleStandardEjos() {
     const userFull = (state.currentUser.fullname || '').toLowerCase().trim();
     const userName = (state.currentUser.username || '').toLowerCase().trim();
     const isDeptLeader = role.includes('Supervisor') || role.includes('Manager') || isDepartmentApprover(state.currentUser, userDept);
+    const isTechNonDrafter = isDrafterRole(role) && role !== 'Drafter';
 
     return allowedEjos.filter(e => {
         const isRequester = checkIsRequester(e.requester);
         const engineers = (e.engineer || '').split(',').map(name => name.trim().toLowerCase());
         const isAssigned = engineers.includes(userFull) || (userName && engineers.includes(userName));
         const isDeptApprover = isDepartmentApprover(state.currentUser, e.dept);
+
+        if (isTechNonDrafter) {
+            if (isRequester) return true;
+            if (isAssigned) {
+                const isSchedulePhase = e.status === 'Requested' || e.status === 'Approved' || (e.status || '').startsWith('Checking') || e.status === 'Waiting Dept Approval';
+                return !isSchedulePhase;
+            }
+            return false;
+        }
 
         if (isDeptLeader) {
             const isSameDept = userDept && normalizeDepartmentCode(e.dept) === userDept;
