@@ -246,23 +246,31 @@
                             <span>Per Akun Personel</span>
                         </button>
 
-                        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08);">
-                            <div style="font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 12px; display: flex; align-items: center; gap: 6px;">
-                                <i data-lucide="git-merge" style="width: 12px; height: 12px;"></i>
-                                <span>Flowchart Tanda Tangan</span>
+                        <!-- Nested Dropdown Submenu: Flowchart Tanda Tangan -->
+                        <div class="nav-item-wrapper" style="margin-top: 4px;">
+                            <button class="nav-btn sub-btn" id="btn-nav-flowchart" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <i data-lucide="git-merge"></i>
+                                    <span>Flowchart Tanda Tangan</span>
+                                </div>
+                                <span class="flowchart-chevron-toggle" style="display: flex; align-items: center; padding: 2px;">
+                                    <i data-lucide="chevron-down" class="flowchart-chevron" style="width: 14px; height: 14px; transition: transform 0.2s;"></i>
+                                </span>
+                            </button>
+                            <div class="sidebar-submenu submenu" id="flowchart-submenu">
+                                <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="flow-gejo" style="padding-left: 24px;">
+                                    <i data-lucide="file-text"></i>
+                                    <span>General EJO</span>
+                                </button>
+                                <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="flow-drawing" style="padding-left: 24px;">
+                                    <i data-lucide="image"></i>
+                                    <span>Drawing EJO</span>
+                                </button>
+                                <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="flow-project" style="padding-left: 24px;">
+                                    <i data-lucide="folder-kanban"></i>
+                                    <span>Project</span>
+                                </button>
                             </div>
-                            <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="flow-gejo" style="padding-left: 20px;">
-                                <i data-lucide="file-text"></i>
-                                <span>General EJO</span>
-                            </button>
-                            <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="flow-drawing" style="padding-left: 20px;">
-                                <i data-lucide="image"></i>
-                                <span>Drawing EJO</span>
-                            </button>
-                            <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="flow-project" style="padding-left: 20px;">
-                                <i data-lucide="folder-kanban"></i>
-                                <span>Project</span>
-                            </button>
                         </div>
                     </div>
                 </div>

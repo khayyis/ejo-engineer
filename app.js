@@ -1936,6 +1936,16 @@ function initEventListeners() {
                 return;
             }
 
+            // ponytail: handle toggle for nested flowchart button click
+            if (btn.id === "btn-nav-flowchart") {
+                e.stopPropagation();
+                e.preventDefault();
+                const submenu = document.getElementById("flowchart-submenu");
+                const chevron = btn.querySelector(".flowchart-chevron");
+                toggleSubmenuSmooth(submenu, chevron);
+                return;
+            }
+
             // ponytail: handle toggle for nested history button click
             if (btn.id === "btn-nav-history") {
                 const submenu = document.getElementById("history-submenu");
@@ -16582,6 +16592,16 @@ function switchServerAccessViewMode(mode) {
     });
 
     if (mode && mode.startsWith("flow-")) {
+        const flowchartSubmenu = document.getElementById("flowchart-submenu");
+        const flowchartBtn = document.getElementById("btn-nav-flowchart");
+        const chevron = document.querySelector("#btn-nav-flowchart .flowchart-chevron");
+        if (flowchartSubmenu && flowchartSubmenu.style.display !== "flex") {
+            flowchartSubmenu.style.display = "flex";
+            flowchartSubmenu.style.maxHeight = "500px";
+            if (chevron) chevron.style.transform = "rotate(180deg)";
+        }
+        if (flowchartBtn) flowchartBtn.classList.add("active");
+
         if (mainContainer) mainContainer.style.display = "none";
         if (flowchartContainer) {
             flowchartContainer.style.display = "block";
