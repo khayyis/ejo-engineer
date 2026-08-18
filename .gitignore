@@ -1,7 +1,71 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+ejo_database.db
+
+# Caches and scratch
+.pytest_cache/
+.kimchi/
+scratch/
+_pm/
 .worktrees/
 .superpowers/
-__pycache__/
-*.db
-*.log
-scratch/
-uploads/
+
+# Media recordings & screen captures
+*.mp4
+*.mkv
+*.avi
+0[1-9]_*.png
+verify_*.png
+pass_*.png
+current_mobile_*.png
+dashboard_*.png
+
+# Uploads directory (exclude runtime uploads, preserve directory structure)
+uploads/*
+!uploads/.gitkeep
+
+# Temporary and test dumps
+*.orig.pdf
+*_test.png
+test_*.pdf
+test_*.png
+test_*.jpg
+test_*.py
+test_output.log
+output.txt
+screencapture-*.pdf
+DWG OS+IN*.xlsx
+OS+IN*.xlsx
+REKAP EJO*.csv
+REKAP EJO*.xlsx
+WSP MASTER MATERIAL*.xlsx
+nul
+
+# Laravel ignored folders
+laravel/vendor/
+laravel/node_modules/
+laravel/.env
+laravel/.env.backup
+laravel/.env.production
+laravel/storage/*.key
+laravel/storage/logs/*.log
+laravel/storage/framework/cache/data/*
+laravel/storage/framework/sessions/*
+laravel/storage/framework/views/*
+!laravel/storage/framework/cache/data/.gitkeep
+!laravel/storage/framework/sessions/.gitkeep
+!laravel/storage/framework/views/.gitkeep
+
+# Environment & IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

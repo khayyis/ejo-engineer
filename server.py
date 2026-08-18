@@ -13,6 +13,7 @@ import uuid
 import sys
 import time
 import threading
+from datetime import datetime, timedelta
 
 # ponytail: auto-timeout decorator for all connections to prevent database lock conflicts
 sqlite3.connect_orig = sqlite3.connect
@@ -35,6 +36,72 @@ try:
 except ImportError:
     fitz = None
 
+def map_visual_rect_to_page(page, vis_rect):
+    rot = page.rotation % 360
+    w_raw = page.mediabox.width
+    h_raw = page.mediabox.height
+    vx0, vy0, vx1, vy1 = vis_rect.x0, vis_rect.y0, vis_rect.x1, vis_rect.y1
+    
+    if rot == 0:
+        return fitz.Rect(vx0, vy0, vx1, vy1), 0, 0
+    elif rot == 90:
+        return fitz.Rect(vy0, h_raw - vx1, vy1, h_raw - vx0), 90, 90
+    elif rot == 180:
+        return fitz.Rect(w_raw - vx1, h_raw - vy1, w_raw - vx0, h_raw - vy0), 180, 180
+    elif rot == 270:
+        return fitz.Rect(w_raw - vy1, vx0, w_raw - vy0, vx1), 270, 270
+    return fitz.Rect(vx0, vy0, vx1, vy1), 0, 0
+
+def format_and_fit_signer_name(name, box_len, max_fontsize=5.7, min_fontsize=4.8):
+    if not name or not str(name).strip():
+        return '', max_fontsize
+    name_str = str(name).strip()
+    
+    if not fitz:
+        return name_str, max_fontsize
+
+    w_at_max = fitz.get_text_length(name_str, fontname='helv', fontsize=max_fontsize)
+    safe_w = max(10.0, box_len - 2.0)
+    
+    # 1. If full name already fits cleanly within safe box width, keep it without changes!
+    if w_at_max <= safe_w:
+        return name_str, max_fontsize
+
+    # 2. Smart Abbreviation Cascades (Prioritize keeping uniform font size over shrinking):
+    parts = name_str.split()
+    if len(parts) == 2:
+        # e.g., "Fiki Erwansyah" -> "Fiki E."
+        abbr_name = f"{parts[0]} {parts[1][0]}."
+        w_abbr = fitz.get_text_length(abbr_name, fontname='helv', fontsize=max_fontsize)
+        if w_abbr <= safe_w:
+            return abbr_name, max_fontsize
+        return abbr_name, min(max_fontsize, max(min_fontsize, safe_w / (fitz.get_text_length(abbr_name, fontname='helv', fontsize=1.0))))
+        
+    elif len(parts) == 3:
+        # e.g., "Rifan Nur Cahyadi" -> "Rifan N. C." or "Muhammad R. P."
+        abbr1 = f"{parts[0]} {parts[1]} {parts[2][0]}."
+        if fitz.get_text_length(abbr1, fontname='helv', fontsize=max_fontsize) <= safe_w:
+            return abbr1, max_fontsize
+            
+        abbr2 = f"{parts[0]} {parts[1][0]}. {parts[2][0]}."
+        w_abbr2 = fitz.get_text_length(abbr2, fontname='helv', fontsize=max_fontsize)
+        if w_abbr2 <= safe_w:
+            return abbr2, max_fontsize
+        return abbr2, min(max_fontsize, max(min_fontsize, safe_w / (fitz.get_text_length(abbr2, fontname='helv', fontsize=1.0))))
+        
+    elif len(parts) >= 4:
+        # e.g., "Rifan Nur Cahya Indrawan" -> "Rifan N. C. I."
+        abbr_all = f"{parts[0]} " + ' '.join([p[0] + '.' for p in parts[1:]])
+        w_all = fitz.get_text_length(abbr_all, fontname='helv', fontsize=max_fontsize)
+        if w_all <= safe_w:
+            return abbr_all, max_fontsize
+        return abbr_all, min(max_fontsize, max(min_fontsize, safe_w / (fitz.get_text_length(abbr_all, fontname='helv', fontsize=1.0))))
+        
+    # Single word name: scale down slightly if needed
+    w_at_1 = fitz.get_text_length(name_str, fontname='helv', fontsize=1.0)
+    fit_fs = safe_w / w_at_1
+    return name_str, min(max_fontsize, max(min_fontsize, fit_fs))
+
 def apply_pdf_signature(file_url, role, signature_base64, signer_name, etiket_category='Sipil', etiket_orientation='landscape'):
     if not fitz:
         print("Warning: PyMuPDF (fitz) is not installed. PDF signing skipped.")
@@ -51,15 +118,14 @@ def apply_pdf_signature(file_url, role, signature_base64, signer_name, etiket_ca
         # Decode base64 image if valid
         img_bytes = None
         if signature_base64 and isinstance(signature_base64, str):
-            if ',' in signature_base64:
-                header, base64_str = signature_base64.split(",", 1)
-            else:
-                base64_str = signature_base64
             try:
+                if ',' in signature_base64:
+                    header, base64_str = signature_base64.split(",", 1)
+                else:
+                    base64_str = signature_base64
                 img_bytes = base64.b64decode(base64_str)
-            except Exception as b64_err:
-                print(f"Non-base64 signature string for role '{role}': {b64_err}")
-                img_bytes = None
+            except Exception as e:
+                print(f"Error decoding signature base64: {e}")
 
         doc = fitz.open(local_path)
         page = doc[0]
@@ -67,84 +133,106 @@ def apply_pdf_signature(file_url, role, signature_base64, signer_name, etiket_ca
         cat_lower = str(etiket_category or '').lower()
         orient_lower = str(etiket_orientation or '').lower()
 
-        # Coordinate maps for all 4 etiket templates (img rect + text rect for username)
+        # Coordinate mappings for all supported title block orientations
         coord_maps = {
             # 1. Sipil - Landscape (Pak Diki Landscape: A3 1190.55 x 841.89)
-            # Layout table:
-            # - DI BUAT: Kiri = Drafter, Kanan = Foreman
-            # - DIPERIKSA: Kiri = Requestor (Staff EPR / Staff User), Kanan = SPV User
-            # - DISETUJUI (Tengah): Engineer (Supervisor ENG / Manager ENG / Engineer)
-            # - DISETUJUI (Atas): Factory Manager
+            # Layout from Left to Right:
+            # - Kolom 1 (DRAWN By)    : x= 799.68 ~ 912.45  (drafter: kiri, foreman: kanan)
+            # - Kolom 2 (CHECKED By)  : x= 912.45 ~ 1025.23 (requester/staff: kiri, dept_approval/spv_dept: kanan)
+            # - Kolom 3 (APPROVED By) : x=1025.23 ~ 1138.00 (spv_eng: kiri, manager_eng: kanan)
+            # - Kolom 4 (APPROVED By) : x=1025.23 ~ 1138.00 (factory_manager: full width di atas Kolom 3, y=508.26~609.80)
             'diki_landscape': {
-                'drafter': {'img': fitz.Rect(802.68, 630.0, 854.06, 692.0), 'text': fitz.Rect(799.0, 694.0, 856.0, 707.0)},
-                'foreman': {'img': fitz.Rect(858.06, 630.0, 909.45, 692.0), 'text': fitz.Rect(856.0, 694.0, 912.0, 707.0)},
-                'requester': {'img': fitz.Rect(915.45, 630.0, 966.84, 692.0), 'text': fitz.Rect(913.0, 694.0, 968.0, 707.0)},
-                'staff_user': {'img': fitz.Rect(915.45, 630.0, 966.84, 692.0), 'text': fitz.Rect(913.0, 694.0, 968.0, 707.0)},
-                'staff_epr': {'img': fitz.Rect(915.45, 630.0, 966.84, 692.0), 'text': fitz.Rect(913.0, 694.0, 968.0, 707.0)},
-                'dept': {'img': fitz.Rect(970.84, 630.0, 1022.23, 692.0), 'text': fitz.Rect(969.0, 694.0, 1024.0, 707.0)},
-                'dept_approval': {'img': fitz.Rect(970.84, 630.0, 1022.23, 692.0), 'text': fitz.Rect(969.0, 694.0, 1024.0, 707.0)},
-                'spv_user': {'img': fitz.Rect(970.84, 630.0, 1022.23, 692.0), 'text': fitz.Rect(969.0, 694.0, 1024.0, 707.0)},
-                'spv_dept': {'img': fitz.Rect(970.84, 630.0, 1022.23, 692.0), 'text': fitz.Rect(969.0, 694.0, 1024.0, 707.0)},
-                'supervisor_user': {'img': fitz.Rect(970.84, 630.0, 1022.23, 692.0), 'text': fitz.Rect(969.0, 694.0, 1024.0, 707.0)},
-                'supervisor': {'img': fitz.Rect(1028.23, 630.0, 1079.61, 692.0), 'text': fitz.Rect(1025.0, 694.0, 1081.0, 707.0)},
-                'spv_eng': {'img': fitz.Rect(1028.23, 630.0, 1079.61, 692.0), 'text': fitz.Rect(1025.0, 694.0, 1081.0, 707.0)},
-                'supervisor_eng': {'img': fitz.Rect(1028.23, 630.0, 1079.61, 692.0), 'text': fitz.Rect(1025.0, 694.0, 1081.0, 707.0)},
-                'manager': {'img': fitz.Rect(1083.61, 630.0, 1135.00, 692.0), 'text': fitz.Rect(1081.0, 694.0, 1138.0, 707.0)},
-                'manager_eng': {'img': fitz.Rect(1083.61, 630.0, 1135.00, 692.0), 'text': fitz.Rect(1081.0, 694.0, 1138.0, 707.0)},
-                'engineer': {'img': fitz.Rect(1083.61, 630.0, 1135.00, 692.0), 'text': fitz.Rect(1081.0, 694.0, 1138.0, 707.0)},
-                'factory_manager': {'img': fitz.Rect(1028.23, 528.0, 1135.00, 590.0), 'text': fitz.Rect(1025.0, 592.0, 1138.0, 605.0)}
+                'drafter':          {'img': fitz.Rect( 802.0, 628.0,  854.0, 693.0), 'text': fitz.Rect( 800.0, 695.0,  856.0, 708.0)},
+                'foreman':          {'img': fitz.Rect( 858.0, 628.0,  910.0, 693.0), 'text': fitz.Rect( 856.0, 695.0,  912.0, 708.0)},
+                'requester':        {'img': fitz.Rect( 915.0, 628.0,  967.0, 693.0), 'text': fitz.Rect( 913.0, 695.0,  969.0, 708.0)},
+                'staff_user':       {'img': fitz.Rect( 915.0, 628.0,  967.0, 693.0), 'text': fitz.Rect( 913.0, 695.0,  969.0, 708.0)},
+                'staff_epr':        {'img': fitz.Rect( 915.0, 628.0,  967.0, 693.0), 'text': fitz.Rect( 913.0, 695.0,  969.0, 708.0)},
+                'dept':             {'img': fitz.Rect( 971.0, 628.0, 1023.0, 693.0), 'text': fitz.Rect( 969.0, 695.0, 1025.0, 708.0)},
+                'dept_approval':    {'img': fitz.Rect( 971.0, 628.0, 1023.0, 693.0), 'text': fitz.Rect( 969.0, 695.0, 1025.0, 708.0)},
+                'spv_user':         {'img': fitz.Rect( 971.0, 628.0, 1023.0, 693.0), 'text': fitz.Rect( 969.0, 695.0, 1025.0, 708.0)},
+                'spv_dept':         {'img': fitz.Rect( 971.0, 628.0, 1023.0, 693.0), 'text': fitz.Rect( 969.0, 695.0, 1025.0, 708.0)},
+                'supervisor_user':  {'img': fitz.Rect( 971.0, 628.0, 1023.0, 693.0), 'text': fitz.Rect( 969.0, 695.0, 1025.0, 708.0)},
+                'supervisor':       {'img': fitz.Rect(1028.0, 628.0, 1080.0, 693.0), 'text': fitz.Rect(1026.0, 695.0, 1082.0, 708.0)},
+                'spv_eng':          {'img': fitz.Rect(1028.0, 628.0, 1080.0, 693.0), 'text': fitz.Rect(1026.0, 695.0, 1082.0, 708.0)},
+                'supervisor_eng':   {'img': fitz.Rect(1028.0, 628.0, 1080.0, 693.0), 'text': fitz.Rect(1026.0, 695.0, 1082.0, 708.0)},
+                'manager':          {'img': fitz.Rect(1083.0, 628.0, 1135.0, 693.0), 'text': fitz.Rect(1082.0, 695.0, 1137.0, 708.0)},
+                'manager_eng':      {'img': fitz.Rect(1083.0, 628.0, 1135.0, 693.0), 'text': fitz.Rect(1082.0, 695.0, 1137.0, 708.0)},
+                'engineer':         {'img': fitz.Rect(1083.0, 628.0, 1135.0, 693.0), 'text': fitz.Rect(1082.0, 695.0, 1137.0, 708.0)},
+                'factory_manager':  {'img': fitz.Rect(1028.0, 526.0, 1135.0, 592.0), 'text': fitz.Rect(1026.0, 594.0, 1137.0, 607.0)},
             },
             # 2. Sipil - Portrait (Pak Diki Portrait: A3 841.89 x 1190.55)
+            # Kol-1 DRAWN BY    : x0= 22.00 ~ x1= 220.64  (drafter, foreman)
+            # Kol-2 CHECKED By  : x0=220.64 ~ x1= 420.95  (requester/staff, dept_approval/spv_user)
+            # Kol-3 APPROVED By : x0=420.95 ~ x1= 620.32  (supervisor_eng/spv_eng, manager_eng)
+            # Kol-4 APPROVED By : x0=620.32 ~ x1= 819.69  (factory_manager)
             'diki_portrait': {
-                'drafter': {'img': fitz.Rect(25.0, 1055.0, 120.0, 1148.0), 'text': fitz.Rect(22.0, 1150.0, 122.0, 1164.0)},
-                'foreman': {'img': fitz.Rect(124.0, 1055.0, 218.0, 1148.0), 'text': fitz.Rect(122.0, 1150.0, 220.0, 1164.0)},
-                'requester': {'img': fitz.Rect(224.0, 1055.0, 318.0, 1148.0), 'text': fitz.Rect(222.0, 1150.0, 320.0, 1164.0)},
-                'staff_user': {'img': fitz.Rect(224.0, 1055.0, 318.0, 1148.0), 'text': fitz.Rect(222.0, 1150.0, 320.0, 1164.0)},
-                'dept': {'img': fitz.Rect(324.0, 1055.0, 418.0, 1148.0), 'text': fitz.Rect(322.0, 1150.0, 420.0, 1164.0)},
-                'dept_approval': {'img': fitz.Rect(324.0, 1055.0, 418.0, 1148.0), 'text': fitz.Rect(322.0, 1150.0, 420.0, 1164.0)},
-                'spv_user': {'img': fitz.Rect(324.0, 1055.0, 418.0, 1148.0), 'text': fitz.Rect(322.0, 1150.0, 420.0, 1164.0)},
-                'spv_dept': {'img': fitz.Rect(324.0, 1055.0, 418.0, 1148.0), 'text': fitz.Rect(322.0, 1150.0, 420.0, 1164.0)},
-                'supervisor': {'img': fitz.Rect(423.0, 1055.0, 517.0, 1148.0), 'text': fitz.Rect(421.0, 1150.0, 519.0, 1164.0)},
-                'spv_eng': {'img': fitz.Rect(423.0, 1055.0, 517.0, 1148.0), 'text': fitz.Rect(421.0, 1150.0, 519.0, 1164.0)},
-                'supervisor_eng': {'img': fitz.Rect(423.0, 1055.0, 517.0, 1148.0), 'text': fitz.Rect(421.0, 1150.0, 519.0, 1164.0)},
-                'manager': {'img': fitz.Rect(523.0, 1055.0, 617.0, 1148.0), 'text': fitz.Rect(521.0, 1150.0, 619.0, 1164.0)},
-                'manager_eng': {'img': fitz.Rect(523.0, 1055.0, 617.0, 1148.0), 'text': fitz.Rect(521.0, 1150.0, 619.0, 1164.0)},
-                'engineer': {'img': fitz.Rect(523.0, 1055.0, 617.0, 1148.0), 'text': fitz.Rect(521.0, 1150.0, 619.0, 1164.0)},
-                'factory_manager': {'img': fitz.Rect(623.0, 1055.0, 816.0, 1148.0), 'text': fitz.Rect(621.0, 1150.0, 818.0, 1164.0)}
+                'drafter':          {'img': fitz.Rect( 25.0, 1057.0, 120.0, 1148.0), 'text': fitz.Rect( 22.0, 1152.0, 122.0, 1165.0)},
+                'foreman':          {'img': fitz.Rect(124.0, 1057.0, 219.0, 1148.0), 'text': fitz.Rect(122.0, 1152.0, 220.0, 1165.0)},
+                'requester':        {'img': fitz.Rect(224.0, 1057.0, 319.0, 1148.0), 'text': fitz.Rect(222.0, 1152.0, 320.0, 1165.0)},
+                'staff_user':       {'img': fitz.Rect(224.0, 1057.0, 319.0, 1148.0), 'text': fitz.Rect(222.0, 1152.0, 320.0, 1165.0)},
+                'staff_epr':        {'img': fitz.Rect(224.0, 1057.0, 319.0, 1148.0), 'text': fitz.Rect(222.0, 1152.0, 320.0, 1165.0)},
+                'dept':             {'img': fitz.Rect(323.0, 1057.0, 418.0, 1148.0), 'text': fitz.Rect(321.0, 1152.0, 420.0, 1165.0)},
+                'dept_approval':    {'img': fitz.Rect(323.0, 1057.0, 418.0, 1148.0), 'text': fitz.Rect(321.0, 1152.0, 420.0, 1165.0)},
+                'spv_user':         {'img': fitz.Rect(323.0, 1057.0, 418.0, 1148.0), 'text': fitz.Rect(321.0, 1152.0, 420.0, 1165.0)},
+                'spv_dept':         {'img': fitz.Rect(323.0, 1057.0, 418.0, 1148.0), 'text': fitz.Rect(321.0, 1152.0, 420.0, 1165.0)},
+                'supervisor_user':  {'img': fitz.Rect(323.0, 1057.0, 418.0, 1148.0), 'text': fitz.Rect(321.0, 1152.0, 420.0, 1165.0)},
+                'supervisor':       {'img': fitz.Rect(423.0, 1057.0, 518.0, 1148.0), 'text': fitz.Rect(421.0, 1152.0, 520.0, 1165.0)},
+                'spv_eng':          {'img': fitz.Rect(423.0, 1057.0, 518.0, 1148.0), 'text': fitz.Rect(421.0, 1152.0, 520.0, 1165.0)},
+                'supervisor_eng':   {'img': fitz.Rect(423.0, 1057.0, 518.0, 1148.0), 'text': fitz.Rect(421.0, 1152.0, 520.0, 1165.0)},
+                'manager':          {'img': fitz.Rect(522.0, 1057.0, 618.0, 1148.0), 'text': fitz.Rect(520.0, 1152.0, 619.0, 1165.0)},
+                'manager_eng':      {'img': fitz.Rect(522.0, 1057.0, 618.0, 1148.0), 'text': fitz.Rect(520.0, 1152.0, 619.0, 1165.0)},
+                'engineer':         {'img': fitz.Rect(522.0, 1057.0, 618.0, 1148.0), 'text': fitz.Rect(520.0, 1152.0, 619.0, 1165.0)},
+                'factory_manager':  {'img': fitz.Rect(622.0, 1057.0, 817.0, 1148.0), 'text': fitz.Rect(620.0, 1152.0, 819.0, 1165.0)},
             },
             # 3. Mekanik / Part - Landscape (Pak Rifan Landscape: A4 842.0 x 595.0)
+            # Layout from Right to Left:
+            # - Kolom 4 (Paling Kanan): Drawn (Drafter kiri), Checked (Foreman kanan)
+            # - Kolom 3: Request (Requester/Staff Dept kiri), Checked (SPV Dept kanan)
+            # - Kolom 2: Checked (SPV ENG - Muhono centered across full column)
+            # - Kolom 1 (Paling Kiri): Approved (Manager ENG / Edy Santoso centered across full column)
             'rifan_landscape': {
-                'drafter': {'img': fitz.Rect(712.0, 485.0, 748.0, 525.0), 'text': fitz.Rect(710.0, 526.0, 750.0, 537.0)},
-                'foreman': {'img': fitz.Rect(752.0, 485.0, 788.0, 525.0), 'text': fitz.Rect(750.0, 526.0, 790.0, 537.0)},
-                'requester': {'img': fitz.Rect(632.0, 485.0, 708.0, 525.0), 'text': fitz.Rect(630.0, 526.0, 710.0, 537.0)},
-                'dept': {'img': fitz.Rect(632.0, 485.0, 708.0, 525.0), 'text': fitz.Rect(630.0, 526.0, 710.0, 537.0)},
-                'dept_approval': {'img': fitz.Rect(632.0, 485.0, 708.0, 525.0), 'text': fitz.Rect(630.0, 526.0, 710.0, 537.0)},
-                'spv_user': {'img': fitz.Rect(632.0, 485.0, 708.0, 525.0), 'text': fitz.Rect(630.0, 526.0, 710.0, 537.0)},
-                'spv_dept': {'img': fitz.Rect(632.0, 485.0, 708.0, 525.0), 'text': fitz.Rect(630.0, 526.0, 710.0, 537.0)},
-                'supervisor': {'img': fitz.Rect(552.0, 485.0, 588.0, 525.0), 'text': fitz.Rect(550.0, 526.0, 589.0, 537.0)},
-                'spv_eng': {'img': fitz.Rect(552.0, 485.0, 588.0, 525.0), 'text': fitz.Rect(550.0, 526.0, 589.0, 537.0)},
-                'supervisor_eng': {'img': fitz.Rect(552.0, 485.0, 588.0, 525.0), 'text': fitz.Rect(550.0, 526.0, 589.0, 537.0)},
-                'manager': {'img': fitz.Rect(590.0, 485.0, 628.0, 525.0), 'text': fitz.Rect(589.0, 526.0, 630.0, 537.0)},
-                'manager_eng': {'img': fitz.Rect(590.0, 485.0, 628.0, 525.0), 'text': fitz.Rect(589.0, 526.0, 630.0, 537.0)},
-                'engineer': {'img': fitz.Rect(590.0, 485.0, 628.0, 525.0), 'text': fitz.Rect(589.0, 526.0, 630.0, 537.0)},
-                'factory_manager': {'img': fitz.Rect(792.0, 485.0, 822.0, 525.0), 'text': fitz.Rect(790.0, 526.0, 824.0, 537.0)}
+                'drafter':          {'img': fitz.Rect(755.0, 517.0, 786.0, 548.0), 'text': fitz.Rect(753.5, 549.0, 786.5, 560.0)},
+                'foreman':          {'img': fitz.Rect(789.0, 517.0, 820.0, 548.0), 'text': fitz.Rect(787.5, 549.0, 820.5, 560.0)},
+                'requester':        {'img': fitz.Rect(685.0, 517.0, 717.0, 548.0), 'text': fitz.Rect(684.5, 549.0, 717.5, 560.0)},
+                'staff_user':       {'img': fitz.Rect(685.0, 517.0, 717.0, 548.0), 'text': fitz.Rect(684.5, 549.0, 717.5, 560.0)},
+                'staff_epr':        {'img': fitz.Rect(685.0, 517.0, 717.0, 548.0), 'text': fitz.Rect(684.5, 549.0, 717.5, 560.0)},
+                'dept':             {'img': fitz.Rect(719.0, 517.0, 751.0, 548.0), 'text': fitz.Rect(718.5, 549.0, 751.5, 560.0)},
+                'dept_approval':    {'img': fitz.Rect(719.0, 517.0, 751.0, 548.0), 'text': fitz.Rect(718.5, 549.0, 751.5, 560.0)},
+                'spv_user':         {'img': fitz.Rect(719.0, 517.0, 751.0, 548.0), 'text': fitz.Rect(718.5, 549.0, 751.5, 560.0)},
+                'spv_dept':         {'img': fitz.Rect(719.0, 517.0, 751.0, 548.0), 'text': fitz.Rect(718.5, 549.0, 751.5, 560.0)},
+                'supervisor_user':  {'img': fitz.Rect(719.0, 517.0, 751.0, 548.0), 'text': fitz.Rect(718.5, 549.0, 751.5, 560.0)},
+                'supervisor':       {'img': fitz.Rect(624.0, 517.0, 676.0, 548.0), 'text': fitz.Rect(616.0, 549.0, 683.0, 560.0)},
+                'spv_eng':          {'img': fitz.Rect(624.0, 517.0, 676.0, 548.0), 'text': fitz.Rect(616.0, 549.0, 683.0, 560.0)},
+                'supervisor_eng':   {'img': fitz.Rect(624.0, 517.0, 676.0, 548.0), 'text': fitz.Rect(616.0, 549.0, 683.0, 560.0)},
+                'manager':          {'img': fitz.Rect(555.0, 517.0, 607.0, 548.0), 'text': fitz.Rect(547.0, 549.0, 614.0, 560.0)},
+                'manager_eng':      {'img': fitz.Rect(555.0, 517.0, 607.0, 548.0), 'text': fitz.Rect(547.0, 549.0, 614.0, 560.0)},
+                'engineer':         {'img': fitz.Rect(555.0, 517.0, 607.0, 548.0), 'text': fitz.Rect(547.0, 549.0, 614.0, 560.0)},
+                'factory_manager':  {'img': fitz.Rect(555.0, 517.0, 607.0, 548.0), 'text': fitz.Rect(547.0, 549.0, 614.0, 560.0)}
             },
             # 4. Mekanik / Part - Portrait (Pak Rifan Portrait: A4 595.0 x 842.0)
+            # Layout from Right to Left (sama seperti etiket mekanik landscape):
+            # - Kolom 4 (Paling Kanan): Drawn (Drafter kiri), Checked (Foreman kanan)
+            # - Kolom 3: Request (Requester/Staff Dept kiri), Checked (SPV Dept kanan)
+            # - Kolom 2: Checked (SPV ENG - Muhono centered across full column)
+            # - Kolom 1 (Paling Kiri): Approved (Manager ENG / Edy Santoso centered across full column)
             'rifan_portrait': {
-                'drafter': {'img': fitz.Rect(460.0, 730.0, 486.0, 772.0), 'text': fitz.Rect(458.0, 773.0, 488.0, 784.0)},
-                'foreman': {'img': fitz.Rect(488.0, 730.0, 514.0, 772.0), 'text': fitz.Rect(486.0, 773.0, 516.0, 784.0)},
-                'requester': {'img': fitz.Rect(402.0, 730.0, 455.0, 772.0), 'text': fitz.Rect(400.0, 773.0, 457.0, 784.0)},
-                'dept': {'img': fitz.Rect(402.0, 730.0, 455.0, 772.0), 'text': fitz.Rect(400.0, 773.0, 457.0, 784.0)},
-                'dept_approval': {'img': fitz.Rect(402.0, 730.0, 455.0, 772.0), 'text': fitz.Rect(400.0, 773.0, 457.0, 784.0)},
-                'spv_user': {'img': fitz.Rect(402.0, 730.0, 455.0, 772.0), 'text': fitz.Rect(400.0, 773.0, 457.0, 784.0)},
-                'spv_dept': {'img': fitz.Rect(402.0, 730.0, 455.0, 772.0), 'text': fitz.Rect(400.0, 773.0, 457.0, 784.0)},
-                'supervisor': {'img': fitz.Rect(331.0, 730.0, 363.0, 772.0), 'text': fitz.Rect(329.0, 773.0, 364.0, 784.0)},
-                'spv_eng': {'img': fitz.Rect(331.0, 730.0, 363.0, 772.0), 'text': fitz.Rect(329.0, 773.0, 364.0, 784.0)},
-                'supervisor_eng': {'img': fitz.Rect(331.0, 730.0, 363.0, 772.0), 'text': fitz.Rect(329.0, 773.0, 364.0, 784.0)},
-                'manager': {'img': fitz.Rect(365.0, 730.0, 398.0, 772.0), 'text': fitz.Rect(364.0, 773.0, 400.0, 784.0)},
-                'manager_eng': {'img': fitz.Rect(365.0, 730.0, 398.0, 772.0), 'text': fitz.Rect(364.0, 773.0, 400.0, 784.0)},
-                'engineer': {'img': fitz.Rect(365.0, 730.0, 398.0, 772.0), 'text': fitz.Rect(364.0, 773.0, 400.0, 784.0)},
-                'factory_manager': {'img': fitz.Rect(518.0, 730.0, 575.0, 772.0), 'text': fitz.Rect(516.0, 773.0, 577.0, 784.0)}
+                'drafter':          {'img': fitz.Rect(518.0, 673.5, 544.3, 706.5), 'text': fitz.Rect(517.0, 707.0, 545.3, 717.5)},
+                'foreman':          {'img': fitz.Rect(547.1, 673.5, 573.4, 706.5), 'text': fitz.Rect(546.1, 707.0, 574.4, 717.5)},
+                'requester':        {'img': fitz.Rect(459.8, 673.5, 486.1, 706.5), 'text': fitz.Rect(458.8, 707.0, 487.1, 717.5)},
+                'staff_user':       {'img': fitz.Rect(459.8, 673.5, 486.1, 706.5), 'text': fitz.Rect(458.8, 707.0, 487.1, 717.5)},
+                'staff_epr':        {'img': fitz.Rect(459.8, 673.5, 486.1, 706.5), 'text': fitz.Rect(458.8, 707.0, 487.1, 717.5)},
+                'dept':             {'img': fitz.Rect(488.9, 673.5, 515.2, 706.5), 'text': fitz.Rect(487.9, 707.0, 516.2, 717.5)},
+                'dept_approval':    {'img': fitz.Rect(488.9, 673.5, 515.2, 706.5), 'text': fitz.Rect(487.9, 707.0, 516.2, 717.5)},
+                'spv_user':         {'img': fitz.Rect(488.9, 673.5, 515.2, 706.5), 'text': fitz.Rect(487.9, 707.0, 516.2, 717.5)},
+                'spv_dept':         {'img': fitz.Rect(488.9, 673.5, 515.2, 706.5), 'text': fitz.Rect(487.9, 707.0, 516.2, 717.5)},
+                'supervisor_user':  {'img': fitz.Rect(488.9, 673.5, 515.2, 706.5), 'text': fitz.Rect(487.9, 707.0, 516.2, 717.5)},
+                'supervisor':       {'img': fitz.Rect(402.0, 673.5, 456.5, 706.5), 'text': fitz.Rect(401.0, 707.0, 457.5, 717.5)},
+                'spv_eng':          {'img': fitz.Rect(402.0, 673.5, 456.5, 706.5), 'text': fitz.Rect(401.0, 707.0, 457.5, 717.5)},
+                'supervisor_eng':   {'img': fitz.Rect(402.0, 673.5, 456.5, 706.5), 'text': fitz.Rect(401.0, 707.0, 457.5, 717.5)},
+                'manager':          {'img': fitz.Rect(330.5, 673.5, 398.0, 706.5), 'text': fitz.Rect(329.5, 707.0, 399.0, 717.5)},
+                'manager_eng':      {'img': fitz.Rect(330.5, 673.5, 398.0, 706.5), 'text': fitz.Rect(329.5, 707.0, 399.0, 717.5)},
+                'engineer':         {'img': fitz.Rect(330.5, 673.5, 398.0, 706.5), 'text': fitz.Rect(329.5, 707.0, 399.0, 717.5)},
+                'factory_manager':  {'img': fitz.Rect(330.5, 673.5, 398.0, 706.5), 'text': fitz.Rect(329.5, 707.0, 399.0, 717.5)}
             }
         }
 
@@ -161,7 +249,8 @@ def apply_pdf_signature(file_url, role, signature_base64, signer_name, etiket_ca
             text_rect = target.get('text') if isinstance(target, dict) else None
 
             if img_rect and img_bytes:
-                page.insert_image(img_rect, stream=img_bytes)
+                raw_img, rot_img, _ = map_visual_rect_to_page(page, img_rect)
+                page.insert_image(raw_img, stream=img_bytes, rotate=rot_img)
 
             if text_rect and signer_name:
                 clean_name = str(signer_name).strip()
@@ -176,7 +265,14 @@ def apply_pdf_signature(file_url, role, signature_base64, signer_name, etiket_ca
                     db_conn.close()
                 except Exception as db_err:
                     pass
-                page.insert_textbox(text_rect, clean_name, fontsize=7, fontname='helv', color=(0, 0, 0), align=1)
+                raw_txt, _, rot_txt = map_visual_rect_to_page(page, text_rect)
+                avail_len = raw_txt.height if (page.rotation in [90, 270]) else raw_txt.width
+                display_name, calc_fontsize = format_and_fit_signer_name(clean_name, avail_len, max_fontsize=5.7, min_fontsize=4.8)
+                curr_fs = calc_fontsize
+                rc = page.insert_textbox(raw_txt, display_name, fontsize=curr_fs, fontname='helv', color=(0, 0, 0), align=1, rotate=rot_txt)
+                while rc < 0 and curr_fs > 3.8:
+                    curr_fs -= 0.2
+                    rc = page.insert_textbox(raw_txt, display_name, fontsize=curr_fs, fontname='helv', color=(0, 0, 0), align=1, rotate=rot_txt)
             
         # Save changes to a temporary file then replace to prevent corruption
         temp_path = local_path + ".tmp"
@@ -205,6 +301,178 @@ def apply_drawing_pdf_signatures(file_url, approvals_dict, etiket_category='Sipi
             shutil.copyfile(local_path, orig_path)
         else:
             shutil.copyfile(orig_path, local_path)
+
+        # For Mekanik Landscape & Portrait, ensure bottom title block labels match: Approved (Kol 1), Checked (Kol 2), Request (Kol 3 kiri), Checked (Kol 3 kanan), Drawn (Kol 4 kiri), Checked (Kol 4 kanan)
+        cat_lower = str(etiket_category or '').lower()
+        orient_lower = str(etiket_orientation or '').lower()
+        is_rifan_landscape = ('sipil' not in cat_lower) and ('portrait' not in orient_lower and 'potrait' not in orient_lower)
+        is_rifan_portrait = ('sipil' not in cat_lower) and ('portrait' in orient_lower or 'potrait' in orient_lower)
+
+        if is_rifan_landscape:
+            try:
+                doc = fitz.open(local_path)
+                p = doc[0]
+                # Clean redaction strictly inside inner label row
+                r0 = fitz.Rect(21.0, 546.5, 33.5, 614.5)
+                r_col2 = fitz.Rect(21.0, 615.5, 33.5, 683.5)
+                r1 = fitz.Rect(21.5, 684.5, 33.0, 711.2)
+                r2 = fitz.Rect(21.5, 712.5, 33.0, 752.0)
+                r3 = fitz.Rect(21.5, 753.5, 33.0, 780.5)
+                r4 = fitz.Rect(21.5, 782.0, 33.0, 820.5)
+                p.add_redact_annot(r0, fill=(1, 1, 1))
+                p.add_redact_annot(r_col2, fill=(1, 1, 1))
+                p.add_redact_annot(r1, fill=(1, 1, 1))
+                p.add_redact_annot(r2, fill=(1, 1, 1))
+                p.add_redact_annot(r3, fill=(1, 1, 1))
+                p.add_redact_annot(r4, fill=(1, 1, 1))
+                p.apply_redactions()
+
+                # Insert crisp labels
+                p.insert_textbox(fitz.Rect(20.5, 546.5, 33.5, 614.5), 'Approved', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1, rotate=270)
+                p.insert_textbox(fitz.Rect(20.5, 615.5, 33.5, 683.5), 'Checked', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1, rotate=270)
+                p.insert_textbox(fitz.Rect(20.5, 684.0, 33.5, 711.9), 'Request', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1, rotate=270)
+                p.insert_textbox(fitz.Rect(20.5, 712.0, 33.5, 752.7), 'Checked', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1, rotate=270)
+                p.insert_textbox(fitz.Rect(20.5, 752.7, 33.5, 781.3), 'Drawn', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1, rotate=270)
+                p.insert_textbox(fitz.Rect(20.5, 781.3, 33.5, 821.6), 'Checked', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1, rotate=270)
+
+                # Re-stroke table grid lines to guarantee 100% sharp borders
+                lines = [
+                    (fitz.Point(20.28, 546.08), fitz.Point(20.28, 821.60)),
+                    (fitz.Point(33.96, 546.08), fitz.Point(33.96, 821.60)),
+                    (fitz.Point(79.92, 546.08), fitz.Point(79.92, 821.60)),
+                    (fitz.Point(20.28, 546.08), fitz.Point(79.92, 546.08)),
+                    (fitz.Point(20.28, 614.96), fitz.Point(79.92, 614.96)),
+                    (fitz.Point(20.28, 683.84), fitz.Point(79.92, 683.84)),
+                    (fitz.Point(20.28, 752.72), fitz.Point(79.92, 752.72)),
+                    (fitz.Point(20.28, 821.60), fitz.Point(79.92, 821.60)),
+                    (fitz.Point(20.28, 711.92), fitz.Point(33.96, 711.92)),
+                    (fitz.Point(20.28, 781.28), fitz.Point(33.96, 781.28)),
+                ]
+                for p0, p1 in lines:
+                    p.draw_line(p0, p1, color=(0, 0, 0), width=0.72)
+
+                temp_path = local_path + ".tmp"
+                doc.save(temp_path)
+                doc.close()
+                if os.path.exists(temp_path):
+                    os.replace(temp_path, local_path)
+            except Exception as label_err:
+                print(f"Error ensuring swapped labels on rifan_landscape: {label_err}")
+
+        if is_rifan_portrait:
+            try:
+                doc = fitz.open(local_path)
+                p = doc[0]
+                # Clean redaction strictly inside sub-cells with inset to preserve all borders
+                p.add_redact_annot(fitz.Rect(329.5, 719.0, 399.0, 731.0), fill=(1, 1, 1))
+                p.add_redact_annot(fitz.Rect(401.0, 719.0, 457.5, 731.0), fill=(1, 1, 1))
+                p.add_redact_annot(fitz.Rect(459.5, 719.0, 515.5, 731.0), fill=(1, 1, 1))
+                p.add_redact_annot(fitz.Rect(517.5, 719.0, 573.5, 731.0), fill=(1, 1, 1))
+                
+                # Also redact any legacy misplaced text strictly inside the revision cells
+                p.add_redact_annot(fitz.Rect(363.5, 743.0, 530.0, 761.0), fill=(1, 1, 1))
+                p.add_redact_annot(fitz.Rect(363.5, 762.5, 530.0, 781.5), fill=(1, 1, 1))
+                
+                p.apply_redactions()
+
+                # Insert crisp labels: Approved (Col 1), Checked (Col 2), Request (Col 3 kiri), Checked (Col 3 kanan), Drawn (Col 4 kiri), Checked (Col 4 kanan)
+                p.insert_textbox(fitz.Rect(328.56, 719.5, 400.08, 731.5), 'Approved', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(400.08, 719.5, 458.40, 731.5), 'Checked', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(458.40, 719.5, 487.50, 731.5), 'Request', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(487.50, 719.5, 516.60, 731.5), 'Checked', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(516.60, 719.5, 545.70, 731.5), 'Drawn', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(545.70, 719.5, 574.80, 731.5), 'Checked', fontsize=6.2, fontname='helv', color=(0, 0, 0), align=1)
+
+                # Re-stroke table grid lines to guarantee 100% sharp borders and uniform stroke width
+                inner_lines_072 = [
+                    # Main horizontal lines
+                    (fitz.Point(328.56, 642.08), fitz.Point(574.80, 642.08)),
+                    (fitz.Point(328.56, 672.20), fitz.Point(574.80, 672.20)),
+                    (fitz.Point(328.56, 718.16), fitz.Point(574.80, 718.16)),
+                    (fitz.Point(328.56, 731.84), fitz.Point(574.80, 731.84)),
+                    (fitz.Point(20.28, 731.84), fitz.Point(328.56, 731.84)),
+                    (fitz.Point(20.28, 742.40), fitz.Point(574.80, 742.40)),
+                    (fitz.Point(20.28, 761.96), fitz.Point(574.80, 761.96)),
+                    (fitz.Point(328.56, 782.36), fitz.Point(574.80, 782.36)),
+                    (fitz.Point(328.56, 802.04), fitz.Point(574.80, 802.04)),
+                    
+                    # Left vertical border of title block & revision table
+                    (fitz.Point(328.56, 642.08), fitz.Point(328.56, 821.60)),
+                    
+                    # Approval column vertical dividers
+                    (fitz.Point(400.08, 672.20), fitz.Point(400.08, 731.84)),
+                    (fitz.Point(458.40, 672.20), fitz.Point(458.40, 731.84)),
+                    (fitz.Point(516.60, 672.20), fitz.Point(516.60, 731.84)),
+                    
+                    # Sub-dividers in label row
+                    (fitz.Point(487.50, 718.16), fitz.Point(487.50, 731.84)),
+                    (fitz.Point(545.70, 718.16), fitz.Point(545.70, 731.84)),
+                    
+                    # Revision table vertical dividers (between REVISION, REMARK, DATE)
+                    (fitz.Point(362.88, 731.84), fitz.Point(362.88, 821.60)),
+                    (fitz.Point(531.00, 731.84), fitz.Point(531.00, 821.60)),
+                ]
+                for p0, p1 in inner_lines_072:
+                    p.draw_line(p0, p1, color=(0, 0, 0), width=0.72)
+
+                # Outer boundary lines (width = 2.04) matching full drawing sheet border
+                outer_lines_204 = [
+                    (fitz.Point(574.80, 642.08), fitz.Point(574.80, 821.60)),
+                    (fitz.Point(328.56, 821.60), fitz.Point(574.80, 821.60)),
+                ]
+                for p0, p1 in outer_lines_204:
+                    p.draw_line(p0, p1, color=(0, 0, 0), width=2.04)
+
+                temp_path = local_path + ".tmp"
+                doc.save(temp_path)
+                doc.close()
+                if os.path.exists(temp_path):
+                    os.replace(temp_path, local_path)
+            except Exception as label_err:
+                print(f"Error ensuring swapped labels on rifan_portrait: {label_err}")
+
+        is_diki_landscape = ('sipil' in cat_lower) and ('portrait' not in orient_lower and 'potrait' not in orient_lower)
+        if is_diki_landscape:
+            try:
+                doc = fitz.open(local_path)
+                p = doc[0]
+                # Clean redaction strictly inside the 4 header cells with inset to preserve all borders
+                p.add_redact_annot(fitz.Rect(801.0, 611.0, 911.0, 625.5), fill=(1, 1, 1))
+                p.add_redact_annot(fitz.Rect(914.0, 611.0, 1024.0, 625.5), fill=(1, 1, 1))
+                p.add_redact_annot(fitz.Rect(1027.0, 611.0, 1136.0, 625.5), fill=(1, 1, 1))
+                p.add_redact_annot(fitz.Rect(1027.0, 509.5, 1136.0, 524.0), fill=(1, 1, 1))
+                p.apply_redactions()
+
+                # Insert crisp matching labels: DRAWN By (Kol 1), CHECKED By (Kol 2), APPROVED By (Kol 3), APPROVED By (Kol 4 - Factory Manager)
+                p.insert_textbox(fitz.Rect(799.68, 612.0, 912.45, 625.0), 'DRAWN By', fontsize=7.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(912.45, 612.0, 1025.23, 625.0), 'CHECKED By', fontsize=7.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(1025.23, 612.0, 1138.00, 625.0), 'APPROVED By', fontsize=7.2, fontname='helv', color=(0, 0, 0), align=1)
+                p.insert_textbox(fitz.Rect(1025.23, 510.5, 1138.00, 523.5), 'APPROVED By', fontsize=7.2, fontname='helv', color=(0, 0, 0), align=1)
+
+                # Re-stroke all grid lines of the 4 boxes to guarantee 100% sharp borders and uniform stroke width
+                lines = [
+                    # Horizontal lines
+                    (fitz.Point(799.68, 609.80), fitz.Point(1138.00, 609.80)),
+                    (fitz.Point(799.68, 626.72), fitz.Point(1138.00, 626.72)),
+                    (fitz.Point(799.68, 711.34), fitz.Point(1138.00, 711.34)),
+                    (fitz.Point(1025.23, 508.26), fitz.Point(1138.00, 508.26)),
+                    (fitz.Point(1025.23, 525.18), fitz.Point(1138.00, 525.18)),
+                    # Vertical lines
+                    (fitz.Point(799.68, 609.80), fitz.Point(799.68, 711.34)),
+                    (fitz.Point(912.45, 609.80), fitz.Point(912.45, 711.34)),
+                    (fitz.Point(1025.23, 508.26), fitz.Point(1025.23, 711.34)),
+                    (fitz.Point(1138.00, 508.26), fitz.Point(1138.00, 711.34)),
+                ]
+                for p0, p1 in lines:
+                    p.draw_line(p0, p1, color=(0, 0, 0), width=0.72)
+
+                temp_path = local_path + ".tmp"
+                doc.save(temp_path)
+                doc.close()
+                if os.path.exists(temp_path):
+                    os.replace(temp_path, local_path)
+            except Exception as label_err:
+                print(f"Error ensuring crisp labels on diki_landscape: {label_err}")
 
         if not isinstance(approvals_dict, dict):
             return
@@ -305,8 +573,10 @@ def apply_project_handover_pdf_signatures(file_url, handover_approvals_dict, con
             if signer_name:
                 try:
                     name_str = str(signer_name)
-                    nw = fitz.get_text_length(name_str, fontname="helv", fontsize=7.5)
-                    page.insert_text(fitz.Point(cx - nw / 2.0, 424.0), name_str, fontsize=7.5, fontname="helv", color=(0, 0, 0))
+                    col_w = (x1 - x0) * 0.95
+                    disp_name, fs = format_and_fit_signer_name(name_str, col_w, max_fontsize=7.5, min_fontsize=5.0)
+                    nw = fitz.get_text_length(disp_name, fontname="helv", fontsize=fs)
+                    page.insert_text(fitz.Point(cx - nw / 2.0, 424.0), disp_name, fontsize=fs, fontname="helv", color=(0, 0, 0))
                     stamped = True
                 except Exception as ne:
                     print(f"Error writing signer name for {role_key}: {ne}")
@@ -544,6 +814,26 @@ def init_db(seed_defaults=None):
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # ponytail: Ensure existing users have valid dept populated
+    try:
+        cursor.execute("""
+            UPDATE users SET dept = 'ENG' 
+            WHERE (dept IS NULL OR dept = '') AND (
+                role IN ('Drafter', 'Foreman Eng', 'Admin Eng', 'Supervisor Eng', 'Manager Eng', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part', 'Server') 
+                OR role LIKE '%Eng' OR role LIKE '%ENG%'
+            )
+        """)
+        cursor.execute("UPDATE users SET dept = 'PRD' WHERE (dept IS NULL OR dept = '') AND (role LIKE '%PRD%' OR role LIKE '%Production%')")
+        cursor.execute("UPDATE users SET dept = 'EPR' WHERE (dept IS NULL OR dept = '') AND (role LIKE '%EPR%')")
+        cursor.execute("UPDATE users SET dept = 'GA' WHERE (dept IS NULL OR dept = '') AND (role LIKE '%GA%')")
+        cursor.execute("UPDATE users SET dept = 'QC' WHERE (dept IS NULL OR dept = '') AND (role LIKE '%QC%')")
+        cursor.execute("UPDATE users SET dept = 'WRH' WHERE (dept IS NULL OR dept = '') AND (role LIKE '%WRH%' OR role LIKE '%Warehouse%')")
+        cursor.execute("UPDATE users SET dept = 'TMB' WHERE (dept IS NULL OR dept = '') AND (role LIKE '%TMB%' OR role LIKE '%Timbangan%')")
+        cursor.execute("UPDATE users SET dept = 'ENG' WHERE dept IS NULL OR dept = ''")
+        conn.commit()
+    except Exception:
+        pass
+
     # ponytail: Create Settings table for global application config
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
@@ -627,7 +917,12 @@ def init_db(seed_defaults=None):
             is_archived INTEGER DEFAULT 0,
             approvals TEXT,
             createdDate TEXT,
-            quantity INTEGER DEFAULT 1
+            quantity INTEGER DEFAULT 1,
+            qty_needed INTEGER DEFAULT 0,
+            qty_stock INTEGER DEFAULT 0,
+            usage_type TEXT DEFAULT 'Kebutuhan Mesin',
+            purpose TEXT DEFAULT 'Kebutuhan Mesin',
+            qty_stock_target INTEGER DEFAULT 0
         )
     """)
     
@@ -709,9 +1004,63 @@ def init_db(seed_defaults=None):
     except sqlite3.OperationalError:
         pass
 
-    # ponytail: Migrate old Archived general EJOs to Completed with is_archived = 1
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN qty_needed_target INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN qty_needed_actual INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN qty_stock_target INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN usage_type TEXT DEFAULT 'Kebutuhan Mesin'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN purpose TEXT DEFAULT 'Kebutuhan Mesin'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # ponytail: Add qty_work_confirmed column to general_ejos (gate for qty interaction)
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN qty_work_confirmed INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # ponytail: Add qty_work_confirmed_date column to store confirmation timestamp for auto-duration calculation
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN qty_work_confirmed_date TEXT DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # ponytail: Add qty_work_done_date column to store the date when EJO reaches Done status
+    try:
+        cursor.execute("ALTER TABLE general_ejos ADD COLUMN qty_work_done_date TEXT DEFAULT ''")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # ponytail: Migrate old Archived general EJOs to Completed with is_archived = 1, and sanitize invalid approval statuses
     try:
         cursor.execute("UPDATE general_ejos SET status = 'Completed', is_archived = 1 WHERE status = 'Archived'")
+        cursor.execute("UPDATE general_ejos SET status = 'Completed' WHERE status = 'Pending Foreman Approval'")
+        cursor.execute("UPDATE general_ejos SET status = 'Pending User Approval' WHERE status IN ('Pending Supervisor Approval', 'Pending Manager Approval') AND (is_archived = 0 OR is_archived IS NULL)")
+        cursor.execute("UPDATE general_ejos SET status = 'Completed' WHERE status IN ('Pending Supervisor Approval', 'Pending Manager Approval') AND is_archived = 1")
         conn.commit()
     except Exception:
         pass
@@ -766,6 +1115,17 @@ def init_db(seed_defaults=None):
         except Exception:
             pass
 
+    # ponytail: Auto-complete Mekanik / Part drawings that have already been approved by Manager Eng
+    try:
+        cursor.execute("SELECT id, category, etiket_category, approvals, status FROM drawings WHERE status = 'Pending Factory Manager Approval'")
+        for d_id, d_cat, d_ecat, d_apps, d_st in cursor.fetchall():
+            cat_str = (str(d_ecat or '') + ' ' + str(d_cat or '')).lower()
+            if 'sipil' not in cat_str:
+                cursor.execute("UPDATE drawings SET status = 'Completed' WHERE id = ?", (d_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"Error migrating drawings: {e}")
+
     # ponytail: Create repair_parts table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS repair_parts (
@@ -779,7 +1139,8 @@ def init_db(seed_defaults=None):
             image TEXT,
             price REAL DEFAULT 0.0,
             cost_saving REAL DEFAULT 0.0,
-            original_price REAL DEFAULT 0.0
+            original_price REAL DEFAULT 0.0,
+            uploader TEXT
         )
     """)
     conn.commit()
@@ -809,75 +1170,112 @@ def init_db(seed_defaults=None):
     except sqlite3.OperationalError:
         pass
 
-    # ponytail: Unified EJO ID migration - format IDs as EJO(nomorejo)(tanggaldibuat)(bulankeberapadibuat)(tahunkeberapadibuat) e.g. EJO00230072026
     try:
+        cursor.execute("ALTER TABLE repair_parts ADD COLUMN uploader TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    # ponytail: Unified EJO ID migration - format IDs as EJO<nomorejo><DDMMYY> e.g. EJO02030826 or EJO002030826
+    try:
+        def extract_ejo_num_local(x):
+            if not x: return None
+            m = re.match(r'^EJO(\d+)(\d{4}20\d{2})$', str(x), re.IGNORECASE)
+            if m: return int(m.group(1))
+            m = re.match(r'^EJO(\d+)(\d{4}\d{2})$', str(x), re.IGNORECASE)
+            if m: return int(m.group(1))
+            m = re.search(r'EJO(\d+)', str(x), re.IGNORECASE) or re.search(r'(\d+)', str(x))
+            if m: return int(m.group(1))
+            return None
+
+        cursor.execute("SELECT id FROM general_ejos UNION ALL SELECT id FROM drawings")
+        all_existing = [r[0] for r in cursor.fetchall() if r[0]]
+        all_nums = [extract_ejo_num_local(x) for x in all_existing if extract_ejo_num_local(x) is not None]
+        global_max_num = max(all_nums) if all_nums else 0
+
         def migrate_table_ids(table_name, date_col):
             cursor.execute(f"SELECT id, {date_col} FROM {table_name}")
             rows = cursor.fetchall()
             for old_id, cdate in rows:
                 if not old_id: continue
-                if re.match(r'^EJO\d{11}$', old_id):
-                    continue
-                m = re.search(r'(\d+)', old_id)
-                num_str = f"{int(m.group(1)):03d}" if m else "001"
-                dt_str = "30072026"
+                seq_num = extract_ejo_num_local(old_id)
+                if seq_num is None: continue
+
+                dt_str = "030826"
                 if cdate:
                     dm = re.search(r'(\d{4})-(\d{2})-(\d{2})', str(cdate))
                     if dm:
-                        dt_str = f"{dm.group(3)}{dm.group(2)}{dm.group(1)}"
+                        dt_str = f"{dm.group(3)}{dm.group(2)}{dm.group(1)[2:]}"
                     else:
                         dm2 = re.search(r'(\d{2})(\d{2})(\d{4})', str(cdate))
                         if dm2:
-                            dt_str = str(cdate)[:8]
-                new_id = f"EJO{num_str}{dt_str}"
-                cursor.execute(f"UPDATE {table_name} SET id = ? WHERE id = ?", (new_id, old_id))
-                if table_name == 'general_ejos':
+                            dt_str = f"{dm2.group(1)}{dm2.group(2)}{dm2.group(3)[2:]}"
+                        else:
+                            dm3 = re.search(r'(\d{2})(\d{2})(\d{2})$', str(cdate))
+                            if dm3:
+                                dt_str = str(cdate)[-6:]
+
+                max_val = max(global_max_num, seq_num)
+                pad_width = max(2, len(str(max_val)))
+                new_id = f"EJO{seq_num:0{pad_width}d}{dt_str}"
+
+                if new_id != old_id:
+                    cursor.execute(f"UPDATE {table_name} SET id = ? WHERE id = ?", (new_id, old_id))
+                    if table_name == 'general_ejos':
+                        cursor.execute("UPDATE drawings SET ejo_id = ? WHERE ejo_id = ?", (new_id, old_id))
+                        cursor.execute("UPDATE notifications SET ejo_id = ? WHERE ejo_id = ?", (new_id, old_id))
+                        cursor.execute("UPDATE general_ejos SET drawing_id = ? WHERE drawing_id = ?", (new_id, old_id))
+                    elif table_name == 'drawings':
+                        cursor.execute("UPDATE general_ejos SET drawing_id = ? WHERE drawing_id = ?", (new_id, old_id))
+                        cursor.execute("UPDATE notifications SET ejo_id = ? WHERE ejo_id = ?", (new_id, old_id))
+                        cursor.execute("UPDATE drawings SET ejo_id = ? WHERE ejo_id = ?", (new_id, old_id))
+
+        # ponytail: If maximum sequence in DB is abnormally high (>= 100) but total count is under 100, re-index existing records sequentially (01, 02, 03...)
+        if all_nums and max(all_nums) >= 100 and len(all_existing) < 100:
+            cursor.execute("SELECT id, createdDate FROM general_ejos ORDER BY rowid ASC")
+            gejo_rows = cursor.fetchall()
+            seq = 1
+            for old_id, cdate in gejo_rows:
+                dt_str = "030826"
+                if cdate:
+                    dm = re.search(r'(\d{4})-(\d{2})-(\d{2})', str(cdate))
+                    if dm:
+                        dt_str = f"{dm.group(3)}{dm.group(2)}{dm.group(1)[2:]}"
+                new_id = f"EJO{seq:02d}{dt_str}"
+                seq += 1
+                if new_id != old_id:
+                    cursor.execute("UPDATE general_ejos SET id = ? WHERE id = ?", (new_id, old_id))
                     cursor.execute("UPDATE drawings SET ejo_id = ? WHERE ejo_id = ?", (new_id, old_id))
                     cursor.execute("UPDATE notifications SET ejo_id = ? WHERE ejo_id = ?", (new_id, old_id))
-                elif table_name == 'drawings':
-                    cursor.execute("UPDATE general_ejos SET drawing_id = ? WHERE drawing_id = ?", (new_id, old_id))
+
+            cursor.execute("SELECT id, uploaded_at FROM drawings ORDER BY rowid ASC")
+            drw_rows = cursor.fetchall()
+            for old_id, cdate in drw_rows:
+                dt_str = "030826"
+                if cdate:
+                    dm = re.search(r'(\d{4})-(\d{2})-(\d{2})', str(cdate))
+                    if dm:
+                        dt_str = f"{dm.group(3)}{dm.group(2)}{dm.group(1)[2:]}"
+                new_id = f"EJO{seq:02d}{dt_str}"
+                seq += 1
+                if new_id != old_id:
+                    cursor.execute("UPDATE drawings SET id = ? WHERE id = ?", (new_id, old_id))
                     cursor.execute("UPDATE notifications SET ejo_id = ? WHERE ejo_id = ?", (new_id, old_id))
 
         migrate_table_ids('general_ejos', 'createdDate')
         migrate_table_ids('drawings', 'uploaded_at')
         conn.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error migrating EJO IDs: {e}")
 
-    # Populate default repair parts if empty
-    if seed_defaults:
-        cursor.execute("SELECT COUNT(*) FROM repair_parts")
-        if cursor.fetchone()[0] == 0:
-            default_parts = [
-                ("PART-001", "Seal Kit Cylinder Clamping", "SK-CYL-3", 15, "Gudang Sparepart A - Rak B2", "EJO-2026-001", "Digunakan untuk mengatasi kebocoran hidrolik press machine #3"),
-                ("PART-002", "MCB 3 Phase Schneider 16A", "MCB-3P-SCH-16", 8, "Gudang Elektrik - Loker C", "EJO-2026-003", "Penggantian MCB chiller panel unit 2"),
-                ("PART-003", "Sensor Proximity E2E-X5ME1 Omron", "PROX-OMR-E2E", 5, "Gudang Elektrik - Rak A1", "EJO-2026-002", "Sensor proximity conveyor belt packaging"),
-                ("PART-004", "Oli Hidrolik Shell Tellus S2 M 46", "OIL-HYD-VG46", 4, "Area Penyimpanan Oli - Drum 2", "EJO-2026-001", "Pengisian ulang tangki oli Press Machine #3"),
-                ("PART-005", "Baut Structural Hex M16 x 50", "BOLT-M16-50", 120, "Gudang Sipil/Struktur - Loker D", "", "Kebutuhan perkuatan tiang baja platform mezzanine")
-            ]
-            cursor.executemany("INSERT INTO repair_parts (id, name, code, stock, location, ejo_id, description) VALUES (?, ?, ?, ?, ?, ?, ?)", default_parts)
-            conn.commit()
-    
-    # ponytail: ejos seeding removed because the feature is deleted
-
-    # Populate default projects if empty
-    if seed_defaults:
-        cursor.execute("SELECT COUNT(*) FROM projects")
-        if cursor.fetchone()[0] == 0:
-            default_projects = [
-                ("PRJ-2026-001", "Pemasangan Sistem SCADA Boiler House", "Utility", 150000000, "2026-08-30", "Budi Utomo", "Integrasi pembacaan temperatur, steam pressure, dan flow rate boiler unit 1 & 2 ke sistem monitoring control room utama pabrik.", 2),
-                ("PRJ-2026-002", "Renovasi Area Penyimpanan Bahan Baku Cair", "HSE", 80000000, "2026-09-15", "Charlie Santoso", "Pengecoran lantai epoxy, pembuatan tanggul pengaman tumpahan bahan kimia cair, dan pemasangan grounding tank pengaman petir.", 1),
-                ("PRJ-2026-003", "Upgrade Line Sensor Detection Mesin Filling 250ml", "Production", 45000000, "2026-07-10", "Deddy Corbuzier", "Penggantian limit switch lama dengan photoelectric proximity sensor berkecepatan tinggi merk Autonics. Semua barang telah siap di gudang.", 3)
-            ]
-            cursor.executemany("INSERT INTO projects (id, title, dept, budget, targetDate, pic, desc, phase) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", default_projects)
-            conn.commit()
+    # ponytail: repair_parts and projects seeding removed so transactional data starts clean (like general_ejos and drawings)
 
     # ponytail: migration script for roles: rename roles to adding 'Eng' / 'Supervisor Eng'
     cursor.execute("UPDATE users SET role = 'Staff PRD' WHERE role = 'User'")
     cursor.execute("UPDATE users SET role = 'Foreman Eng' WHERE role IN ('Foreman', 'Lead Engineer')")
     cursor.execute("UPDATE users SET role = 'Admin Eng' WHERE role = 'Admin'")
     cursor.execute("UPDATE users SET role = 'Supervisor Eng' WHERE role IN ('Supervisor', 'Spv Eng')")
-    cursor.execute("UPDATE users SET role = 'Staff PRD' WHERE role NOT LIKE 'Manager %' AND role NOT LIKE 'Supervisor %' AND role NOT LIKE 'user_%' AND role NOT IN ('Foreman Eng', 'Admin Eng', 'Drafter', 'Manager Eng', 'Plant Manager', 'Factory Manager', 'Supervisor Eng', 'Server', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Otomotif', 'Staff PRD', 'Staff ENG', 'Staff EPR', 'Staff GA', 'Staff QC', 'Staff WRH', 'Manager', 'Supervisor')")
+    cursor.execute("UPDATE users SET role = 'Staff PRD' WHERE role NOT LIKE 'Manager %' AND role NOT LIKE 'Supervisor %' AND role NOT LIKE 'user_%' AND role NOT IN ('Foreman Eng', 'Admin Eng', 'Drafter', 'Manager Eng', 'Plant Manager', 'Factory Manager', 'Supervisor Eng', 'Server', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part', 'Staff PRD', 'Staff ENG', 'Staff EPR', 'Staff GA', 'Staff QC', 'Staff WRH', 'Staff TMB', 'Manager', 'Supervisor')")
     conn.commit()
 
     # Populate default users if empty
@@ -887,22 +1285,41 @@ def init_db(seed_defaults=None):
             default_users = [
                 ("dani", "dani123", "Ahmad Dani", "Foreman Eng", "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=80", "ENG"),
                 ("budi", "budi123", "Budi Utomo", "Foreman Eng", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
-                ("charlie", "charlie123", "Charlie Santoso", "Drafter", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
                 ("deddy", "deddy123", "Deddy Corbuzier", "user_PRD", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=80", "PRD"),
                 ("server", "server", "System Server Admin", "Server", "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=80", "ENG"),
+                # ponytail: Discipline Engineers
+                ("tedy", "123456", "Tedy", "Sipil", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("dadang", "123456", "Dadang", "Sipil", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("thorik", "123456", "Thorik", "Elektrik", "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("rifky", "123456", "Rifky", "Elektrik", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("hadi", "123456", "Hadi", "Elektrik", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("kresna", "123456", "Kresna", "Elektrik", "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("aden", "123456", "Aden", "Kalibrasi", "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("chandra", "123456", "Chandra", "Program", "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("yuli", "123456", "Yuli", "Mekanik", "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("reksa", "123456", "Reksa", "Mekanik", "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("eman", "123456", "Eman", "Mekanik", "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("rahmad", "123456", "Rahmad", "Repair Part", "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("diki", "123456", "Diki Firmansyah", "Sipil", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+                ("rifan", "123456", "Rifan", "Mekanik", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
                 # ponytail: Add default department staff users to seed
+                # ponytail: Add default department staff, spv, manager users to seed
                 ("prd", "prd123", "user_PRD", "user_PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
                 ("eng", "eng123", "user_ENG", "user_ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
                 ("epr", "epr123", "user_EPR", "user_EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
                 ("ga", "ga123", "user_GA", "user_GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
                 ("qc", "qc123", "user_QC", "user_QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
                 ("wrh", "wrh123", "user_WRH", "user_WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH"),
-                ("staff_prd", "staff_prd123", "user_PRD", "user_PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
-                ("staff_eng", "staff_eng123", "user_ENG", "user_ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
-                ("staff_epr", "staff_epr123", "user_EPR", "user_EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
-                ("staff_ga", "staff_ga123", "user_GA", "user_GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
-                ("staff_qc", "staff_qc123", "user_QC", "user_QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
-                ("staff_wrh", "staff_wrh123", "user_WRH", "user_WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH")
+                ("tmb", "tmb123", "user_TMB", "user_TMB", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "TMB"),
+                ("staff_prd", "staff_prd123", "Staff Produksi", "Staff PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
+                ("staff_eng", "staff_eng123", "Staff Engineering", "Staff ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
+                ("staff_epr", "staff_epr123", "Staff EPR", "Staff EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
+                ("staff_ga", "staff_ga123", "Staff GA", "Staff GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
+                ("staff_qc", "staff_qc123", "Staff QC", "Staff QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
+                ("staff_wrh", "staff_wrh123", "Staff Warehouse", "Staff WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH"),
+                ("staff_tmb", "staff_tmb123", "Staff Timbangan", "Staff TMB", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "TMB"),
+                ("spv_tmb", "spv_tmb123", "Supervisor Timbangan", "Supervisor TMB", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80", "TMB"),
+                ("mgr_tmb", "mgr_tmb123", "Manager Timbangan", "Manager TMB", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80", "TMB")
             ]
             cursor.executemany("INSERT INTO users (username, password, fullname, role, avatar, dept) VALUES (?, ?, ?, ?, ?, ?)", default_users)
             conn.commit()
@@ -922,22 +1339,45 @@ def init_db(seed_defaults=None):
             cursor.execute("UPDATE users SET password = 'MQELXeeVFU3E3qlCE6QbSGJZUljX9MVnYkJVHFKBXDVbELwkLztLWp2M9iJ7aMTgJZfc6pmCmsokt8TF1Pi2xEvxHtWF9zvUFm8y95IPvg0irAVdnbgPjgg7dSyb9GD5', role = 'Server' WHERE username = 'server'")
             conn.commit()
 
-        # ponytail: Ensure default department staff users exist in existing database
-        dept_users = [
+        # ponytail: Ensure default administration, discipline, and department staff users exist in database
+        required_users = [
+            ("dani", "dani123", "Ahmad Dani", "Foreman Eng", "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("budi", "budi123", "Budi Utomo", "Foreman Eng", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("deddy", "deddy123", "Deddy Corbuzier", "user_PRD", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=80", "PRD"),
+            # Discipline accounts requested by user
+            ("tedy", "123456", "Tedy", "Sipil", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("dadang", "123456", "Dadang", "Sipil", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("thorik", "123456", "Thorik", "Elektrik", "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("rifky", "123456", "Rifky", "Elektrik", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("hadi", "123456", "Hadi", "Elektrik", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("kresna", "123456", "Kresna", "Elektrik", "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("aden", "123456", "Aden", "Kalibrasi", "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("chandra", "123456", "Chandra", "Program", "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("yuli", "123456", "Yuli", "Mekanik", "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("reksa", "123456", "Reksa", "Mekanik", "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("eman", "123456", "Eman", "Mekanik", "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("rahmad", "123456", "Rahmad", "Repair Part", "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("diki", "123456", "Diki Firmansyah", "Sipil", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+            ("rifan", "123456", "Rifan", "Mekanik", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
+            # Department accounts
             ("prd", "prd123", "user_PRD", "user_PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
             ("eng", "eng123", "user_ENG", "user_ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
             ("epr", "epr123", "user_EPR", "user_EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
             ("ga", "ga123", "user_GA", "user_GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
             ("qc", "qc123", "user_QC", "user_QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
             ("wrh", "wrh123", "user_WRH", "user_WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH"),
-            ("staff_prd", "staff_prd123", "user_PRD", "user_PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
-            ("staff_eng", "staff_eng123", "user_ENG", "user_ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
-            ("staff_epr", "staff_epr123", "user_EPR", "user_EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
-            ("staff_ga", "staff_ga123", "user_GA", "user_GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
-            ("staff_qc", "staff_qc123", "user_QC", "user_QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
-            ("staff_wrh", "staff_wrh123", "user_WRH", "user_WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH")
+            ("tmb", "tmb123", "user_TMB", "user_TMB", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "TMB"),
+            ("staff_prd", "staff_prd123", "Staff Produksi", "Staff PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
+            ("staff_eng", "staff_eng123", "Staff Engineering", "Staff ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
+            ("staff_epr", "staff_epr123", "Staff EPR", "Staff EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
+            ("staff_ga", "staff_ga123", "Staff GA", "Staff GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
+            ("staff_qc", "staff_qc123", "Staff QC", "Staff QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
+            ("staff_wrh", "staff_wrh123", "Staff Warehouse", "Staff WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH"),
+            ("staff_tmb", "staff_tmb123", "Staff Timbangan", "Staff TMB", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "TMB"),
+            ("spv_tmb", "spv_tmb123", "Supervisor Timbangan", "Supervisor TMB", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80", "TMB"),
+            ("mgr_tmb", "mgr_tmb123", "Manager Timbangan", "Manager TMB", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80", "TMB")
         ]
-        for username, password, fullname, role, avatar, dept in dept_users:
+        for username, password, fullname, role, avatar, dept in required_users:
             cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username,))
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
@@ -946,7 +1386,7 @@ def init_db(seed_defaults=None):
                 )
                 conn.commit()
             else:
-                # ensure fullname, role, and dept match what user requested
+                # ensure fullname, role, and dept match
                 cursor.execute(
                     "UPDATE users SET fullname = ?, role = ?, dept = ? WHERE username = ?",
                     (fullname, role, dept, username)
@@ -954,7 +1394,7 @@ def init_db(seed_defaults=None):
                 conn.commit()
 
         # Set default departments for existing users if empty
-        cursor.execute("UPDATE users SET dept = 'ENG' WHERE dept IS NULL AND username IN ('server', 'manager', 'plantmanager', 'supervisor', 'foreman', 'admin', 'drafter', 'sipil', 'mekanik', 'elektrik', 'program', 'kalibrasi', 'otomotif')")
+        cursor.execute("UPDATE users SET dept = 'ENG' WHERE dept IS NULL AND username IN ('server', 'manager', 'plantmanager', 'supervisor', 'foreman', 'admin', 'drafter', 'sipil', 'mekanik', 'elektrik', 'program', 'kalibrasi', 'tedy', 'dadang', 'thorik', 'rifky', 'hadi', 'kresna', 'aden', 'chandra', 'yuli', 'reksa', 'eman', 'rahmad', 'diki', 'rifan')")
         cursor.execute("UPDATE users SET dept = 'PRD' WHERE dept IS NULL AND username = 'user'")
         conn.commit()
 
@@ -990,7 +1430,7 @@ ROLE_LEVELS = {
     'Elektrik': 20,
     'Program': 20,
     'Kalibrasi': 20,
-    'Otomotif': 20,
+    'Repair Part': 20,
     'Manager': 80,
     'Supervisor': 60,
     'User': 10,
@@ -999,7 +1439,27 @@ ROLE_LEVELS = {
     'user_EPR': 10,
     'user_GA': 10,
     'user_QC': 10,
-    'user_WRH': 10
+    'user_WRH': 10,
+    'user_TMB': 10,
+    'Staff PRD': 10,
+    'Staff ENG': 10,
+    'Staff EPR': 10,
+    'Staff GA': 10,
+    'Staff QC': 10,
+    'Staff WRH': 10,
+    'Staff TMB': 10,
+    'Supervisor PRD': 60,
+    'Supervisor EPR': 60,
+    'Supervisor GA': 60,
+    'Supervisor QC': 60,
+    'Supervisor WRH': 60,
+    'Supervisor TMB': 60,
+    'Manager PRD': 80,
+    'Manager EPR': 80,
+    'Manager GA': 80,
+    'Manager QC': 80,
+    'Manager WRH': 80,
+    'Manager TMB': 80
 }
 
 def get_role_level(role):
@@ -1046,6 +1506,9 @@ def normalize_dept_code(dept):
         'WAREHOUSE': 'WRH',
         'MAINTENANCE': 'WRH',
         'EKSPEDISI': 'WRH',
+        'TMB': 'TMB',
+        'TMB (TIMBANGAN)': 'TMB',
+        'TIMBANGAN': 'TMB',
         'HSE': 'HSE'
     }
     return mapping.get(upper, clean)
@@ -1060,6 +1523,20 @@ def is_non_eng_spv_or_manager(role, dept=''):
     role_lower = role.lower()
     is_spv_or_mgr = ('spv' in role_lower or 'supervisor' in role_lower or 'manager' in role_lower)
     return is_spv_or_mgr
+
+def extract_ejo_num(x):
+    if not x:
+        return None
+    m = re.match(r'^EJO(\d+)(\d{4}20\d{2})$', str(x), re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    m = re.match(r'^EJO(\d+)(\d{4}\d{2})$', str(x), re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'EJO(\d+)', str(x), re.IGNORECASE) or re.search(r'(\d+)', str(x))
+    if m:
+        return int(m.group(1))
+    return None
 
 # ponytail: helper to check if user is limited to 2 active General EJO / Drawing EJO
 def is_user_limited(role, dept=''):
@@ -1144,6 +1621,8 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             self.upload_file()
         elif clean_path == "/api/nuclear":
             self.nuclear_database()
+        elif clean_path == "/api/database/reset-module":
+            self.reset_database_module()
         else:
             self.send_error(404, "API endpoint not found")
 
@@ -1215,6 +1694,15 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
     # ==========================================
     # API Controller Functions
     # ==========================================
+
+    # ponytail: helper — extract list of attachment files/urls from description field
+    def _extract_attachments(self, desc):
+        if not desc or "||attachment||" not in desc:
+            return []
+        parts = desc.split("||attachment||")
+        if len(parts) < 2 or not parts[1]:
+            return []
+        return [x.strip() for x in parts[1].split("||image-split||") if x.strip()]
 
     # ponytail: helper — resolve fullname → username via users table (notif ditarget per username)
     def _resolve_username(self, conn, fullname):
@@ -1416,11 +1904,12 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
         cursor = conn.cursor()
         try:
             cursor.execute("""
-                INSERT INTO repair_parts (id, name, code, stock, location, ejo_id, description, image, price, cost_saving, original_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO repair_parts (id, name, code, stock, location, ejo_id, description, image, price, cost_saving, original_price, uploader) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data['id'], data['name'], data['code'], data['stock'],
                 data['location'], data['ejo_id'], data['description'], data.get('image', None),
-                data.get('price', 0.0), data.get('cost_saving', 0.0), data.get('original_price', 0.0)
+                data.get('price', 0.0), data.get('cost_saving', 0.0), data.get('original_price', 0.0),
+                data.get('uploader', None)
             ))
             conn.commit()
             
@@ -1518,10 +2007,28 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                     return
 
                 now = time.time()
-                username_key = user['username'].lower()
+                username_key = user['username'].strip().lower()
+
+                # ponytail: Single-device lock — block login if another device has an active session
                 with ACTIVE_SESSIONS_LOCK:
+                    if username_key in ACTIVE_SESSIONS:
+                        existing = ACTIVE_SESSIONS[username_key]
+                        if existing["device_id"] != device_id:
+                            # Session on another device is still fresh (heartbeat within 45s)
+                            if (now - existing["last_active"]) < 45:
+                                self.send_response(409)
+                                self.send_header("Content-Type", "application/json")
+                                self.end_headers()
+                                self.wfile.write(json.dumps({
+                                    "status": "error",
+                                    "message": "Akun ini sedang aktif di perangkat lain."
+                                }).encode("utf-8"))
+                                return
+                            # Session on another device is stale (>45s), allow login
                     ACTIVE_SESSIONS[username_key] = {"device_id": device_id, "last_active": now}
                     FORCED_LOGOUT_SESSIONS.discard(username_key)
+
+                user['device_id'] = device_id
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1550,7 +2057,7 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "error", "message": "Missing username or device_id"}).encode("utf-8"))
             return
             
-        username_key = username.lower()
+        username_key = (username or '').strip().lower()
         now = time.time()
         
         with ACTIVE_SESSIONS_LOCK:
@@ -1558,7 +2065,7 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 FORCED_LOGOUT_SESSIONS.discard(username_key)
                 if username_key in ACTIVE_SESSIONS:
                     del ACTIVE_SESSIONS[username_key]
-                self.send_response(403)
+                self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({
@@ -1570,19 +2077,21 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             if username_key in ACTIVE_SESSIONS:
                 session = ACTIVE_SESSIONS[username_key]
                 if session["device_id"] != device_id:
-                    # If the active device has sent a heartbeat recently, this device is superseded
-                    if (now - session["last_active"]) < 30:
-                        self.send_response(403)
-                        self.send_header("Content-Type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "superseded",
-                            "message": "Akun Anda telah masuk di perangkat lain."
-                        }).encode("utf-8"))
-                        return
-            
-            # Establish/Update heartbeat timestamp
-            ACTIVE_SESSIONS[username_key] = {"device_id": device_id, "last_active": now}
+                    # ponytail: This device is NOT the session owner — always superseded
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "status": "superseded",
+                        "message": "Akun Anda telah masuk di perangkat lain."
+                    }).encode("utf-8"))
+                    return
+                else:
+                    # ponytail: Same device — update heartbeat timestamp only
+                    session["last_active"] = now
+            else:
+                # ponytail: No active session exists — register this device
+                ACTIVE_SESSIONS[username_key] = {"device_id": device_id, "last_active": now}
             
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -1763,13 +2272,14 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
         
         try:
             # First fetch current logs + old engineer/status, append new ones if any
-            cursor.execute("SELECT logs, engineer, status, createdDate, mid FROM ejos WHERE id = ?", (ejo_id,))
+            cursor.execute("SELECT logs, engineer, status, createdDate, mid, description FROM ejos WHERE id = ?", (ejo_id,))
             row = cursor.fetchone()
             current_logs = json.loads(row[0]) if (row and row[0]) else []
             old_engineer = row[1] if row else 'Unassigned'
             old_status = row[2] if row else None
             old_created_date = row[3] if (row and len(row) > 3) else None
             old_mid = row[4] if (row and len(row) > 4) else ""
+            old_desc = row[5] if (row and len(row) > 5 and row[5] is not None) else ""
 
             if 'logs' in data:
                 # Merge logic
@@ -1778,6 +2288,18 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 for log in data['logs']:
                     if log['message'] not in existing_messages:
                         current_logs.append(log)
+
+            # ponytail: Reject attachment deletion if EJO status is Done / Completed / Cancelled
+            if old_status in ('Completed', 'Cancelled', 'Done') and 'description' in data:
+                old_atts = self._extract_attachments(old_desc)
+                new_atts = self._extract_attachments(data['description'])
+                if any(att not in new_atts for att in old_atts):
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": "Lampiran foto tidak dapat dihapus setelah EJO masuk ke proses Done"}).encode("utf-8"))
+                    conn.close()
+                    return
 
             # ponytail: preserve/update createdDate and mid if passed by the client
             created_date = data.get('createdDate', old_created_date)
@@ -2075,7 +2597,97 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
     # ==========================================
     # ponytail: General EJO CRUD — pekerjaan langsung (pasang lampu, ganti kran, dll)
     # ==========================================
+    def auto_archive_expired_completed_gejos(self):
+        """
+        Otomatis mengarsipkan General EJO berstatus 'Completed' / 'Cancelled'
+        jika tombol 'Konfirmasi Selesai & Arsipkan' tidak dipencet selama >= 3 hari (72 jam).
+        """
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id, status, is_archived, logs, qty_work_done_date, createdDate FROM general_ejos WHERE (status = 'Completed' OR status = 'Cancelled') AND (is_archived = 0 OR is_archived IS NULL)")
+            rows = cursor.fetchall()
+            now = datetime.now()
+            three_days = timedelta(days=3)
+            updated_count = 0
+
+            for row in rows:
+                gejo_id = row['id']
+                logs_raw = row['logs']
+                logs = json.loads(logs_raw) if logs_raw else []
+                qty_work_done_date = row['qty_work_done_date'] or ''
+                created_date = row['createdDate'] or ''
+
+                comp_date = None
+
+                # 1. Check qty_work_done_date
+                if qty_work_done_date:
+                    try:
+                        clean_done = qty_work_done_date.replace('Z', '').replace('T', ' ')
+                        comp_date = datetime.fromisoformat(clean_done[:19])
+                    except Exception:
+                        pass
+
+                # 2. Check logs for Completed / Selesai event
+                if not comp_date and logs:
+                    for log in reversed(logs):
+                        msg = log.get('message', '')
+                        dt_str = log.get('date', '')
+                        if ('Completed' in msg or 'selesai' in msg or 'Selesai' in msg) and dt_str:
+                            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+                                try:
+                                    comp_date = datetime.strptime(dt_str[:19], fmt)
+                                    break
+                                except Exception:
+                                    pass
+                            if comp_date:
+                                break
+
+                    # Fallback to last log date
+                    if not comp_date and logs:
+                        last_log_date = logs[-1].get('date', '')
+                        if last_log_date:
+                            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+                                try:
+                                    comp_date = datetime.strptime(last_log_date[:19], fmt)
+                                    break
+                                except Exception:
+                                    pass
+
+                # 3. Fallback to created_date
+                if not comp_date and created_date:
+                    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+                        try:
+                            comp_date = datetime.strptime(created_date[:19], fmt)
+                            break
+                        except Exception:
+                            pass
+
+                # Check if 3 days have elapsed
+                if comp_date and (now - comp_date) >= three_days:
+                    now_str = now.strftime("%Y-%m-%d %H:%M")
+                    auto_log = {
+                        "date": now_str,
+                        "message": "Pekerjaan otomatis diarsipkan ke History oleh sistem setelah 3 hari tanpa konfirmasi."
+                    }
+                    logs.append(auto_log)
+                    cursor.execute("""
+                        UPDATE general_ejos 
+                        SET is_archived = 1, logs = ? 
+                        WHERE id = ?
+                    """, (json.dumps(logs), gejo_id))
+                    updated_count += 1
+
+            if updated_count > 0:
+                conn.commit()
+        except Exception as e:
+            print(f"Error in auto_archive_expired_completed_gejos: {e}")
+        finally:
+            conn.close()
+
     def get_general_ejos(self):
+        self.auto_archive_expired_completed_gejos()
         conn = sqlite3.connect(DB_FILE)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -2109,7 +2721,7 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             if requester:
                 cursor.execute("SELECT role, dept FROM users WHERE username = ? OR fullname = ?", (requester, requester))
                 user_row = cursor.fetchone()
-                if user_row and user_row[0] in ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi'):
+                if user_row and user_row[0] in ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part'):
                     self.send_error(403, f"{user_row[0]} tidak diperbolehkan membuat General EJO.")
                     return
 
@@ -2143,19 +2755,25 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             if not ejo_id:
                 cursor.execute("SELECT id FROM general_ejos UNION ALL SELECT id FROM drawings")
                 existing_ids = [row[0] for row in cursor.fetchall() if row[0]]
-                nums = []
-                for x in existing_ids:
-                    m = re.search(r'EJO(\d{3})', x) or re.search(r'(\d+)', x)
-                    if m:
-                        nums.append(int(m.group(1)))
-                next_num = max(nums) + 1 if nums else 1
-                date_str = __import__('datetime').datetime.now().strftime("%d%m%Y")
-                ejo_id = f"EJO{next_num:03d}{date_str}"
+                nums = [extract_ejo_num(x) for x in existing_ids if extract_ejo_num(x) is not None]
+                max_n = max(nums) if nums else 0
+                next_num = max_n + 1 if nums else 1
+                pad_width = max(2, len(str(max(max_n, next_num))))
+                date_str = __import__('datetime').datetime.now().strftime("%d%m%y")
+                ejo_id = f"EJO{next_num:0{pad_width}d}{date_str}"
 
-            # ponytail: store the creation date, cost analysis fields, quantity, qty_needed, qty_stock, and photo_before along with the general EJO record
+            # ponytail: store the creation date, cost analysis fields, quantity, qty_needed, qty_stock, usage_type, purpose, and photo_before along with the general EJO record
+            usage_type_val = data.get('usage_type', data.get('purpose', 'Kebutuhan Mesin'))
+            purpose_val = data.get('purpose', usage_type_val)
+            req_qty = int(data.get('quantity', 1))
+            req_qty_needed = int(data.get('qty_needed', 0)) if 'qty_needed' in data and data['qty_needed'] is not None else 0
+            req_qty_stock = int(data.get('qty_stock', 0)) if 'qty_stock' in data and data['qty_stock'] is not None else 0
+            req_qty_needed_target = int(data.get('qty_needed_target', req_qty_needed)) if 'qty_needed_target' in data and data['qty_needed_target'] is not None else req_qty_needed
+            req_qty_needed_actual = int(data.get('qty_needed_actual', 0)) if 'qty_needed_actual' in data and data['qty_needed_actual'] is not None else 0
+            req_qty_stock_target = int(data.get('qty_stock_target', req_qty_stock)) if 'qty_stock_target' in data and data['qty_stock_target'] is not None else req_qty_stock
             cursor.execute("""
-                INSERT INTO general_ejos (id, title, dept, category, priority, location, targetDate, status, engineer, estCost, actCost, description, logs, requester, is_archived, createdDate, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO general_ejos (id, title, dept, category, priority, location, targetDate, status, engineer, estCost, actCost, description, logs, requester, is_archived, createdDate, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock, usage_type, purpose, qty_needed_target, qty_needed_actual, qty_stock_target)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ejo_id, data['title'], data['dept'], data['category'],
                 data['priority'], data['location'], data['targetDate'],
@@ -2163,7 +2781,8 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 data['actCost'], data['description'], json.dumps(logs),
                 data.get('requester', ''), data.get('createdDate', ''), data.get('mid', ''),
                 float(data.get('part_price_new', 0.0)), int(data.get('repair_duration', 0)), float(data.get('repair_cost_per_day', 0.0)),
-                data.get('photo_before', ''), int(data.get('quantity', 1)), int(data.get('qty_needed', 0)), int(data.get('qty_stock', 0))
+                data.get('photo_before', ''), req_qty, req_qty_needed, req_qty_stock,
+                usage_type_val, purpose_val, req_qty_needed_target, req_qty_needed_actual, req_qty_stock_target
             ))
 
             # ponytail: if waiting dept approval, notify department Supervisor/Manager
@@ -2207,8 +2826,8 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
         cursor = conn.cursor()
 
         try:
-            # ponytail: select createdDate, cost analysis, quantity, qty_needed, qty_stock, and photo_before columns to preserve them during updates
-            cursor.execute("SELECT logs, engineer, status, is_archived, approvals, targetDate, estDate, title, dept, category, priority, location, createdDate, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock FROM general_ejos WHERE id = ?", (ejo_id,))
+            # ponytail: select createdDate, cost analysis, quantity, qty_needed, qty_stock, photo_before, and description columns to preserve them during updates
+            cursor.execute("SELECT logs, engineer, status, is_archived, approvals, targetDate, estDate, title, dept, category, priority, location, createdDate, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock, description, usage_type, purpose, estCost, actCost, qty_needed_target, qty_needed_actual, qty_stock_target, qty_work_confirmed, qty_work_confirmed_date, qty_work_done_date FROM general_ejos WHERE id = ?", (ejo_id,))
             row = cursor.fetchone()
             current_logs = json.loads(row[0]) if (row and row[0]) else []
             old_engineer = row[1] if row else 'Unassigned'
@@ -2231,6 +2850,17 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             old_quantity = row[18] if (row and len(row) > 18) else 1
             old_qty_needed = row[19] if (row and len(row) > 19) else 0
             old_qty_stock = row[20] if (row and len(row) > 20) else 0
+            old_desc = row[21] if (row and len(row) > 21 and row[21] is not None) else ""
+            old_usage_type = row[22] if (row and len(row) > 22 and row[22] is not None) else "Kebutuhan Mesin"
+            old_purpose = row[23] if (row and len(row) > 23 and row[23] is not None) else "Kebutuhan Mesin"
+            old_est_cost = row[24] if (row and len(row) > 24 and row[24] is not None) else 0
+            old_act_cost = row[25] if (row and len(row) > 25 and row[25] is not None) else 0
+            old_qty_needed_target = row[26] if (row and len(row) > 26 and row[26] is not None) else old_qty_needed
+            old_qty_needed_actual = row[27] if (row and len(row) > 27 and row[27] is not None) else 0
+            old_qty_stock_target = row[28] if (row and len(row) > 28 and row[28] is not None) else old_qty_stock
+            old_qty_work_confirmed = row[29] if (row and len(row) > 29 and row[29] is not None) else 0
+            old_qty_work_confirmed_date = row[30] if (row and len(row) > 30 and row[30] is not None) else ''
+            old_qty_work_done_date = row[31] if (row and len(row) > 31 and row[31] is not None) else ''
 
             if 'logs' in data:
                 existing_messages = {log['message'] for log in current_logs}
@@ -2238,6 +2868,35 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                     if log['message'] not in existing_messages:
                         current_logs.append(log)
 
+            # ponytail: Reject attachment deletion if General EJO status is Done / Completed / Cancelled / Archived
+            is_done = old_status in ('Completed', 'Cancelled', 'Done') or old_is_archived == 1
+            if is_done and 'description' in data:
+                old_atts = self._extract_attachments(old_desc)
+                new_atts = self._extract_attachments(data['description'])
+                if any(att not in new_atts for att in old_atts):
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": "Lampiran foto tidak dapat dihapus setelah EJO masuk ke proses Done"}).encode("utf-8"))
+                    conn.close()
+                    return
+
+            quantity = int(data.get('quantity', old_quantity))
+            qty_needed = int(data.get('qty_needed', old_qty_needed))
+            qty_needed_target = int(data.get('qty_needed_target', old_qty_needed_target))
+            qty_needed_actual = int(data.get('qty_needed_actual', old_qty_needed_actual))
+            if 'qty_stock' in data and data['qty_stock'] is not None:
+                qty_stock = int(data['qty_stock'])
+            else:
+                qty_stock = old_qty_stock
+            qty_stock_target = int(data.get('qty_stock_target', old_qty_stock_target))
+            qty_work_confirmed = int(data.get('qty_work_confirmed', old_qty_work_confirmed))
+            qty_work_confirmed_date = data.get('qty_work_confirmed_date', old_qty_work_confirmed_date)
+            qty_work_done_date = data.get('qty_work_done_date', old_qty_work_done_date)
+
+            engineer = data.get('engineer', old_engineer)
+            est_cost = data.get('estCost', old_est_cost)
+            act_cost = data.get('actCost', old_act_cost)
             is_archived = data.get('is_archived', old_is_archived)
             target_date = data.get('targetDate', old_target_date)
             est_date = data.get('estDate', old_est_date)
@@ -2252,9 +2911,33 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             repair_duration = int(data.get('repair_duration', old_repair_duration))
             repair_cost_per_day = float(data.get('repair_cost_per_day', old_repair_cost_per_day))
             photo_before = data.get('photo_before', old_photo_before)
-            quantity = int(data.get('quantity', old_quantity))
-            qty_needed = int(data.get('qty_needed', old_qty_needed))
-            qty_stock = int(data.get('qty_stock', old_qty_stock))
+
+            status = data.get('status', old_status)
+            if str(status).startswith('In Progress') and not str(old_status).startswith('In Progress'):
+                if 'qty_needed_actual' not in data:
+                    qty_needed_actual = 0
+                if 'qty_stock' not in data:
+                    qty_stock = 0
+
+            is_cancelled = ('cancelled' in str(old_status).lower() or 'ditolak' in str(old_status).lower() or 'cancelled' in str(status).lower() or 'ditolak' in str(status).lower())
+            is_repair_part = (str(category) == 'Repair Part' or 'repair' in str(category).lower())
+            if is_repair_part and not is_cancelled and status in ('Pending User Approval', 'Completed') and old_status not in ('Pending User Approval', 'Completed'):
+                # Validate quantity
+                q_needed_target = qty_needed_target if qty_needed_target > 0 else (qty_needed if qty_needed > 0 else 1)
+                q_stock_target = qty_stock_target if qty_stock_target > 0 else max(0, quantity - q_needed_target)
+                
+                q_needed = qty_needed_actual if qty_needed_actual is not None else qty_needed
+                q_stock = qty_stock
+
+                if (q_needed_target > 0 and q_needed < q_needed_target) or (q_stock_target > 0 and q_stock < q_stock_target):
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": "Quantity mesin & stok harus terpenuhi."}).encode("utf-8"))
+                    conn.close()
+                    return
+            usage_type = data.get('usage_type', data.get('purpose', old_usage_type))
+            purpose = data.get('purpose', usage_type)
             
             # ponytail: extract approvals and serialize if dictionary
             approvals = data.get('approvals', old_approvals)
@@ -2264,17 +2947,15 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             if 'description' in data:
                 cursor.execute("""
                     UPDATE general_ejos
-                    SET status = ?, engineer = ?, estCost = ?, actCost = ?, description = ?, logs = ?, is_archived = ?, approvals = ?, targetDate = ?, estDate = ?, title = ?, dept = ?, category = ?, priority = ?, location = ?, createdDate = ?, mid = ?, part_price_new = ?, repair_duration = ?, repair_cost_per_day = ?, photo_before = ?, quantity = ?, qty_needed = ?, qty_stock = ?
+                    SET status = ?, engineer = ?, estCost = ?, actCost = ?, description = ?, logs = ?, is_archived = ?, approvals = ?, targetDate = ?, estDate = ?, title = ?, dept = ?, category = ?, priority = ?, location = ?, createdDate = ?, mid = ?, part_price_new = ?, repair_duration = ?, repair_cost_per_day = ?, photo_before = ?, quantity = ?, qty_needed = ?, qty_stock = ?, usage_type = ?, purpose = ?, qty_needed_target = ?, qty_needed_actual = ?, qty_stock_target = ?, qty_work_confirmed = ?, qty_work_confirmed_date = ?, qty_work_done_date = ?
                     WHERE id = ?
-                """, (data['status'], data['engineer'], data['estCost'],
-                      data['actCost'], data['description'], json.dumps(current_logs), is_archived, approvals, target_date, est_date, title, dept, category, priority, location, created_date, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock, ejo_id))
+                """, (status, engineer, est_cost, act_cost, data['description'], json.dumps(current_logs), is_archived, approvals, target_date, est_date, title, dept, category, priority, location, created_date, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock, usage_type, purpose, qty_needed_target, qty_needed_actual, qty_stock_target, qty_work_confirmed, qty_work_confirmed_date, qty_work_done_date, ejo_id))
             else:
                 cursor.execute("""
                     UPDATE general_ejos
-                    SET status = ?, engineer = ?, estCost = ?, actCost = ?, logs = ?, is_archived = ?, approvals = ?, targetDate = ?, estDate = ?, title = ?, dept = ?, category = ?, priority = ?, location = ?, createdDate = ?, mid = ?, part_price_new = ?, repair_duration = ?, repair_cost_per_day = ?, photo_before = ?, quantity = ?, qty_needed = ?, qty_stock = ?
+                    SET status = ?, engineer = ?, estCost = ?, actCost = ?, logs = ?, is_archived = ?, approvals = ?, targetDate = ?, estDate = ?, title = ?, dept = ?, category = ?, priority = ?, location = ?, createdDate = ?, mid = ?, part_price_new = ?, repair_duration = ?, repair_cost_per_day = ?, photo_before = ?, quantity = ?, qty_needed = ?, qty_stock = ?, usage_type = ?, purpose = ?, qty_needed_target = ?, qty_needed_actual = ?, qty_stock_target = ?, qty_work_confirmed = ?, qty_work_confirmed_date = ?, qty_work_done_date = ?
                     WHERE id = ?
-                """, (data['status'], data['engineer'], data['estCost'],
-                      data['actCost'], json.dumps(current_logs), is_archived, approvals, target_date, est_date, title, dept, category, priority, location, created_date, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock, ejo_id))
+                """, (status, engineer, est_cost, act_cost, json.dumps(current_logs), is_archived, approvals, target_date, est_date, title, dept, category, priority, location, created_date, mid, part_price_new, repair_duration, repair_cost_per_day, photo_before, quantity, qty_needed, qty_stock, usage_type, purpose, qty_needed_target, qty_needed_actual, qty_stock_target, qty_work_confirmed, qty_work_confirmed_date, qty_work_done_date, ejo_id))
 
             # ponytail: auto notifikasi saat assignment/status berubah (mendukung multi-engineer)
             new_engineer = data.get('engineer', old_engineer)
@@ -2482,6 +3163,21 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", f"https://images.unsplash.com/{photo_id}?w=80")
             self.end_headers()
+            return
+
+        # ponytail: handle favicon.ico — serve minimal transparent 1x1 pixel to suppress 404 noise
+        if clean_path == "/favicon.ico":
+            # Minimal 1x1 transparent ICO (62 bytes)
+            import base64
+            ico_data = base64.b64decode(
+                "AAABAAEAAQEAAAEAGAAwAAAAFgAAACgAAAABAAAAAgAAAAEAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "image/x-icon")
+            self.send_header("Content-Length", str(len(ico_data)))
+            self.send_header("Cache-Control", "public, max-age=604800")
+            self.end_headers()
+            self.wfile.write(ico_data)
             return
 
         # ponytail: handle automatic browser probing (sw.js, .map files, .well-known devtools) to prevent 404 noise
@@ -2706,10 +3402,21 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
         cursor = conn.cursor()
         try:
             # Security check: creator must have higher role level than target's old role and target's new role
-            cursor.execute("SELECT role, password FROM users WHERE username = ?", (username,))
+            cursor.execute("SELECT role, password, signature, avatar, dept FROM users WHERE username = ?", (username,))
             target_row = cursor.fetchone()
+            if not target_row:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "User tidak ditemukan!"}).encode("utf-8"))
+                conn.close()
+                return
+
             target_old_role = target_row[0] if target_row else ''
             target_old_password = target_row[1] if target_row else ''
+            target_old_sig = target_row[2] if target_row else ''
+            target_old_avatar = target_row[3] if target_row else ''
+            target_old_dept = target_row[4] if target_row else ''
             
             creator = (data.get('creator_username') or data.get('requester_username') or data.get('requester') or '').strip()
             if not creator and hasattr(self, 'path'):
@@ -2727,10 +3434,19 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             
             creator_level = get_role_level(creator_role)
             old_level = get_role_level(target_old_role)
-            new_level = get_role_level(data.get('role'))
+            new_role = data.get('role') or target_old_role
+            new_level = get_role_level(new_role)
             
             is_self_update = (creator.lower() == username.lower()) if creator else False
             
+            if username.lower() == 'server' and creator.lower() != 'server':
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "Akun Server utama hanya dapat dimodifikasi oleh Akun Server sendiri!"}).encode("utf-8"))
+                conn.close()
+                return
+
             if is_self_update and creator.lower() != 'server':
                 old_password = data.get('old_password', '')
                 if old_password and old_password != target_old_password:
@@ -2741,7 +3457,7 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                     conn.close()
                     return
             
-            if is_self_update and creator.lower() != 'server' and data.get('role') != target_old_role:
+            if is_self_update and creator.lower() != 'server' and new_role != target_old_role:
                 self.send_response(403)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -2755,7 +3471,7 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 is_valid = True
             elif is_self_update:
                 is_valid = True
-            elif creator_level > old_level and creator_level > new_level:
+            elif creator_level >= old_level and creator_level >= new_level:
                 is_valid = True
                 
             if not is_valid:
@@ -2766,23 +3482,91 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 conn.close()
                 return
 
-            cursor.execute("""
-                UPDATE users 
-                SET password = ?, fullname = ?, role = ?, avatar = ?, signature = ?, dept = ?
-                WHERE username = ?
-            """, (
-                data.get('password', target_old_password), data.get('fullname', ''), data.get('role', ''),
-                data.get('avatar', ''), data.get('signature', ''), data.get('dept', ''), username
-            ))
+            new_password = data.get('password') if (data.get('password') and str(data.get('password')).strip()) else target_old_password
+            new_fullname = data.get('fullname', '')
+            new_avatar = data.get('avatar') if data.get('avatar') is not None else target_old_avatar
+            new_signature = data.get('signature') if data.get('signature') is not None else target_old_sig
+            new_dept = data.get('dept') if data.get('dept') is not None else target_old_dept
+
+            raw_new_username = (data.get('new_username') or data.get('username') or username).strip().lower()
+            final_username = username
+
+            if raw_new_username and raw_new_username != username.lower():
+                is_server_admin = (creator.lower() == 'server' or creator_role in ('Server', 'server'))
+                if not is_server_admin:
+                    self.send_response(403)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": "Hanya Akun Server yang berwenang mengubah Username!"}).encode("utf-8"))
+                    conn.close()
+                    return
+
+                if username.lower() == 'server':
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": "Username Akun Server root tidak dapat diubah agar integritas sistem tetap terjaga!"}).encode("utf-8"))
+                    conn.close()
+                    return
+
+                cursor.execute("SELECT COUNT(*) FROM users WHERE LOWER(username) = ? AND LOWER(username) != ?", (raw_new_username, username.lower()))
+                if cursor.fetchone()[0] > 0:
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": f"Username '{raw_new_username}' sudah digunakan oleh user lain!"}).encode("utf-8"))
+                    conn.close()
+                    return
+
+                # 1. Update users table with new username
+                cursor.execute("""
+                    UPDATE users 
+                    SET username = ?, password = ?, fullname = ?, role = ?, avatar = ?, signature = ?, dept = ?
+                    WHERE username = ?
+                """, (
+                    raw_new_username, new_password, new_fullname, new_role,
+                    new_avatar, new_signature, new_dept, username
+                ))
+
+                # 2. Cascade update all foreign references across database tables
+                cursor.execute("UPDATE notifications SET target_username = ? WHERE LOWER(target_username) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE ejos SET requester = ? WHERE LOWER(requester) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE ejos SET engineer = ? WHERE LOWER(engineer) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE general_ejos SET requester = ? WHERE LOWER(requester) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE general_ejos SET engineer = ? WHERE LOWER(engineer) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE drawings SET uploader = ? WHERE LOWER(uploader) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE drawings SET requester = ? WHERE LOWER(requester) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE drawings SET engineer = ? WHERE LOWER(engineer) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE projects SET pic = ? WHERE LOWER(pic) = ?", (raw_new_username, username.lower()))
+                cursor.execute("UPDATE repair_parts SET uploader = ? WHERE LOWER(uploader) = ?", (raw_new_username, username.lower()))
+
+                # 3. Cascade update in-memory active sessions
+                with ACTIVE_SESSIONS_LOCK:
+                    if username.lower() in ACTIVE_SESSIONS:
+                        ACTIVE_SESSIONS[raw_new_username] = ACTIVE_SESSIONS.pop(username.lower())
+
+                final_username = raw_new_username
+            else:
+                cursor.execute("""
+                    UPDATE users 
+                    SET password = ?, fullname = ?, role = ?, avatar = ?, signature = ?, dept = ?
+                    WHERE username = ?
+                """, (
+                    new_password, new_fullname, new_role,
+                    new_avatar, new_signature, new_dept, username
+                ))
+
             conn.commit()
             
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "success", "username": username}).encode("utf-8"))
+            self.wfile.write(json.dumps({"status": "success", "username": final_username, "message": "Data user berhasil diperbarui"}).encode("utf-8"))
         except Exception as e:
             conn.rollback()
             self.send_error(500, f"Database error: {str(e)}")
+        finally:
+            conn.close()
     def update_user_layout_settings(self, username):
         content_length = int(self.headers['Content-Length'])
         post_data = self.rfile.read(content_length)
@@ -2860,23 +3644,30 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
         post_data = self.rfile.read(content_length)
         data = json.loads(post_data.decode("utf-8"))
 
-        requester = (data.get('requester_username') or data.get('creator_username') or '').strip()
-        target_dept = (data.get('dept') or '').strip()
-        target_role = (data.get('role') or '').strip()
-
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT role FROM users WHERE username = ?", (requester,))
-            req_row = cursor.fetchone()
-            req_role = req_row[0] if req_row else ''
+            creator = (data.get('creator_username') or data.get('requester_username') or data.get('requester') or '').strip()
+            cursor.execute("SELECT role FROM users WHERE username = ?", (creator,))
+            creator_row = cursor.fetchone()
+            creator_role = creator_row[0] if creator_row else ''
 
-            is_server = (requester.lower() == 'server' or req_role == 'Server')
-            if not is_server:
+            is_server = (creator.lower() == 'server' or creator_role == 'Server')
+            if not is_server and creator_role not in ('Admin Eng', 'Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager', 'Factory Manager'):
                 self.send_response(403)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"status": "error", "message": "Pengaturan akses role hanya dapat diubah oleh Akun Server!"}).encode("utf-8"))
+                self.wfile.write(json.dumps({"status": "error", "message": "Hanya Akun Server & Administrator yang dapat mengubah hak akses per Role!"}).encode("utf-8"))
+                conn.close()
+                return
+
+            target_dept = data.get('dept', 'ENG')
+            target_role = data.get('role', '')
+            if not target_role:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "Role target wajib diisi!"}).encode("utf-8"))
                 conn.close()
                 return
 
@@ -2935,8 +3726,10 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 r_lower = urole.lower()
                 if r_lower == 'drafter':
                     perms = {"overview": False, "gejo": False, "drawing": True, "project": False, "partlist": True, "history": True, "admin": False, "approval": False, "signature": False}
-                elif 'foreman' in r_lower or 'spv' in r_lower or 'supervisor' in r_lower or 'manager' in r_lower:
+                elif 'foreman' in r_lower or r_lower == 'admin eng':
                     perms = {"overview": True, "gejo": True, "drawing": True, "project": True, "partlist": True, "history": True, "admin": True, "approval": True, "signature": True}
+                elif 'spv' in r_lower or 'supervisor' in r_lower or 'manager' in r_lower:
+                    perms = {"overview": True, "gejo": True, "drawing": True, "project": True, "partlist": True, "history": True, "admin": False, "approval": True, "signature": True}
                 elif 'staff' in r_lower or 'user' in r_lower:
                     perms = {"overview": False, "gejo": True, "drawing": True, "project": False, "partlist": False, "history": True, "admin": False, "approval": False, "signature": False}
                 else:
@@ -3002,7 +3795,21 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
     def delete_user(self, username):
         # ponytail: parse query parameters to check authorization level
         query_params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        requester = query_params.get('requester', [''])[0]
+        requester = (query_params.get('requester', [''])[0] or query_params.get('requester_username', [''])[0] or query_params.get('creator_username', [''])[0]).strip()
+
+        if username.lower() == 'server':
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": "Akun Server utama tidak boleh dihapus!"}).encode("utf-8"))
+            return
+
+        if requester and requester.lower() == username.lower():
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": "Anda tidak dapat menghapus akun Anda sendiri yang sedang aktif!"}).encode("utf-8"))
+            return
 
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -3018,15 +3825,7 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 conn.close()
                 return
             
-            target_role = user_row[0]
-            
-            requester = (data.get('requester_username') or data.get('creator_username') or data.get('requester') or '').strip() if data else ''
-            if not requester and hasattr(self, 'path'):
-                from urllib.parse import urlparse, parse_qs
-                parsed = urlparse(self.path)
-                params = parse_qs(parsed.query)
-                if 'requester' in params and params['requester']:
-                    requester = params['requester'][0]
+            target_role = user_row[0] or ''
 
             # Check requester's role
             cursor.execute("SELECT role FROM users WHERE username = ?", (requester,))
@@ -3038,10 +3837,14 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             target_level = get_role_level(target_role)
             
             is_valid = False
-            if requester.lower() == 'server' or requester_role == 'Server' or (requester_role and requester_role.lower() == 'server'):
+            admin_roles = ('Server', 'server', 'Admin Eng', 'Foreman Eng', 'Supervisor Eng', 'Manager Eng', 'Plant Manager', 'Factory Manager')
+            drafter_roles = ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part')
+            if requester.lower() == 'server' or requester_role in ('Server', 'server'):
                 is_valid = True
-            elif requester_role == 'Foreman Eng':
-                if is_drafter_role(target_role) or target_role in ('Admin Eng', 'User') or target_role.startswith('Staff ') or target_role.startswith('user_'):
+            elif requester_role in admin_roles and target_role not in ('Server', 'server'):
+                if requester_role in ('Admin Eng', 'Foreman Eng') and (target_role in drafter_roles or target_role in ('Admin Eng', 'User', 'Drafter') or target_role.startswith('Staff ') or target_role.startswith('user_')):
+                    is_valid = True
+                elif creator_level >= target_level:
                     is_valid = True
             elif creator_level > target_level:
                 is_valid = True
@@ -3370,7 +4173,13 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     current_docs = []
 
-            updated_docs = [d for d in current_docs if d != doc_url]
+            target_clean = doc_url.split('?')[0].split('/').pop().lower()
+            updated_docs = []
+            for d in current_docs:
+                d_url = d if isinstance(d, str) else (d.get('path') or d.get('url') or '')
+                if d_url and d_url.split('?')[0].split('/').pop().lower() == target_clean:
+                    continue
+                updated_docs.append(d)
             empty_approvals = json.dumps({})
             cursor.execute("UPDATE projects SET handover_docs = ?, handover_approvals = ? WHERE id = ?", (json.dumps(updated_docs), empty_approvals, proj_id))
             conn.commit()
@@ -3461,27 +4270,38 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                     user_row = cursor.fetchone()
                     if user_row:
                         creator_role = user_row[0]
-                    if user_row and user_row[0] in ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi'):
-                        self.send_response(403)
-                        self.send_header("Content-Type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({"status": "error", "message": f"{user_row[0]} tidak diperbolehkan membuat Request Drawing."}).encode("utf-8"))
-                        conn.close()
-                        return
-                    if user_row and is_user_limited(user_row[0], user_row[1] if len(user_row) > 1 else ''):
-                        cursor.execute("""
-                            SELECT COUNT(*) FROM drawings 
-                            WHERE (uploader = ? OR uploader IN (SELECT fullname FROM users WHERE username = ?)) 
-                              AND status != 'Completed' AND status != 'Cancelled' AND status != 'Archived' AND status != 'Rejected'
-                        """, (creator, creator))
-                        count = cursor.fetchone()[0]
-                        if count >= 2:
-                            self.send_response(400)
+                    drafter_roles = ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part')
+                    drafter_foreman_roles = ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part', 'Foreman Eng', 'Foreman', 'Admin Eng', 'Server')
+                    if drawing_type == 'import':
+                        if user_row and user_row[0] not in drafter_foreman_roles:
+                            self.send_response(403)
                             self.send_header("Content-Type", "application/json")
                             self.end_headers()
-                            self.wfile.write(json.dumps({"status": "error", "message": "Batas pembuatan Drawing tercapai! Anda hanya dapat membuat maksimal 2 Drawing aktif."}).encode("utf-8"))
+                            self.wfile.write(json.dumps({"status": "error", "message": "Hanya Drafter dan Foreman di lingkup Engineering yang diperbolehkan mengupload / import Drawing."}).encode("utf-8"))
                             conn.close()
                             return
+                    else:
+                        if user_row and user_row[0] in drafter_roles:
+                            self.send_response(403)
+                            self.send_header("Content-Type", "application/json")
+                            self.end_headers()
+                            self.wfile.write(json.dumps({"status": "error", "message": f"{user_row[0]} tidak diperbolehkan membuat Request Drawing."}).encode("utf-8"))
+                            conn.close()
+                            return
+                        if user_row and is_user_limited(user_row[0], user_row[1] if len(user_row) > 1 else ''):
+                            cursor.execute("""
+                                SELECT COUNT(*) FROM drawings 
+                                WHERE (uploader = ? OR uploader IN (SELECT fullname FROM users WHERE username = ?)) 
+                                  AND status != 'Completed' AND status != 'Cancelled' AND status != 'Archived' AND status != 'Rejected'
+                            """, (creator, creator))
+                            count = cursor.fetchone()[0]
+                            if count >= 2:
+                                self.send_response(400)
+                                self.send_header("Content-Type", "application/json")
+                                self.end_headers()
+                                self.wfile.write(json.dumps({"status": "error", "message": "Batas pembuatan Drawing tercapai! Anda hanya dapat membuat maksimal 2 Drawing aktif."}).encode("utf-8"))
+                                conn.close()
+                                return
 
                 if drawing_id_input:
                     cursor.execute("SELECT id FROM drawings WHERE id = ?", (drawing_id_input,))
@@ -3496,14 +4316,12 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     cursor.execute("SELECT id FROM drawings UNION ALL SELECT id FROM general_ejos")
                     existing = [row[0] for row in cursor.fetchall() if row[0]]
-                    nums = []
-                    for x in existing:
-                        m = re.search(r'EJO(\d{3})', x) or re.search(r'(\d+)', x)
-                        if m:
-                            nums.append(int(m.group(1)))
-                    next_num = max(nums) + 1 if nums else 1
-                    date_str = __import__('datetime').datetime.now().strftime("%d%m%Y")
-                    drawing_id = f"EJO{next_num:03d}{date_str}"
+                    nums = [extract_ejo_num(x) for x in existing if extract_ejo_num(x) is not None]
+                    max_n = max(nums) if nums else 0
+                    next_num = max_n + 1 if nums else 1
+                    pad_width = max(2, len(str(max(max_n, next_num))))
+                    date_str = __import__('datetime').datetime.now().strftime("%d%m%y")
+                    drawing_id = f"EJO{next_num:0{pad_width}d}{date_str}"
 
                 creator_level = ROLE_LEVELS.get(creator_role, 0)
                 initial_status = 'Pending Foreman Approval'
@@ -3648,7 +4466,7 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                                 pass
                 cursor.execute("DELETE FROM drawings WHERE ejo_id = ?", (ejo_id,))
 
-            # ponytail: reject if creator is a Drafter (matching General EJO)
+            # ponytail: enforce role checks for drawing import vs request
             creator_role = ""
             if requester or uploader:
                 creator = requester or uploader
@@ -3656,29 +4474,40 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
                 user_row = cursor.fetchone()
                 if user_row:
                     creator_role = user_row[0]
-                if user_row and user_row[0] in ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi'):
-                    self.send_response(403)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(json.dumps({"status": "error", "message": f"{user_row[0]} tidak diperbolehkan membuat Request Drawing."}).encode("utf-8"))
-                    conn.close()
-                    return
-
-                # ponytail: enforce limit of 2 active drawings per user for User role and non-ENG SPV/Manager
-                if user_row and is_user_limited(user_row[0], user_row[1] if len(user_row) > 1 else ''):
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM drawings 
-                        WHERE (uploader = ? OR uploader IN (SELECT fullname FROM users WHERE username = ?)) 
-                          AND status != 'Completed' AND status != 'Cancelled' AND status != 'Archived' AND status != 'Rejected'
-                    """, (creator, creator))
-                    count = cursor.fetchone()[0]
-                    if count >= 2:
-                        self.send_response(400)
+                drafter_roles = ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part')
+                drafter_foreman_roles = ('Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part', 'Foreman Eng', 'Foreman', 'Admin Eng', 'Server')
+                if drawing_type == 'import':
+                    if user_row and user_row[0] not in drafter_foreman_roles:
+                        self.send_response(403)
                         self.send_header("Content-Type", "application/json")
                         self.end_headers()
-                        self.wfile.write(json.dumps({"status": "error", "message": "Batas pembuatan Drawing tercapai! Anda hanya dapat membuat maksimal 2 Drawing aktif."}).encode("utf-8"))
+                        self.wfile.write(json.dumps({"status": "error", "message": "Hanya Drafter dan Foreman di lingkup Engineering yang diperbolehkan mengupload / import Drawing."}).encode("utf-8"))
                         conn.close()
                         return
+                else:
+                    if user_row and user_row[0] in drafter_roles:
+                        self.send_response(403)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"status": "error", "message": f"{user_row[0]} tidak diperbolehkan membuat Request Drawing."}).encode("utf-8"))
+                        conn.close()
+                        return
+
+                    # ponytail: enforce limit of 2 active drawings per user for User role and non-ENG SPV/Manager
+                    if user_row and is_user_limited(user_row[0], user_row[1] if len(user_row) > 1 else ''):
+                        cursor.execute("""
+                            SELECT COUNT(*) FROM drawings 
+                            WHERE (uploader = ? OR uploader IN (SELECT fullname FROM users WHERE username = ?)) 
+                              AND status != 'Completed' AND status != 'Cancelled' AND status != 'Archived' AND status != 'Rejected'
+                        """, (creator, creator))
+                        count = cursor.fetchone()[0]
+                        if count >= 2:
+                            self.send_response(400)
+                            self.send_header("Content-Type", "application/json")
+                            self.end_headers()
+                            self.wfile.write(json.dumps({"status": "error", "message": "Batas pembuatan Drawing tercapai! Anda hanya dapat membuat maksimal 2 Drawing aktif."}).encode("utf-8"))
+                            conn.close()
+                            return
 
             if drawing_id_input:
                 cursor.execute("SELECT id FROM drawings WHERE id = ?", (drawing_id_input,))
@@ -3693,14 +4522,12 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             else:
                 cursor.execute("SELECT id FROM drawings UNION ALL SELECT id FROM general_ejos")
                 existing = [row[0] for row in cursor.fetchall() if row[0]]
-                nums = []
-                for x in existing:
-                    m = re.search(r'EJO(\d{3})', x) or re.search(r'(\d+)', x)
-                    if m:
-                        nums.append(int(m.group(1)))
-                next_num = max(nums) + 1 if nums else 1
-                date_str = __import__('datetime').datetime.now().strftime("%d%m%Y")
-                drawing_id = f"EJO{next_num:03d}{date_str}"
+                nums = [extract_ejo_num(x) for x in existing if extract_ejo_num(x) is not None]
+                max_n = max(nums) if nums else 0
+                next_num = max_n + 1 if nums else 1
+                pad_width = max(2, len(str(max(max_n, next_num))))
+                date_str = __import__('datetime').datetime.now().strftime("%d%m%y")
+                drawing_id = f"EJO{next_num:0{pad_width}d}{date_str}"
 
             file_url = ""
             if file_data and file_ext:
@@ -4090,6 +4917,110 @@ class EJORestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": "Database berhasil dinuclear!"}).encode("utf-8"))
+        except Exception as e:
+            if conn:
+                conn.close()
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode("utf-8"))
+
+    def reset_database_module(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode("utf-8"))
+        
+        username = (data.get('username') or data.get('requester') or '').strip()
+        module = (data.get('module') or '').strip().lower()
+        
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        try:
+            # Verify that the requester has the 'Server' role
+            cursor.execute("SELECT role FROM users WHERE username = ?", (username,))
+            row = cursor.fetchone()
+            role = row[0] if row else ''
+            is_server = role == 'Server' or username.lower() == 'server' or role.lower() == 'server'
+            if not is_server:
+                self.send_response(403)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "Otoritas tidak cukup"}).encode("utf-8"))
+                conn.close()
+                return
+
+            if module == 'general-ejo':
+                cursor.execute("DELETE FROM general_ejos WHERE category IS NULL OR category != 'Repair Part'")
+                msg = "Data General EJO berhasil dihapus!"
+            elif module == 'drawing':
+                cursor.execute("DELETE FROM drawings")
+                msg = "Data Drawing EJO berhasil dihapus!"
+            elif module == 'projects':
+                cursor.execute("DELETE FROM projects")
+                msg = "Data Project Monitoring berhasil dihapus!"
+            elif module in ['parts', 'partlist']:
+                cursor.execute("DELETE FROM repair_parts")
+                cursor.execute("DELETE FROM general_ejos WHERE category = 'Repair Part'")
+                msg = "Data Repair Part & Spare Part berhasil dihapus!"
+            elif module == 'history':
+                cursor.execute("DELETE FROM general_ejos WHERE status = 'Completed' OR is_archived = 1")
+                cursor.execute("DELETE FROM drawings WHERE status = 'Done'")
+                cursor.execute("DELETE FROM notifications")
+                msg = "Data History EJO & Notifikasi berhasil dihapus!"
+            elif module == 'users':
+                cursor.execute("DELETE FROM users WHERE username != 'server'")
+                required_users = [
+                    ("dani", "dani123", "Ahmad Dani", "Foreman Eng", "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("budi", "budi123", "Budi Utomo", "Foreman Eng", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("deddy", "deddy123", "Deddy Corbuzier", "user_PRD", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=80", "PRD"),
+                    ("tedy", "123456", "Tedy", "Sipil", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("dadang", "123456", "Dadang", "Sipil", "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("thorik", "123456", "Thorik", "Elektrik", "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("rifky", "123456", "Rifky", "Elektrik", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("hadi", "123456", "Hadi", "Elektrik", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("kresna", "123456", "Kresna", "Elektrik", "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("aden", "123456", "Aden", "Kalibrasi", "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("chandra", "123456", "Chandra", "Program", "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("yuli", "123456", "Yuli", "Mekanik", "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("reksa", "123456", "Reksa", "Mekanik", "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("eman", "123456", "Eman", "Mekanik", "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("rahmad", "123456", "Rahmad", "Repair Part", "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&q=80&w=80", "ENG"),
+                    ("prd", "prd123", "user_PRD", "user_PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
+                    ("eng", "eng123", "user_ENG", "user_ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
+                    ("epr", "epr123", "user_EPR", "user_EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
+                    ("ga", "ga123", "user_GA", "user_GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
+                    ("qc", "qc123", "user_QC", "user_QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
+                    ("wrh", "wrh123", "user_WRH", "user_WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH"),
+                    ("tmb", "tmb123", "user_TMB", "user_TMB", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "TMB"),
+                    ("staff_prd", "staff_prd123", "Staff Produksi", "Staff PRD", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "PRD"),
+                    ("staff_eng", "staff_eng123", "Staff Engineering", "Staff ENG", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "ENG"),
+                    ("staff_epr", "staff_epr123", "Staff EPR", "Staff EPR", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "EPR"),
+                    ("staff_ga", "staff_ga123", "Staff GA", "Staff GA", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "GA"),
+                    ("staff_qc", "staff_qc123", "Staff QC", "Staff QC", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "QC"),
+                    ("staff_wrh", "staff_wrh123", "Staff Warehouse", "Staff WRH", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "WRH"),
+                    ("staff_tmb", "staff_tmb123", "Staff Timbangan", "Staff TMB", "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80", "TMB"),
+                    ("spv_tmb", "spv_tmb123", "Supervisor Timbangan", "Supervisor TMB", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80", "TMB"),
+                    ("mgr_tmb", "mgr_tmb123", "Manager Timbangan", "Manager TMB", "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=80", "TMB")
+                ]
+                for u_name, u_pass, u_full, u_role, u_av, u_dept in required_users:
+                    cursor.execute("INSERT OR REPLACE INTO users (username, password, fullname, role, avatar, dept) VALUES (?, ?, ?, ?, ?, ?)", (u_name, u_pass, u_full, u_role, u_av, u_dept))
+                msg = "Akun pengguna berhasil di-reset ke setelan default!"
+            else:
+                conn.close()
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": f"Modul '{module}' tidak dikenali"}).encode("utf-8"))
+                return
+
+            conn.commit()
+            conn.close()
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "module": module, "message": msg}).encode("utf-8"))
         except Exception as e:
             if conn:
                 conn.close()

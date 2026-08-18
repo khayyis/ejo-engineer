@@ -16,22 +16,24 @@
     <script src="lucide.min.js"></script>
     <!-- Chart.js -->
     <script src="chart.js"></script>
-    <!-- Custom Style -->
-    <link rel="stylesheet" href="style.css?v=2.6"> <!-- ponytail: updated cache buster -->
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css?v=9.2">
 </head>
 
 <body>
     <!-- Login Screen Container -->
     <div class="login-wrapper" id="login-container">
         <!-- Background Video -->
-        <video id="login-bg-video" autoplay loop muted playsinline webkit-playsinline preload="auto" class="login-bg-video">
+        <video id="login-bg-video" autoplay loop muted="muted" playsinline webkit-playsinline defaultMuted
+            class="login-bg-video" src="202607301136_original.mp4">
+            <source src="202607301136_original.mp4" type="video/mp4">
             <source src="202607301136.mp4" type="video/mp4">
         </video>
         <div class="login-bg-overlay"></div>
 
         <div class="login-box card-glass animate-in">
             <div class="login-logo">
-                <div class="login-logo-subtitle">
+                <div class="login-logo-subtitle" style="margin-top: 0.5rem;">
                     <span class="sub-line-top">ENGINEERING JOB ORDER</span>
                     <span class="sub-line-bottom">PORTAL SYSTEM</span>
                 </div>
@@ -46,8 +48,7 @@
                 <div class="form-field">
                     <label for="login-password">Password <span class="required">*</span></label>
                     <div class="password-input-wrapper">
-                        <input type="password" id="login-password" placeholder="Masukkan Password"
-                            required>
+                        <input type="password" id="login-password" placeholder="Masukkan Password" required>
                         <button type="button" class="btn-toggle-password" id="btn-toggle-pass"
                             title="Tampilkan Password">
                             <i data-lucide="eye" id="pass-eye-icon" style="width: 16px; height: 16px;"></i>
@@ -62,7 +63,8 @@
                     <span>Username atau password salah!</span>
                 </div>
 
-                <button type="submit" id="btn-login-submit" class="btn btn-primary glow-button full-width" style="margin-top: 1.25rem;">
+                <button type="submit" id="btn-login-submit" class="btn btn-primary glow-button full-width"
+                    style="margin-top: 1.5rem;">
                     <i data-lucide="log-in"></i> Masuk Ke Dashboard
                 </button>
             </form>
@@ -88,132 +90,241 @@
 
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
-            <div class="sidebar-brand" onclick="switchTab('overview')" style="justify-content: flex-start; cursor: pointer;" title="Buka EJO Dashboard">
-                <div class="logo-icon">
+            <div class="sidebar-brand">
+                <div class="logo-icon" onclick="switchTab('overview')" style="cursor: pointer;"
+                    title="Buka EJO Dashboard">
                     <img src="Logo-BAS.png" alt="Logo PT. Bumi Alam Segar">
                 </div>
             </div>
 
-            <nav class="sidebar-nav">
-                <button class="nav-btn active" data-tab="overview" style="display: none;">
-                    <i data-lucide="layout-dashboard"></i>
-                    <span>Dashboard</span>
+            <div class="sidebar-nav-container">
+                <button class="nav-scroll-arrow left" id="nav-scroll-left" aria-label="Scroll Left"
+                    style="display: none;">
+                    <i data-lucide="chevron-left"></i>
                 </button>
-
-                <!-- General EJO Menu & Submenu -->
-                <div class="nav-item-wrapper">
-                    <button class="nav-btn" data-tab="general-ejo" id="btn-nav-general-ejo">
-                        <i data-lucide="layers"></i>
-                        <span>General EJO</span>
-                        <span class="gejo-chevron-toggle" style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
-                            <i data-lucide="chevron-down" class="gejo-chevron" style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
-                        </span>
+                <nav class="sidebar-nav">
+                    <button class="nav-btn active" data-tab="overview" style="display: none;">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>Dashboard</span>
                     </button>
-                    <div class="sidebar-submenu submenu" id="general-ejo-submenu">
-                        <button class="nav-btn sub-btn" data-tab="general-ejo" data-gejo-phase="1">
-                            <i data-lucide="calendar"></i>
-                            <span>Schedule</span>
-                        </button>
-                        <button class="nav-btn sub-btn" data-tab="general-ejo" data-gejo-phase="2">
-                            <i data-lucide="play-circle"></i>
-                            <span>On Progress</span>
-                        </button>
-                        <button class="nav-btn sub-btn" data-tab="general-ejo" data-gejo-phase="3">
-                            <i data-lucide="check-circle-2"></i>
-                            <span>Done</span>
-                        </button>
-                    </div>
-                </div>
 
-                <!-- Drawing Menu & Submenu -->
-                <div class="nav-item-wrapper">
-                    <button class="nav-btn" data-tab="drawing" id="btn-nav-drawing">
-                        <i data-lucide="image"></i>
-                        <span>Drawing EJO</span>
-                        <span class="drawing-chevron-toggle" style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
-                            <i data-lucide="chevron-down" class="drawing-chevron" style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
-                        </span>
-                    </button>
-                    <div class="sidebar-submenu submenu" id="drawing-submenu">
-                        <button class="nav-btn sub-btn" data-tab="drawing" data-drawing-phase="1">
-                            <i data-lucide="calendar"></i>
-                            <span>Schedule</span>
-                        </button>
-                        <button class="nav-btn sub-btn" data-tab="drawing" data-drawing-phase="2">
-                            <i data-lucide="play-circle"></i>
-                            <span>On Progress</span>
-                        </button>
-                        <button class="nav-btn sub-btn" data-tab="drawing" data-drawing-phase="3">
-                            <i data-lucide="check-circle-2"></i>
-                            <span>Done</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Project Menu & Submenu -->
-                <div class="nav-item-wrapper">
-                    <button class="nav-btn" data-tab="projects" id="btn-nav-projects">
-                        <i data-lucide="milestone"></i>
-                        <span>Project</span>
-                        <span class="projects-chevron-toggle" style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
-                            <i data-lucide="chevron-down" class="nested-chevron" style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
-                        </span>
-                    </button>
-                    <div class="sidebar-submenu submenu" id="projects-submenu">
-                        <button class="nav-btn sub-btn" data-tab="projects" data-phase="1">
-                            <i data-lucide="lightbulb"></i>
-                            <span>Fase 1: Inisialisasi</span>
-                        </button>
-                        <button class="nav-btn sub-btn" data-tab="projects" data-phase="2">
-                            <i data-lucide="shopping-cart"></i>
-                            <span>Fase 2: Pengadaan</span>
-                        </button>
-                        <button class="nav-btn sub-btn" data-tab="projects" data-phase="3">
-                            <i data-lucide="play"></i>
-                            <span>Fase 3: Eksekusi</span>
-                        </button>
-                        <button class="nav-btn sub-btn" data-tab="projects" data-phase="4">
-                            <i data-lucide="check-square"></i>
-                            <span>Fase 4: Commissioning & Serah Terima</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- ponytail: menu for Dashboard Part -->
-                <button class="nav-btn" data-tab="partlist" style="display: none;">
-                    <i data-lucide="wrench"></i>
-                    <span>Dashboard Part</span>
-                </button>
-                <!-- History EJO Menu & Submenu -->
-                <div class="nav-item-wrapper">
-                    <button class="nav-btn" data-tab="history" id="btn-nav-history">
-                        <i data-lucide="archive"></i>
-                        <span>History EJO</span>
-                        <span class="history-chevron-toggle" style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
-                            <i data-lucide="chevron-down" class="history-chevron" style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
-                        </span>
-                    </button>
-                    <div class="sidebar-submenu submenu" id="history-submenu">
-                        <button class="nav-btn sub-btn" data-tab="history" data-history-type="general-ejo">
-                            <i data-lucide="file-text"></i>
+                    <!-- General EJO Menu & Submenu -->
+                    <div class="nav-item-wrapper">
+                        <button class="nav-btn" data-tab="general-ejo" id="btn-nav-general-ejo">
+                            <i data-lucide="layers"></i>
                             <span>General EJO</span>
+                            <span class="gejo-chevron-toggle"
+                                style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
+                                <i data-lucide="chevron-down" class="gejo-chevron"
+                                    style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
+                            </span>
                         </button>
-                        <button class="nav-btn sub-btn" data-tab="history" data-history-type="drawing">
+                        <div class="sidebar-submenu submenu" id="general-ejo-submenu">
+                            <button class="nav-btn sub-btn" data-tab="general-ejo" data-gejo-phase="1">
+                                <i data-lucide="calendar"></i>
+                                <span>Schedule</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="general-ejo" data-gejo-phase="2">
+                                <i data-lucide="play-circle"></i>
+                                <span>On Progress</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="general-ejo" data-gejo-phase="3">
+                                <i data-lucide="check-circle-2"></i>
+                                <span>Done</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Drawing Menu & Submenu -->
+                    <div class="nav-item-wrapper">
+                        <button class="nav-btn" data-tab="drawing" id="btn-nav-drawing">
                             <i data-lucide="image"></i>
                             <span>Drawing EJO</span>
+                            <span class="drawing-chevron-toggle"
+                                style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
+                                <i data-lucide="chevron-down" class="drawing-chevron"
+                                    style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
+                            </span>
                         </button>
-                        <button class="nav-btn sub-btn" data-tab="history" data-history-type="project">
-                            <i data-lucide="folder-kanban"></i>
-                            <span>Project Monitoring</span>
-                        </button>
+                        <div class="sidebar-submenu submenu" id="drawing-submenu">
+                            <button class="nav-btn sub-btn" data-tab="drawing" data-drawing-phase="1">
+                                <i data-lucide="calendar"></i>
+                                <span>Schedule</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="drawing" data-drawing-phase="2">
+                                <i data-lucide="play-circle"></i>
+                                <span>On Progress</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="drawing" data-drawing-phase="3">
+                                <i data-lucide="check-circle-2"></i>
+                                <span>Done</span>
+                            </button>
+                        </div>
                     </div>
-                </div>
 
-                <button class="nav-btn" data-tab="admin" id="nav-admin-btn" style="display: none;">
-                    <i data-lucide="shield-alert"></i>
-                    <span>Admin Panel</span>
+                    <!-- Galeri Drawing Menu & Submenu -->
+                    <div class="nav-item-wrapper">
+                        <button class="nav-btn" data-tab="drawing-gallery" id="btn-nav-drawing-gallery">
+                            <i data-lucide="gallery-thumbnails"></i>
+                            <span>Galeri Drawing</span>
+                            <span class="drawing-gallery-chevron-toggle"
+                                style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
+                                <i data-lucide="chevron-down" class="drawing-gallery-chevron"
+                                    style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
+                            </span>
+                        </button>
+                        <div class="sidebar-submenu submenu" id="drawing-gallery-submenu">
+                            <button class="nav-btn sub-btn" data-tab="drawing-gallery" data-gallery-category="sipil" style="display: none !important;">
+                                <i data-lucide="building-2"></i>
+                                <span>Drawing Sipil</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="drawing-gallery" data-gallery-category="mekanik" style="display: none !important;">
+                                <i data-lucide="wrench"></i>
+                                <span>Drawing Mekanik</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="partlist-gallery" id="btn-nav-partlist-gallery">
+                                <i data-lucide="images"></i>
+                                <span>Galeri Spare Part</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Project Menu & Submenu -->
+                    <div class="nav-item-wrapper">
+                        <button class="nav-btn" data-tab="projects" id="btn-nav-projects">
+                            <i data-lucide="milestone"></i>
+                            <span>Project</span>
+                            <span class="projects-chevron-toggle"
+                                style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
+                                <i data-lucide="chevron-down" class="nested-chevron"
+                                    style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
+                            </span>
+                        </button>
+                        <div class="sidebar-submenu submenu" id="projects-submenu">
+                            <button class="nav-btn sub-btn" data-tab="projects" data-phase="1">
+                                <i data-lucide="lightbulb"></i>
+                                <span>Fase 1: Inisialisasi</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="projects" data-phase="2">
+                                <i data-lucide="shopping-cart"></i>
+                                <span>Fase 2: Pengadaan</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="projects" data-phase="3">
+                                <i data-lucide="play"></i>
+                                <span>Fase 3: Eksekusi</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="projects" data-phase="4">
+                                <i data-lucide="check-square"></i>
+                                <span>Fase 4: Commissioning & Serah Terima</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ponytail: menu for Dashboard Part -->
+                    <button class="nav-btn" data-tab="partlist" style="display: none;">
+                        <i data-lucide="wrench"></i>
+                        <span>Dashboard Part</span>
+                    </button>
+                    <!-- History EJO Menu & Submenu -->
+                    <div class="nav-item-wrapper">
+                        <button class="nav-btn" data-tab="history" id="btn-nav-history">
+                            <i data-lucide="archive"></i>
+                            <span>History EJO</span>
+                            <span class="history-chevron-toggle"
+                                style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
+                                <i data-lucide="chevron-down" class="history-chevron"
+                                    style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
+                            </span>
+                        </button>
+                        <div class="sidebar-submenu submenu" id="history-submenu">
+                            <button class="nav-btn sub-btn" data-tab="history" data-history-type="general-ejo">
+                                <i data-lucide="file-text"></i>
+                                <span>General EJO</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="history" data-history-type="repair-part">
+                                <i data-lucide="wrench"></i>
+                                <span>History Repair Part</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="history" data-history-type="drawing">
+                                <i data-lucide="image"></i>
+                                <span>Drawing EJO</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="history" data-history-type="project">
+                                <i data-lucide="folder-kanban"></i>
+                                <span>Project Monitoring</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button class="nav-btn" data-tab="admin" id="nav-admin-btn" style="display: none;">
+                        <i data-lucide="shield-alert"></i>
+                        <span>Admin Panel</span>
+                    </button>
+                    <!-- Server Access Management Menu & Submenu -->
+                    <div class="nav-item-wrapper" id="nav-server-access-wrapper" style="display: none;">
+                        <button class="nav-btn" data-tab="server-access" id="btn-nav-server-access">
+                            <i data-lucide="user-cog"></i>
+                            <span>Manajemen Akses Akun</span>
+                            <span class="server-access-chevron-toggle"
+                                style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
+                                <i data-lucide="chevron-down" class="server-access-chevron"
+                                    style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
+                            </span>
+                        </button>
+                        <div class="sidebar-submenu submenu" id="server-access-submenu">
+                            <button class="nav-btn sub-btn" data-tab="server-dashboard-access">
+                                <i data-lucide="layout-dashboard"></i>
+                                <span>Dashboard</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="role">
+                                <i data-lucide="shield"></i>
+                                <span>Matriks Role & Dept</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="server-access" data-server-view="user">
+                                <i data-lucide="users"></i>
+                                <span>Per Akun Personel</span>
+                            </button>
+
+                            <!-- Nested Dropdown Submenu: Flowchart Tanda Tangan -->
+                            <div class="nav-item-wrapper" style="margin-top: 4px;">
+                                <button class="nav-btn sub-btn" id="btn-nav-flowchart"
+                                    style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <i data-lucide="git-merge"></i>
+                                        <span>Flowchart Tanda Tangan</span>
+                                    </div>
+                                    <span class="flowchart-chevron-toggle"
+                                        style="display: flex; align-items: center; padding: 2px;">
+                                        <i data-lucide="chevron-down" class="flowchart-chevron"
+                                            style="width: 14px; height: 14px; transition: transform 0.2s;"></i>
+                                    </span>
+                                </button>
+                                <div class="sidebar-submenu submenu" id="flowchart-submenu">
+                                    <button class="nav-btn sub-btn" data-tab="server-access"
+                                        data-server-view="flow-gejo" style="padding-left: 24px;">
+                                        <i data-lucide="file-text"></i>
+                                        <span>General EJO</span>
+                                    </button>
+                                    <button class="nav-btn sub-btn" data-tab="server-access"
+                                        data-server-view="flow-drawing" style="padding-left: 24px;">
+                                        <i data-lucide="image"></i>
+                                        <span>Drawing EJO</span>
+                                    </button>
+                                    <button class="nav-btn sub-btn" data-tab="server-access"
+                                        data-server-view="flow-project" style="padding-left: 24px;">
+                                        <i data-lucide="folder-kanban"></i>
+                                        <span>Project</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </nav>
+                <button class="nav-scroll-arrow right" id="nav-scroll-right" aria-label="Scroll Right"
+                    style="display: none;">
+                    <i data-lucide="chevron-right"></i>
                 </button>
-            </nav>
+            </div>
 
             <div class="sidebar-footer">
                 <div class="user-profile"
@@ -293,7 +404,7 @@
                                 <i data-lucide="clock-alert"></i>
                             </div>
                             <div class="kpi-data">
-                                <span class="kpi-label">Menunggu Persetujuan</span>
+                                <span class="kpi-label">Pending</span>
                                 <h3 class="kpi-value" id="kpi-pending">--</h3>
                                 <span class="kpi-trend text-yellow" id="kpi-pending-sub">Butuh Approval</span>
                             </div>
@@ -303,7 +414,7 @@
                                 <i data-lucide="loader"></i>
                             </div>
                             <div class="kpi-data">
-                                <span class="kpi-label">Sedang Dikerjakan</span>
+                                <span class="kpi-label">On Progress</span>
                                 <h3 class="kpi-value" id="kpi-progress">--</h3>
                                 <span class="kpi-trend text-cyan" id="kpi-progress-sub">In Progress</span>
                                 <!-- ponytail: added id -->
@@ -323,9 +434,68 @@
                         </div>
                     </div>
 
+                    <!-- Chart Area 1: Status & Trend (Moved above dashboard-summary-grid) -->
+                    <div class="chart-card card-glass" id="card-trend-chart" style="margin-bottom: 1.5rem;">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-wrap card-icon-cyan">
+                                    <i data-lucide="bar-chart-3"></i>
+                                </div>
+                                <div>
+                                    <h3>Tren EJO <span id="tv-val-period" class="tv-period-inline">- Tahun Ini (Semua Kategori)</span></h3>
+                                </div>
+                            </div>
+                            <div class="card-actions">
+                                <!-- ponytail: Filter Kategori Kerja & Drawing trend chart -->
+                                <select id="trend-category-filter" class="chart-time-filter" title="Filter Kategori">
+                                    <option value="all">Semua Kategori</option>
+                                    <option value="Sipil">Sipil</option>
+                                    <option value="Elektrik">Elektrik</option>
+                                    <option value="Kalibrasi">Kalibrasi</option>
+                                    <option value="Mekanik">Mekanik</option>
+                                    <option value="Program">Program</option>
+                                    <option value="Repair Part">Repair Part</option>
+                                    <option value="Drawing">Drawing</option>
+                                </select>
+                                <!-- ponytail: Filter rentang waktu trend chart -->
+                                <select id="trend-time-filter" class="chart-time-filter">
+                                    <option value="week">Minggu Ini</option>
+                                    <option value="month">Bulan Ini</option>
+                                    <option value="year" selected>Tahun Ini</option>
+                                </select>
+                                <span class="badge badge-accent badge-live">Live Chart</span>
+                            </div>
+                        </div>
+                        <!-- ponytail: TradingView-style interactive real-time data tracker -->
+                        <div class="trend-tv-tracker" id="trend-tv-tracker">
+                            <div class="tv-item tv-masuk">
+                                <span class="tv-dot tv-dot-red"></span>
+                                <span>Masuk:</span>
+                                <strong id="tv-val-masuk">--</strong>
+                            </div>
+                            <div class="tv-item tv-selesai">
+                                <span class="tv-dot tv-dot-green"></span>
+                                <span>Selesai:</span>
+                                <strong id="tv-val-selesai">--</strong>
+                            </div>
+                            <div class="tv-item tv-batal">
+                                <span class="tv-dot tv-dot-darkgreen"></span>
+                                <span>Dibatalkan:</span>
+                                <strong id="tv-val-batal">--</strong>
+                            </div>
+                            <div class="tv-item tv-os">
+                                <span class="tv-dot tv-dot-orange"></span>
+                                <span>OS:</span>
+                                <strong id="tv-val-os">--</strong>
+                            </div>
+                        </div>
+                        <div class="card-body chart-container">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+
                     <!-- Second row of KPI scorecards (General EJO & Drawing summaries) -->
-                    <div class="kpi-grid"
-                        style="margin-top: -0.5rem; margin-bottom: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+                    <div class="dashboard-summary-grid">
                         <!-- General EJO Summary Card -->
                         <div class="kpi-card card-glass glow-cyan dashboard-summary-card" id="overview-card-gejo"
                             onclick="switchTab('general-ejo')">
@@ -335,8 +505,9 @@
                                         <i data-lucide="layers"></i>
                                     </div>
                                     <div>
-                                        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">GENERAL EJO</h4>
-                                        <span class="text-secondary" style="font-size: 0.72rem; font-weight: 500;">Pekerjaan Langsung</span>
+                                        <h4
+                                            style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
+                                            GENERAL EJO</h4>
                                     </div>
                                 </div>
                                 <span class="kpi-trend text-cyan" id="overview-gejo-limit">
@@ -344,33 +515,49 @@
                                 </span>
                             </div>
                             <div class="summary-card-body">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
                                     <!-- Left Column: Total EJO -->
-                                    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                                        <span class="total-label" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total EJO</span>
-                                        <span id="overview-gejo-active" class="kpi-value" style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
+                                    <div
+                                        style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                        <span class="total-label"
+                                            style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
+                                            EJO</span>
+                                        <span id="overview-gejo-active" class="kpi-value"
+                                            style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
                                     </div>
                                     <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
-                                    <div id="overview-gejo-kpi-container" style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                    <div id="overview-gejo-kpi-container"
+                                        style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
                                         <!-- KPI Target -->
-                                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label" style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
                                                 KPI Target
-                                                <button class="btn" id="overview-gejo-kpi-edit-btn" style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;" onclick="event.stopPropagation(); openKpiEditModal('gejo', 'target');">
+                                                <button class="btn" id="overview-gejo-kpi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('gejo', 'target');">
                                                     <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
                                                 </button>
                                             </span>
-                                            <span id="overview-gejo-kpi-val" class="kpi-value" style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                            <span id="overview-gejo-kpi-val" class="kpi-value"
+                                                style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
                                         </div>
                                         <!-- KPI Terealisasi -->
-                                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label" style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
                                                 KPI Terealisasi
-                                                <button class="btn" id="overview-gejo-kpi-realisasi-edit-btn" style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;" onclick="event.stopPropagation(); openKpiEditModal('gejo', 'realisasi');">
+                                                <button class="btn" id="overview-gejo-kpi-realisasi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('gejo', 'realisasi');">
                                                     <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
                                                 </button>
                                             </span>
-                                            <span id="overview-gejo-kpi-realisasi-val" class="kpi-value" style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                            <span id="overview-gejo-kpi-realisasi-val" class="kpi-value"
+                                                style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -389,8 +576,9 @@
                                         <i data-lucide="image"></i>
                                     </div>
                                     <div>
-                                        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">DRAWING EJO</h4>
-                                        <span class="text-secondary" style="font-size: 0.72rem; font-weight: 500;">Gambar Teknik & Design</span>
+                                        <h4
+                                            style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
+                                            DRAWING EJO</h4>
                                     </div>
                                 </div>
                                 <span class="kpi-trend text-blue" id="overview-drawing-limit">
@@ -398,33 +586,49 @@
                                 </span>
                             </div>
                             <div class="summary-card-body">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
                                     <!-- Left Column: Total Drawing -->
-                                    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                                        <span class="total-label" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total Drawing</span>
-                                        <span id="overview-drawing-active" class="kpi-value" style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
+                                    <div
+                                        style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                        <span class="total-label"
+                                            style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
+                                            Drawing</span>
+                                        <span id="overview-drawing-active" class="kpi-value"
+                                            style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
                                     </div>
                                     <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
-                                    <div id="overview-drawing-kpi-container" style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                    <div id="overview-drawing-kpi-container"
+                                        style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
                                         <!-- KPI Target -->
-                                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label" style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
                                                 KPI Target
-                                                <button class="btn" id="overview-drawing-kpi-edit-btn" style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;" onclick="event.stopPropagation(); openKpiEditModal('drawing', 'target');">
+                                                <button class="btn" id="overview-drawing-kpi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('drawing', 'target');">
                                                     <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
                                                 </button>
                                             </span>
-                                            <span id="overview-drawing-kpi-val" class="kpi-value" style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                            <span id="overview-drawing-kpi-val" class="kpi-value"
+                                                style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
                                         </div>
                                         <!-- KPI Terealisasi -->
-                                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label" style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
                                                 KPI Terealisasi
-                                                <button class="btn" id="overview-drawing-kpi-realisasi-edit-btn" style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;" onclick="event.stopPropagation(); openKpiEditModal('drawing', 'realisasi');">
+                                                <button class="btn" id="overview-drawing-kpi-realisasi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('drawing', 'realisasi');">
                                                     <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
                                                 </button>
                                             </span>
-                                            <span id="overview-drawing-kpi-realisasi-val" class="kpi-value" style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                            <span id="overview-drawing-kpi-realisasi-val" class="kpi-value"
+                                                style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -434,34 +638,9 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Layout: Analytics & Alerts Grid -->
-                    <div class="analytics-layout-grid" id="overview-charts-grid">
-                        <!-- Chart Area 1: Status & Trend -->
-                        <div class="chart-card card-glass" id="card-trend-chart">
-                            <div class="card-header">
-                                <div class="card-header-left">
-                                    <div class="card-icon-wrap card-icon-cyan">
-                                        <i data-lucide="bar-chart-3"></i>
-                                    </div>
-                                    <div>
-                                        <h3>Project, EJO Masuk, Selesai dan OS</h3>
-                                        <p class="text-secondary text-xs">Perbandingan volume EJO masuk, selesai &amp; outstanding.</p>
-                                    </div>
-                                </div>
-                                <div class="card-actions">
-                                    <!-- ponytail: Filter rentang waktu trend chart -->
-                                    <select id="trend-time-filter" class="chart-time-filter">
-                                        <option value="month">Bulan Ini</option>
-                                        <option value="year" selected>Tahun Ini</option>
-                                    </select>
-                                    <span class="badge badge-accent badge-live">Live Chart</span>
-                                </div>
-                            </div>
-                            <div class="card-body chart-container">
-                                <canvas id="trendChart"></canvas>
-                            </div>
-                        </div>
 
+                    <!-- Layout: Analytics & Alerts Grid -->
+                    <div class="analytics-layout-grid" id="overview-charts-grid" style="grid-template-columns: 1fr;">
                         <!-- Chart Area 2: Status Distribution -->
                         <div class="chart-card card-glass" id="card-status-prop">
                             <div class="card-header">
@@ -481,7 +660,51 @@
                         </div>
                     </div>
 
-                    <!-- Standalone Full-Width EJO URGENT! Card -->
+                    <!-- Bottom Section: Department Load & Category Load -->
+                    <div class="analytics-layout-grid grid-main-bottom" id="overview-bottom-grid"
+                        style="margin-top: 1.5rem;">
+                        <!-- Department Load Chart -->
+                        <div class="chart-card card-glass" id="card-dept-chart">
+                            <div class="card-header">
+                                <div class="card-header-left">
+                                    <div class="card-icon-wrap card-icon-blue">
+                                        <i data-lucide="building-2"></i>
+                                    </div>
+                                    <div>
+                                        <h3>EJO Departemen</h3>
+                                    </div>
+                                </div>
+                                <div class="card-actions">
+                                    <span class="badge badge-accent badge-live">Live Chart</span>
+                                </div>
+                            </div>
+                            <div class="card-body chart-container">
+                                <canvas id="deptChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Category Load Chart -->
+                        <div class="chart-card card-glass" id="card-category-chart">
+                            <div class="card-header">
+                                <div class="card-header-left">
+                                    <div class="card-icon-wrap card-icon-purple">
+                                        <i data-lucide="layers"></i>
+                                    </div>
+                                    <div>
+                                        <h3>EJO Kategori Kerja</h3>
+                                    </div>
+                                </div>
+                                <div class="card-actions">
+                                    <span class="badge badge-accent badge-live">Live Chart</span>
+                                </div>
+                            </div>
+                            <div class="card-body chart-container">
+                                <canvas id="categoryChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EJO URGENT! Standalone Full-Width Card -->
                     <div class="list-card card-glass urgent-card" style="margin-top: 1.5rem; width: 100%;">
                         <div class="card-header">
                             <div class="urgent-header-left">
@@ -489,11 +712,12 @@
                                     <i data-lucide="alert-triangle"></i>
                                 </div>
                                 <div>
-                                    <h3 class="urgent-title">EJO URGENT! <span class="urgent-pulse-dot" id="urgent-pulse-dot"></span></h3>
-                                    <p class="text-secondary text-xs">EJO dengan prioritas mendesak (Emergency / High).</p>
+                                    <h3 class="urgent-title">EJO URGENT! <span class="urgent-pulse-dot"
+                                            id="urgent-pulse-dot"></span></h3>
                                 </div>
                             </div>
-                            <span class="badge urgent-count-badge" id="urgent-count-badge" style="display:none;">0</span>
+                            <span class="badge urgent-count-badge" id="urgent-count-badge"
+                                style="display:none;">0</span>
                         </div>
                         <div class="card-body text-scroll">
                             <div class="recent-list" id="critical-ejo-list">
@@ -510,6 +734,7 @@
                     <!-- Control Bar (Filter, Search, Sort) -->
                     <div class="control-bar card-glass">
                         <div class="search-wrapper">
+                            <i data-lucide="search"></i>
                             <input type="text" id="gejo-search-input"
                                 placeholder="Cari Kode EJO, Judul, Mesin atau Engineer...">
                         </div>
@@ -519,7 +744,8 @@
                                 <label for="gejo-filter-status">Status</label>
                                 <select id="gejo-filter-status">
                                     <option value="all">Semua Status</option>
-                                    <option value="Waiting Dept Approval">Waiting Dept Approval (Persetujuan Dept)</option>
+                                    <option value="Waiting Dept Approval">Waiting Dept Approval (Persetujuan Dept)
+                                    </option>
                                     <option value="Requested">Requested (Menunggu)</option>
                                     <option value="Checking">Checking</option>
                                     <option value="In Progress">In Progress (Berjalan)</option>
@@ -562,18 +788,36 @@
                                     <option value="Elektrik">Elektrik</option>
                                     <option value="Kalibrasi">Kalibrasi</option>
                                     <option value="Mekanik">Mekanik</option>
-                                    <option value="Otomotif">Otomotif</option>
                                     <option value="Program">Program</option>
                                     <!-- ponytail: added repair part option -->
                                     <option value="Repair Part">Repair Part</option>
                                 </select>
                             </div>
+
+                            <!-- ponytail: filter rentang tanggal (dari & sampai tanggal) dengan ikon calendar -->
+                            <div class="filter-group filter-group-date-range">
+                                <label for="gejo-filter-start-date"
+                                    style="display: inline-flex; align-items: center; gap: 5px; font-weight: 500;">
+                                    <i data-lucide="calendar"
+                                        style="width: 14px; height: 14px; color: var(--color-cyan, #22d3ee);"></i>
+                                    Rentang Tanggal
+                                </label>
+                                <div class="date-range-row" style="display: flex; align-items: center; gap: 6px;">
+                                    <input type="date" id="gejo-filter-start-date" class="form-control date-range-input"
+                                        title="Dari Tanggal">
+                                    <span class="date-separator"
+                                        style="color: var(--text-secondary, #94a3b8); font-size: 0.75rem; font-weight: 600; flex-shrink: 0;">s/d</span>
+                                    <input type="date" id="gejo-filter-end-date" class="form-control date-range-input"
+                                        title="Sampai Tanggal">
+                                </div>
+                            </div>
                         </div>
 
-                        <div id="gejo-limit-container" style="display: flex; align-items: center; gap: 12px;">
+                        <div id="gejo-limit-container" style="display: none; align-items: center; gap: 12px;">
                             <span id="gejo-limit-info"
                                 style="font-size:0.75rem; font-weight: 500; display:inline-flex; align-items:center; gap:4px; padding: 6px 12px; border-radius: 99px; background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.3); color: #22d3ee;">
-                                <i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit EJO: 2 / Kategori
+                                <i data-lucide="shield-alert" style="width:13px; height:13px;"></i> Limit EJO: 2 /
+                                Kategori
                             </span>
                             <button class="btn btn-primary" id="gejo-btn-quick-new">
                                 <i data-lucide="plus"></i> EJO Baru
@@ -608,19 +852,21 @@
                                         placeholder="Contoh: Pemasangan Lampu LED Area Gudang B3" required>
                                 </div>
                                 <div class="form-field">
-                                    <label for="gejo-form-category">Kategori Pekerjaan <span class="required">*</span></label>
+                                    <label for="gejo-form-category">Kategori Pekerjaan <span
+                                            class="required">*</span></label>
                                     <select id="gejo-form-category" required>
                                         <option value="" disabled selected>Pilih Kategori</option>
                                         <option value="Sipil">Sipil</option>
                                         <option value="Elektrik">Elektrik</option>
                                         <option value="Kalibrasi">Kalibrasi</option>
                                         <option value="Mekanik">Mekanik</option>
-                                        <option value="Otomotif">Otomotif</option>
                                         <option value="Program">Program</option>
                                         <!-- ponytail: added repair part option -->
                                         <option value="Repair Part">Repair Part</option>
                                     </select>
-                                    <div id="gejo-form-category-limit-notice" style="margin-top: 6px; font-size: 0.78rem; font-weight: 500; display: none;"></div>
+                                    <div id="gejo-form-category-limit-notice"
+                                        style="margin-top: 6px; font-size: 0.78rem; font-weight: 500; display: none;">
+                                    </div>
                                 </div>
                                 <div class="form-field">
                                     <label for="gejo-form-priority">Prioritas <span class="required">*</span></label>
@@ -630,22 +876,31 @@
                                         <option value="3" selected>3 - Rutin (Rutin / Tidak Mendesak)</option>
                                     </select>
                                 </div>
-                                <div class="form-field full-width" id="gejo-urgent-reason-display" style="display: none;">
-                                    <label for="gejo-urgent-reason-text" style="color: var(--color-rose); display: flex; align-items: center; gap: 6px; font-weight: 600;">
-                                        <i data-lucide="alert-triangle" style="width: 15px; height: 15px;"></i> Keterangan Prioritas 1 (urgent) <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-left: auto;">(Read Only)</span>
+                                <div class="form-field full-width" id="gejo-urgent-reason-display"
+                                    style="display: none;">
+                                    <label for="gejo-urgent-reason-text"
+                                        style="color: var(--color-rose); display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                                        <i data-lucide="alert-triangle" style="width: 15px; height: 15px;"></i> Alasan
+                                        Urgent <span
+                                            style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-left: auto;">(Read
+                                            Only)</span>
                                     </label>
-                                    <textarea id="gejo-urgent-reason-text" rows="2" readonly style="background: rgba(244, 63, 94, 0.05); border-color: rgba(244, 63, 94, 0.3); color: var(--text-primary); cursor: not-allowed; resize: none;"></textarea>
+                                    <textarea id="gejo-urgent-reason-text" rows="2" readonly
+                                        style="background: rgba(244, 63, 94, 0.05); border-color: rgba(244, 63, 94, 0.3); color: var(--text-primary); cursor: not-allowed; resize: none;"></textarea>
                                 </div>
                                 <div class="form-field">
-                                    <label for="gejo-form-target-date">Target Selesai <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
+                                    <label for="gejo-form-target-date">Target Selesai <span
+                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
                                     <input type="date" id="gejo-form-target-date">
                                 </div>
                                 <div class="form-field">
                                     <label for="gejo-form-location">Lokasi <span class="required">*</span></label>
-                                    <input type="text" id="gejo-form-location" placeholder="Contoh: Area gudang, Koridor Lt 1" required>
+                                    <input type="text" id="gejo-form-location"
+                                        placeholder="Contoh: Area gudang, Koridor Lt 1" required>
                                 </div>
                                 <div class="form-field" style="display: none;">
-                                    <label for="gejo-form-dept">Departemen Pemohon <span class="required">*</span></label>
+                                    <label for="gejo-form-dept">Departemen Pemohon <span
+                                            class="required">*</span></label>
                                     <select id="gejo-form-dept">
                                         <option value="" disabled selected>Pilih Departemen</option>
                                         <option value="PRD">PRD (Production)</option>
@@ -654,51 +909,73 @@
                                         <option value="GA">GA (General Affair)</option>
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
+                                        <option value="TMB">TMB (Timbangan)</option>
                                     </select>
                                 </div>
 
                                 <div class="form-field full-width gejo-repair-field" style="display: none;">
-                                    <label for="gejo-form-wsp-search">Autodetect WSP Master Material <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Cari Material WSP Master)</span></label>
-                                    <input type="text" id="gejo-form-wsp-search" list="gejo-wsp-datalist" placeholder="Ketik Kode Material atau Deskripsi WSP...">
+                                    <label for="gejo-form-wsp-search">Autodetect WSP Master Material <span
+                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Cari
+                                            Material WSP Master)</span></label>
+                                    <input type="text" id="gejo-form-wsp-search" list="gejo-wsp-datalist"
+                                        placeholder="Ketik Kode Material atau Deskripsi WSP...">
                                     <datalist id="gejo-wsp-datalist"></datalist>
-                                    <span id="gejo-wsp-status-info" style="font-size: 0.75rem; color: var(--color-cyan); margin-top: 4px; display: block;"></span>
+                                    <span id="gejo-wsp-status-info"
+                                        style="font-size: 0.75rem; color: var(--color-cyan); margin-top: 4px; display: block;"></span>
                                 </div>
                                 <div class="form-field gejo-repair-field" style="display: none;">
-                                    <label for="gejo-form-price-new">Harga by SAP <span class="required">*</span></label>
+                                    <label for="gejo-form-price-new">Harga by SAP <span
+                                            class="required">*</span></label>
                                     <input type="number" id="gejo-form-price-new" min="0" placeholder="Contoh: 1000000">
                                 </div>
                                 <div class="form-field gejo-repair-field" style="display: none;">
-                                    <label for="gejo-form-quantity">Jumlah Quantity Barang <span class="required">*</span></label>
-                                    <input type="number" id="gejo-form-quantity" min="0" value="0" placeholder="Contoh: 1">
+                                    <label for="gejo-form-quantity">Jumlah Quantity Barang <span
+                                            class="required">*</span></label>
+                                    <input type="number" id="gejo-form-quantity" min="0" value="1"
+                                        placeholder="Contoh: 1">
                                 </div>
                                 <div class="form-field gejo-repair-field" style="display: none;">
-                                    <label for="gejo-form-qty-needed">Quantity yang Diperlukan Mesin <span class="required">*</span></label>
-                                    <input type="number" id="gejo-form-qty-needed" min="0" value="0" placeholder="Contoh: 1">
+                                    <label for="gejo-form-qty-needed">Quantity yang Diperlukan Mesin <span
+                                            class="required">*</span></label>
+                                    <input type="number" id="gejo-form-qty-needed" min="0" value="0" placeholder="0">
                                 </div>
                                 <div class="form-field gejo-repair-field" style="display: none;">
-                                    <label for="gejo-form-qty-stock">Quantity Stok (Hasil Pengurangan)</label>
-                                    <input type="number" id="gejo-form-qty-stock" value="0" placeholder="0" readonly>
+                                    <label for="gejo-form-qty-stock">Quantity Stok (Hasil Pengurangan / Target
+                                        Stok)</label>
+                                    <input type="number" id="gejo-form-qty-stock" min="0" value="0" placeholder="0">
                                 </div>
                                 <div class="form-field" style="display: none;">
-                                    <label for="gejo-form-cost-per-day">Biaya Orang / Hari (Rp) <span class="required">*</span></label>
-                                    <input type="number" id="gejo-form-cost-per-day" min="0" placeholder="Contoh: 100000">
+                                    <label for="gejo-form-cost-per-day">Biaya Orang / Hari (Rp) <span
+                                            class="required">*</span></label>
+                                    <input type="number" id="gejo-form-cost-per-day" min="0"
+                                        placeholder="Contoh: 100000">
                                 </div>
                                 <div class="form-field full-width">
-                                    <label for="gejo-form-description">Detail Pekerjaan <span class="required">*</span></label>
-                                    <textarea id="gejo-form-description" rows="4" placeholder="Jelaskan pekerjaan yang akan dilakukan..." required></textarea>
+                                    <label for="gejo-form-description">Detail Pekerjaan <span
+                                            class="required">*</span></label>
+                                    <textarea id="gejo-form-description" rows="4"
+                                        placeholder="Jelaskan pekerjaan yang akan dilakukan..." required></textarea>
                                 </div>
                                 <!-- ponytail: file upload untuk foto before kondisi awal (wajib - premium style) -->
                                 <div class="form-field full-width" id="gejo-file-before-container">
-                                    <label>Foto Before (Kondisi Awal) <span class="required">*</span></label>
+                                    <label>Foto Before<span class="required">*</span></label>
                                     <div style="width: 100%; position: relative;">
-                                        <input type="file" id="gejo-file-before" accept="image/*,.pdf" style="display: none;" />
-                                        <div id="gejo-file-before-trigger" style="border: 2px dashed rgba(56, 189, 248, 0.3); border-radius: var(--border-radius-sm); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(56, 189, 248, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;" onmouseover="this.style.background='rgba(56, 189, 248, 0.06)'; this.style.borderColor='var(--color-blue)';" onmouseout="this.style.background='rgba(56, 189, 248, 0.02)'; this.style.borderColor='rgba(56, 189, 248, 0.3)';">
-                                            <i data-lucide="camera" style="width: 24px; height: 24px; color: var(--color-blue);"></i>
-                                            <span id="gejo-file-before-filename" style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Upload Foto Before (Wajib - JPG/PNG/PDF)</span>
+                                        <input type="file" id="gejo-file-before" accept="image/*,.pdf"
+                                            style="display: none;" />
+                                        <div id="gejo-file-before-trigger"
+                                            style="border: 2px dashed rgba(56, 189, 248, 0.3); border-radius: var(--border-radius-sm); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(56, 189, 248, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;"
+                                            onmouseover="this.style.background='rgba(56, 189, 248, 0.06)'; this.style.borderColor='var(--color-blue)';"
+                                            onmouseout="this.style.background='rgba(56, 189, 248, 0.02)'; this.style.borderColor='rgba(56, 189, 248, 0.3)';">
+                                            <i data-lucide="camera"
+                                                style="width: 24px; height: 24px; color: var(--color-blue);"></i>
+                                            <span id="gejo-file-before-filename"
+                                                style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Upload/take Foto</span>
                                         </div>
                                     </div>
-                                    <div id="gejo-file-before-preview" style="display: none; width: 100%; max-height: 140px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
-                                        <img id="gejo-file-before-preview-img" style="max-width: 100%; max-height: 140px; object-fit: contain;" src="" />
+                                    <div id="gejo-file-before-preview"
+                                        style="display: none; width: 100%; max-height: 140px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
+                                        <img id="gejo-file-before-preview-img"
+                                            style="max-width: 100%; max-height: 140px; object-fit: contain;" src="" />
                                     </div>
                                 </div>
                             </div>
@@ -712,7 +989,7 @@
                     </div>
 
                     <!-- ponytail: Grid Layout for cards (Kanban Board style) -->
-                    <div class="project-board" id="gejo-kanban-board">
+                    <div class="project-board" id="gejo-kanban-board" style="display: none;">
 
                         <!-- ponytail: grouped OUTSTANDING columns -->
                         <div class="gejo-outstanding-group" id="gejo-outstanding-group">
@@ -797,7 +1074,7 @@
 
                     <!-- Empty State -->
                     <div class="card-glass text-center" id="gejo-empty-state"
-                        style="display: none; padding: 3.5rem 2rem; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; text-align: center;">
+                        style="display: flex; padding: 3.5rem 2rem; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; text-align: center;">
                         <div class="empty-icon-wrapper"
                             style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--card-border); border-radius: 50%; width: 80px; height: 80px; display: inline-flex; align-items: center; justify-content: center; margin: 0 auto;">
                             <i data-lucide="clipboard-x"
@@ -805,10 +1082,7 @@
                         </div>
                         <h4
                             style="margin: 0.5rem 0 0; font-size: 1.25rem; font-weight: 600; color: var(--text-primary);">
-                            Tidak ada Job Order yang sesuai filter</h4>
-                        <p class="text-secondary text-xs" style="margin: 0 auto; max-width: 340px; line-height: 1.6;">
-                            Coba cari dengan kata kunci lain atau ubah pengaturan filter prioritas, status, atau
-                            departemen Anda.</p>
+                            Tidak ada Job Order</h4>
                         <button class="btn btn-outline" onclick="resetGeneralEJOFilters()"
                             style="margin-top: 0.75rem; font-size: 0.8rem; padding: 0.5rem 1rem; display: inline-flex; align-items: center; gap: 8px; margin: 0.75rem auto 0;">
                             <i data-lucide="refresh-cw" style="width: 12px; height: 12px;"></i> Reset Filter
@@ -821,6 +1095,7 @@
                     <!-- ponytail: control bar Drawing disamakan dengan General EJO (search + filter + tombol Upload) -->
                     <div class="control-bar card-glass" id="drawing-control-bar">
                         <div class="search-wrapper">
+                            <i data-lucide="search"></i>
                             <input type="text" id="drawing-search-input"
                                 placeholder="Cari ID Drawing, Judul, Uploader atau EJO ID...">
                         </div>
@@ -830,8 +1105,10 @@
                                 <label for="drawing-filter-status">Status</label>
                                 <select id="drawing-filter-status">
                                     <option value="all">Semua Status</option>
-                                    <option value="Pending Requester Approval">Pending Staff Approval (Review Staff Dept)</option>
-                                    <option value="Pending Dept Approval">Pending Dept Approval (Review Departemen)</option>
+                                    <option value="Pending Requester Approval">Pending Staff Approval (Review Staff
+                                        Dept)</option>
+                                    <option value="Pending Dept Approval">Pending Dept Approval (Review Departemen)
+                                    </option>
                                     <option value="Pending Foreman Approval">Pending Foreman Approval</option>
                                     <option value="Pending Supervisor Approval">Pending Supervisor Approval</option>
                                     <option value="Pending Manager Approval">Pending Manager Approval</option>
@@ -869,6 +1146,7 @@
                                     <option value="GA">GA (General Affair)</option>
                                     <option value="QC">QC (Quality Control)</option>
                                     <option value="WRH">WRH (Warehouse)</option>
+                                    <option value="TMB">TMB (Timbangan)</option>
                                 </select>
                             </div>
 
@@ -876,14 +1154,10 @@
                                 <label for="drawing-filter-category">Kategori</label>
                                 <select id="drawing-filter-category">
                                     <option value="all">Semua Kategori</option>
-                                    <option value="Sipil">Sipil</option>
                                     <option value="Elektrik">Elektrik</option>
-                                    <option value="Kalibrasi">Kalibrasi</option>
                                     <option value="Mekanik">Mekanik</option>
-                                    <option value="Otomotif">Otomotif</option>
-                                    <option value="Program">Program</option>
-                                    <!-- ponytail: added repair part option -->
                                     <option value="Repair Part">Repair Part</option>
+                                    <option value="Sipil">Sipil</option>
                                 </select>
                             </div>
                         </div>
@@ -896,7 +1170,8 @@
                             <button class="btn btn-primary" id="btn-toggle-drawing-form">
                                 <i data-lucide="plus"></i> Request Drawing
                             </button>
-                            <button class="btn btn-primary" id="btn-toggle-import-drawing" style="background: var(--color-green); border-color: var(--color-green); display: inline-flex; align-items: center; gap: 4px;">
+                            <button class="btn btn-primary" id="btn-toggle-import-drawing"
+                                style="background: var(--color-green); border-color: var(--color-green); display: inline-flex; align-items: center; gap: 4px;">
                                 <i data-lucide="upload"></i> Import Drawing
                             </button>
                         </div>
@@ -924,20 +1199,18 @@
                             <div class="form-grid">
                                 <div class="form-field">
                                     <label for="drawing-title">Judul Drawing <span class="required">*</span></label>
-                                    <input type="text" id="drawing-title" placeholder="Contoh: Layout panel MCC line 2" required>
+                                    <input type="text" id="drawing-title" placeholder="Contoh: Layout panel MCC line 2"
+                                        required>
                                 </div>
                                 <div class="form-field">
-                                    <label for="drawing-form-category">Kategori Pekerjaan <span class="required">*</span></label>
+                                    <label for="drawing-form-category">Kategori Pekerjaan <span
+                                            class="required">*</span></label>
                                     <select id="drawing-form-category" required>
                                         <option value="" disabled selected>Pilih Kategori</option>
-                                        <option value="Sipil">Sipil</option>
                                         <option value="Elektrik">Elektrik</option>
-                                        <option value="Kalibrasi">Kalibrasi</option>
                                         <option value="Mekanik">Mekanik</option>
-                                        <option value="Otomotif">Otomotif</option>
-                                        <option value="Program">Program</option>
-                                        <!-- ponytail: added repair part option -->
                                         <option value="Repair Part">Repair Part</option>
+                                        <option value="Sipil">Sipil</option>
                                     </select>
                                 </div>
                                 <div class="form-field">
@@ -949,21 +1222,30 @@
                                     </select>
                                 </div>
                                 <div class="form-field">
-                                    <label for="drawing-form-target-date">Target Selesai <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
+                                    <label for="drawing-form-target-date">Target Selesai <span
+                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
                                     <input type="date" id="drawing-form-target-date">
                                 </div>
-                                <div class="form-field full-width" id="drawing-urgent-reason-display" style="display: none;">
-                                    <label for="drawing-urgent-reason-text" style="color: var(--color-rose); display: flex; align-items: center; gap: 6px; font-weight: 600;">
-                                        <i data-lucide="alert-triangle" style="width: 15px; height: 15px;"></i> Keterangan Prioritas 1 (urgent) <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-left: auto;">(Read Only)</span>
+                                <div class="form-field full-width" id="drawing-urgent-reason-display"
+                                    style="display: none;">
+                                    <label for="drawing-urgent-reason-text"
+                                        style="color: var(--color-rose); display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                                        <i data-lucide="alert-triangle" style="width: 15px; height: 15px;"></i> Alasan
+                                        Urgent <span
+                                            style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-left: auto;">(Read
+                                            Only)</span>
                                     </label>
-                                    <textarea id="drawing-urgent-reason-text" rows="2" readonly style="background: rgba(244, 63, 94, 0.05); border-color: rgba(244, 63, 94, 0.3); color: var(--text-primary); cursor: not-allowed; resize: none;"></textarea>
+                                    <textarea id="drawing-urgent-reason-text" rows="2" readonly
+                                        style="background: rgba(244, 63, 94, 0.05); border-color: rgba(244, 63, 94, 0.3); color: var(--text-primary); cursor: not-allowed; resize: none;"></textarea>
                                 </div>
                                 <div class="form-field full-width">
                                     <label for="drawing-form-location">Lokasi <span class="required">*</span></label>
-                                    <input type="text" id="drawing-form-location" placeholder="Contoh: Area gudang, Panel Lt 1" required>
+                                    <input type="text" id="drawing-form-location"
+                                        placeholder="Contoh: Area gudang, Panel Lt 1" required>
                                 </div>
                                 <div class="form-field" style="display: none;">
-                                    <label for="drawing-form-dept">Departemen Pemohon <span class="required">*</span></label>
+                                    <label for="drawing-form-dept">Departemen Pemohon <span
+                                            class="required">*</span></label>
                                     <select id="drawing-form-dept">
                                         <option value="" disabled selected>Pilih Departemen</option>
                                         <option value="PRD">PRD (Production)</option>
@@ -972,6 +1254,7 @@
                                         <option value="GA">GA (General Affair)</option>
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
+                                        <option value="TMB">TMB (Timbangan)</option>
                                     </select>
                                 </div>
 
@@ -981,17 +1264,28 @@
                                         placeholder="Jelaskan detail drawing yang dibutuhkan..."></textarea>
                                 </div>
                                 <!-- ponytail: file upload untuk request/import drawing (premium style) -->
-                                <div class="form-field full-width" id="drawing-file-container" style="display: none; flex-direction: column; gap: 0.5rem; box-sizing: border-box;">
-                                    <label>File Lampiran / Gambar <span class="required" id="drawing-file-required-star">*</span></label>
+                                <div class="form-field full-width" id="drawing-file-container"
+                                    style="display: none; flex-direction: column; gap: 0.5rem; box-sizing: border-box;">
+                                    <label>File Lampiran / Gambar <span class="required"
+                                            id="drawing-file-required-star">*</span></label>
                                     <div style="width: 100%; position: relative;">
-                                        <input type="file" id="drawing-file" style="display: none;" accept=".pdf,.jpg,.jpeg,.png,.webp" />
-                                        <div id="drawing-file-trigger" style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;" onmouseover="this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)';" onmouseout="this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
-                                            <i data-lucide="upload-cloud" style="width: 24px; height: 24px; color: var(--color-cyan);"></i>
-                                            <span id="drawing-file-filename" style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih file Lampiran (PDF/Gambar)</span>
+                                        <input type="file" id="drawing-file" style="display: none;"
+                                            accept=".pdf,.jpg,.jpeg,.png,.webp" />
+                                        <div id="drawing-file-trigger"
+                                            style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;"
+                                            onmouseover="this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)';"
+                                            onmouseout="this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
+                                            <i data-lucide="upload-cloud"
+                                                style="width: 24px; height: 24px; color: var(--color-cyan);"></i>
+                                            <span id="drawing-file-filename"
+                                                style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih
+                                                file Lampiran (PDF/Gambar)</span>
                                         </div>
                                     </div>
-                                    <div id="drawing-file-preview" style="display: none; width: 100%; max-height: 120px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
-                                        <img id="drawing-file-preview-img" style="max-width: 100%; max-height: 120px; object-fit: contain;" src="" />
+                                    <div id="drawing-file-preview"
+                                        style="display: none; width: 100%; max-height: 120px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
+                                        <img id="drawing-file-preview-img"
+                                            style="max-width: 100%; max-height: 120px; object-fit: contain;" src="" />
                                     </div>
                                 </div>
                             </div>
@@ -1072,6 +1366,7 @@
                                 <tr>
                                     <th>ID Drawing</th>
                                     <th>Judul Drawing</th>
+                                    <th>Kategori</th>
                                     <th>Uploader</th>
                                     <th>Tanggal Upload</th>
                                     <th>Status</th>
@@ -1092,9 +1387,7 @@
                         </div>
                         <h4
                             style="margin: 0.5rem 0 0; font-size: 1.25rem; font-weight: 600; color: var(--text-primary);">
-                            Tidak ada Drawing yang sesuai filter</h4>
-                        <p class="text-secondary text-xs" style="margin: 0 auto; max-width: 340px; line-height: 1.6;">
-                            Coba cari dengan kata kunci lain atau ubah pengaturan filter status atau uploader Anda.</p>
+                            Tidak ada Drawing</h4>
                         <button class="btn btn-outline" onclick="resetDrawingFilters()"
                             style="margin-top: 0.75rem; font-size: 0.8rem; padding: 0.5rem 1rem; display: inline-flex; align-items: center; gap: 8px; margin: 0.75rem auto 0;">
                             <i data-lucide="refresh-cw" style="width: 12px; height: 12px;"></i> Reset Filter
@@ -1107,6 +1400,7 @@
                     <!-- Control Bar (Filter, Search, Sort) - ponytail: match generalejo control bar -->
                     <div class="control-bar card-glass">
                         <div class="search-wrapper">
+                            <i data-lucide="search"></i>
                             <input type="text" id="proj-search-input"
                                 placeholder="Cari ID, Judul, Deskripsi, atau PIC...">
                         </div>
@@ -1160,10 +1454,14 @@
                                         <option value="GA">GA (General Affair)</option>
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
+                                        <option value="TMB">TMB (Timbangan)</option>
                                     </select>
                                 </div>
                                 <div class="form-field full-width">
-                                    <label for="proj-drawing-select">Ambil Dari Drawing EJO Selesai <span class="text-secondary" style="font-weight: normal; font-size: 0.75rem;">(Approved All s/d Factory Manager)</span></label>
+                                    <label for="proj-drawing-select">Ambil Dari Drawing EJO Selesai <span
+                                            class="text-secondary"
+                                            style="font-weight: normal; font-size: 0.75rem;">(Approved All s/d Factory
+                                            Manager)</span></label>
                                     <select id="proj-drawing-select">
                                         <option value="">-- Pilih Drawing EJO yang Selesai --</option>
                                     </select>
@@ -1180,6 +1478,7 @@
                                         placeholder="Tuliskan ide latar belakang masalah, kebutuhan material awal, serta ROI/manfaat untuk produktivitas pabrik..."
                                         required></textarea>
                                 </div>
+
                                 <div class="form-field full-width">
                                     <label for="proj-attachment">File Pendukung (PDF / JPG / PNG / Sejenis)</label>
                                     <input type="file" id="proj-attachment" accept=".pdf,image/*"
@@ -1237,7 +1536,8 @@
                         <!-- Column 4: Fase 4 (Commissioning & Serah Terima) -->
                         <div class="project-column card-glass" id="col-fase4">
                             <div class="column-header ch-fase4" style="border-top-color: #10b981;">
-                                <span class="phase-number" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">Fase 4</span>
+                                <span class="phase-number"
+                                    style="background: rgba(16, 185, 129, 0.15); color: #10b981;">Fase 4</span>
                                 <h4>Commissioning & Serah Terima</h4>
                                 <span class="col-count" id="count-fase4">0</span>
                             </div>
@@ -1267,8 +1567,8 @@
                 <section id="tab-partlist" class="tab-pane">
                     <div class="control-bar card-glass">
                         <div class="search-wrapper">
-                            <input type="text" id="search-partlist"
-                                placeholder="Cari spare part atau EJO ticket...">
+                            <i data-lucide="search"></i>
+                            <input type="text" id="search-partlist" placeholder="Cari spare part atau EJO ticket...">
                         </div>
                         <div></div>
                         <div style="display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap;">
@@ -1276,7 +1576,7 @@
                                 <i data-lucide="plus-circle"></i> Request EJO Repair Part
                             </button>
                             <button class="btn btn-primary" id="btn-toggle-new-sparepart">
-                                <i data-lucide="plus-circle"></i> Tambah Spare Part
+                                <i data-lucide="upload"></i> Upload Drawing
                             </button>
                         </div>
                     </div>
@@ -1284,13 +1584,14 @@
                     <!-- Collapsible Add EJO Repair Part Form -->
                     <div id="part-form-container" class="card-glass"
                         style="display: none; padding: 1.5rem; margin-bottom: 1.5rem;">
-                        <h4
-                            style="margin-bottom: 1.25rem; border-bottom: 1px solid var(--card-border); padding-bottom: 8px;" id="part-ejo-title">
+                        <h4 style="margin-bottom: 1.25rem; border-bottom: 1px solid var(--card-border); padding-bottom: 8px;"
+                            id="part-ejo-title">
                             Tambah EJO Repair Part Baru</h4>
                         <form id="part-form">
                             <div class="form-grid">
                                 <div class="form-field">
-                                    <label for="part-ejo-dept">Departemen Pemohon <span class="required">*</span></label>
+                                    <label for="part-ejo-dept">Departemen Pemohon <span
+                                            class="required">*</span></label>
                                     <select id="part-ejo-dept" required>
                                         <option value="" disabled selected>Pilih Departemen</option>
                                         <option value="PRD">PRD (Production)</option>
@@ -1299,6 +1600,7 @@
                                         <option value="GA">GA (General Affair)</option>
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
+                                        <option value="TMB">TMB (Timbangan)</option>
                                     </select>
                                 </div>
                                 <div class="form-field">
@@ -1313,31 +1615,69 @@
                                         <option value="3" selected>3 - Rutin (Rutin / Tidak Mendesak)</option>
                                     </select>
                                 </div>
-                                <div class="form-field full-width" id="part-urgent-reason-display" style="display: none;">
-                                    <label for="part-urgent-reason-text" style="color: var(--color-rose); display: flex; align-items: center; gap: 6px; font-weight: 600;">
-                                        <i data-lucide="alert-triangle" style="width: 15px; height: 15px;"></i> Keterangan Prioritas 1 (urgent) <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-left: auto;">(Read Only)</span>
+                                <div class="form-field full-width" id="part-urgent-reason-display"
+                                    style="display: none;">
+                                    <label for="part-urgent-reason-text"
+                                        style="color: var(--color-rose); display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                                        <i data-lucide="alert-triangle" style="width: 15px; height: 15px;"></i> Alasan
+                                        Urgent <span
+                                            style="font-size: 0.72rem; color: var(--text-muted); font-weight: normal; margin-left: auto;">(Read
+                                            Only)</span>
                                     </label>
-                                    <textarea id="part-urgent-reason-text" rows="2" readonly style="background: rgba(244, 63, 94, 0.05); border-color: rgba(244, 63, 94, 0.3); color: var(--text-primary); cursor: not-allowed; resize: none;"></textarea>
+                                    <textarea id="part-urgent-reason-text" rows="2" readonly
+                                        style="background: rgba(244, 63, 94, 0.05); border-color: rgba(244, 63, 94, 0.3); color: var(--text-primary); cursor: not-allowed; resize: none;"></textarea>
                                 </div>
                                 <div class="form-field">
-                                    <label for="part-ejo-price-new">Harga SAP (Rp) <span class="required">*</span></label>
-                                    <input type="number" id="part-ejo-price-new" min="0" placeholder="Contoh: 1000000" required>
+                                    <label for="part-ejo-price-new">Harga SAP (Rp) <span
+                                            class="required">*</span></label>
+                                    <input type="number" id="part-ejo-price-new" min="0" placeholder="Contoh: 1000000"
+                                        required>
                                 </div>
                                 <div class="form-field">
-                                    <label for="part-ejo-repair-date">Target Selesai Perbaikan <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
+                                    <label for="part-ejo-repair-date">Target Selesai Perbaikan <span
+                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
                                     <input type="date" id="part-ejo-repair-date">
                                 </div>
                                 <div class="form-field">
-                                    <label for="part-ejo-cost-per-day">Biaya Orang / Hari (Rp) <span class="required">*</span></label>
-                                    <input type="number" id="part-ejo-cost-per-day" min="0" placeholder="Contoh: 100000" required>
+                                    <label for="part-ejo-cost-per-day">Biaya Orang / Hari (Rp) <span
+                                            class="required">*</span></label>
+                                    <input type="number" id="part-ejo-cost-per-day" min="0" placeholder="Contoh: 100000"
+                                        required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="part-ejo-quantity">Quantity Total / Jumlah Quantity Barang <span
+                                            class="required">*</span></label>
+                                    <input type="number" id="part-ejo-quantity" min="1" value="1"
+                                        placeholder="Contoh: 1" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="part-ejo-qty-needed">Quantity yang Diperlukan Mesin <span
+                                            class="required">*</span></label>
+                                    <input type="number" id="part-ejo-qty-needed" min="0" value="0" placeholder="0"
+                                        required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="part-ejo-qty-stock">Quantity Stok (Hasil Pengurangan)</label>
+                                    <input type="number" id="part-ejo-qty-stock" value="0" placeholder="0" readonly>
+                                </div>
+                                <div class="form-field">
+                                    <label for="part-ejo-usage-type">Peruntukan Quantity <span
+                                            class="required">*</span></label>
+                                    <select id="part-ejo-usage-type" required>
+                                        <option value="Kebutuhan Mesin" selected>🔧 Kebutuhan Mesin</option>
+                                        <option value="Stok">📦 Stok (Inventory)</option>
+                                    </select>
                                 </div>
                                 <div class="form-field full-width">
                                     <label for="part-ejo-subject">Subject <span class="required">*</span></label>
-                                    <input type="text" id="part-ejo-subject" placeholder="Contoh: Penggantian Sensor Cylinder Clamping" required>
+                                    <input type="text" id="part-ejo-subject"
+                                        placeholder="Contoh: Penggantian Sensor Cylinder Clamping" required>
                                 </div>
                                 <div class="form-field full-width">
-                                    <label for="part-ejo-desc">Description / Detail Pekerjaan <span class="required">*</span></label>
-                                    <textarea id="part-ejo-desc" rows="3" placeholder="Tuliskan detail pekerjaan perbaikan..." required></textarea>
+                                    <label for="part-ejo-desc">Description / Detail Pekerjaan <span
+                                            class="required">*</span></label>
+                                    <textarea id="part-ejo-desc" rows="3"
+                                        placeholder="Tuliskan detail pekerjaan perbaikan..." required></textarea>
                                 </div>
                             </div>
                             <div class="form-actions border-top" style="margin-top: 1rem; padding-top: 1rem;">
@@ -1352,35 +1692,56 @@
                     <!-- Collapsible Add Spare Part Form -->
                     <div id="sparepart-form-container" class="card-glass"
                         style="display: none; padding: 1.5rem; margin-bottom: 1.5rem;">
-                        <h4
-                            style="margin-bottom: 1.25rem; border-bottom: 1px solid var(--card-border); padding-bottom: 8px;" id="sparepart-form-title">
+                        <h4 style="margin-bottom: 1.25rem; border-bottom: 1px solid var(--card-border); padding-bottom: 8px;"
+                            id="sparepart-form-title">
                             Tambah Alokasi Repair Part Baru</h4>
                         <form id="sparepart-form">
                             <div class="form-grid">
-                                <div class="form-field">
-                                    <label for="part-name">Nama Spare Part <span class="required">*</span></label>
-                                    <input type="text" id="part-name" placeholder="Contoh: Seal Kit Cylinder Clamping" required>
+                                <!-- ponytail: WSP Autodetect untuk auto-fill Nama & Kode Spare Part -->
+                                <div class="form-field full-width" style="display: flex; flex-direction: column;">
+                                    <label for="part-wsp-search">Autodetect WSP Master Material <span
+                                            class="required">*</span> <span
+                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Cari
+                                            Material WSP Master)</span></label>
+                                    <input type="text" id="part-wsp-search" list="part-wsp-datalist"
+                                        placeholder="Ketik Kode Material atau Deskripsi WSP..." required>
+                                    <datalist id="part-wsp-datalist"></datalist>
+                                    <span id="part-wsp-status-info"
+                                        style="font-size: 0.75rem; color: var(--color-cyan); margin-top: 4px; display: none;"></span>
                                 </div>
-                                <div class="form-field">
-                                    <label for="part-code">Kode / Part Number</label>
-                                    <input type="text" id="part-code" placeholder="Contoh: SK-CYL-3">
+                                <div class="form-field full-width" style="display: none;">
+                                    <label>Diupload Oleh</label>
+                                    <div
+                                        style="padding: 0.875rem 1rem; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); background: rgba(16, 185, 129, 0.06); color: var(--text-primary); font-weight: 600;">
+                                        <span id="sparepart-current-uploader">--</span>
+                                    </div>
                                 </div>
                                 <div class="form-field full-width">
-                                    <label>Detail Gambar Spare Part</label>
+                                    <label>Detail Gambar / Dokumen Spare Part <span class="required">*</span></label>
                                     <div style="width: 100%; position: relative;">
-                                        <input type="file" id="part-image" style="display: none;" accept="image/*" />
-                                        <div id="part-image-trigger" style="border: 2px dashed rgba(16, 185, 129, 0.3); border-radius: var(--border-radius-sm); padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; cursor: pointer; background: rgba(16, 185, 129, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;" onmouseover="this.style.background='rgba(16, 185, 129, 0.06)'; this.style.borderColor='var(--color-green)';" onmouseout="this.style.background='rgba(16, 185, 129, 0.02)'; this.style.borderColor='rgba(16, 185, 129, 0.3)';">
-                                            <i data-lucide="image" style="width: 20px; height: 20px; color: var(--color-green); flex-shrink: 0;"></i>
-                                            <span id="part-image-filename" style="font-size: 0.8rem; color: var(--text-secondary); word-break: break-all; font-weight: 500;">Klik untuk upload gambar spare part</span>
+                                        <input type="file" id="part-image" style="display: none;"
+                                            accept="image/*,application/pdf" required />
+                                        <div id="part-image-trigger"
+                                            style="border: 2px dashed rgba(16, 185, 129, 0.3); border-radius: var(--border-radius-sm); padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; cursor: pointer; background: rgba(16, 185, 129, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;"
+                                            onmouseover="this.style.background='rgba(16, 185, 129, 0.06)'; this.style.borderColor='var(--color-green)';"
+                                            onmouseout="this.style.background='rgba(16, 185, 129, 0.02)'; this.style.borderColor='rgba(16, 185, 129, 0.3)';">
+                                            <i data-lucide="image"
+                                                style="width: 20px; height: 20px; color: var(--color-green); flex-shrink: 0;"></i>
+                                            <span id="part-image-filename"
+                                                style="font-size: 0.8rem; color: var(--text-secondary); word-break: break-all; font-weight: 500;">Klik
+                                                untuk upload foto atau PDF spare part</span>
                                         </div>
                                     </div>
-                                    <div id="part-image-preview" style="display: none; width: 100%; max-height: 120px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 6px; box-sizing: border-box; background: rgba(0,0,0,0.05); align-items: center; justify-content: center;">
-                                        <img id="part-image-preview-img" style="max-width: 100%; max-height: 120px; object-fit: contain;" src="" />
+                                    <div id="part-image-preview"
+                                        style="display: none; width: 100%; max-height: 120px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 6px; box-sizing: border-box; background: rgba(0,0,0,0.05); align-items: center; justify-content: center;">
+                                        <img id="part-image-preview-img"
+                                            style="max-width: 100%; max-height: 120px; object-fit: contain;" src="" />
                                     </div>
                                 </div>
                                 <div class="form-field full-width">
                                     <label for="part-desc">Keterangan / Penggunaan</label>
-                                    <textarea id="part-desc" rows="3" placeholder="Tuliskan keterangan detail penggunaan spare part..."></textarea>
+                                    <textarea id="part-desc" rows="3"
+                                        placeholder="Tuliskan keterangan detail penggunaan spare part..."></textarea>
                                 </div>
                             </div>
                             <div class="form-actions border-top" style="margin-top: 1rem; padding-top: 1rem;">
@@ -1393,40 +1754,92 @@
                     </div>
 
                     <!-- ponytail: Cost Saving Charts for Spare Parts -->
-                    <div class="analytics-layout-grid" id="partlist-charts-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+                    <div class="analytics-layout-grid" id="partlist-charts-grid"
+                        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
                         <div class="chart-card card-glass">
                             <div class="card-header">
-                                <div>
-                                    <h3>Volume EJO Repair Part Masuk, Selesai &amp; OS</h3>
-                                    <p class="text-secondary text-xs">Perbandingan volume masuk, selesai &amp; outstanding khusus Repair Part.</p>
+                                <div class="card-header-left">
+                                    <div class="card-icon-wrap card-icon-cyan">
+                                        <i data-lucide="bar-chart-3"></i>
+                                    </div>
+                                    <div>
+                                        <h3>Volume EJO Repair Part Masuk, Selesai &amp; OS <span id="partlist-tv-val-period" class="tv-period-inline">- Tahun Ini</span></h3>
+                                    </div>
                                 </div>
                                 <div class="card-actions">
                                     <!-- ponytail: Filter rentang waktu partlist trend chart -->
                                     <select id="partlist-trend-time-filter" class="chart-time-filter">
+                                        <option value="week">Minggu Ini</option>
                                         <option value="month">Bulan Ini</option>
                                         <option value="year" selected>Tahun Ini</option>
                                     </select>
                                     <span class="badge badge-accent badge-live">Live Chart</span>
                                 </div>
                             </div>
-                            <div class="chart-container">
+                            <!-- ponytail: TradingView-style interactive real-time data tracker for Partlist Trend -->
+                            <div class="trend-tv-tracker" id="partlist-tv-tracker">
+                                <div class="tv-item tv-masuk">
+                                    <span class="tv-dot tv-dot-red"></span>
+                                    <span>Masuk:</span>
+                                    <strong id="partlist-tv-val-masuk">--</strong>
+                                </div>
+                                <div class="tv-item tv-selesai">
+                                    <span class="tv-dot tv-dot-green"></span>
+                                    <span>Selesai:</span>
+                                    <strong id="partlist-tv-val-selesai">--</strong>
+                                </div>
+                                <div class="tv-item tv-batal">
+                                    <span class="tv-dot tv-dot-darkgreen"></span>
+                                    <span>Dibatalkan:</span>
+                                    <strong id="partlist-tv-val-batal">--</strong>
+                                </div>
+                                <div class="tv-item tv-os">
+                                    <span class="tv-dot tv-dot-orange"></span>
+                                    <span>OS:</span>
+                                    <strong id="partlist-tv-val-os">--</strong>
+                                </div>
+                            </div>
+                            <div class="card-body chart-container">
                                 <canvas id="partlistTrendChart"></canvas>
                             </div>
                         </div>
-                        <div class="chart-card card-glass" style="padding: 1.25rem;">
-                            <div class="chart-header" style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
-                                <h3 style="font-size: 1rem; font-weight: 700;">Perbandingan Biaya vs Penghematan</h3>
+                        <div class="chart-card card-glass">
+                            <div class="card-header">
+                                <div class="card-header-left">
+                                    <div class="card-icon-wrap card-icon-cyan">
+                                        <i data-lucide="pie-chart"></i>
+                                    </div>
+                                    <div>
+                                        <h3>Perbandingan Biaya Dan Penghematan <span id="partlist-cost-val-period" class="tv-period-inline">- Tahun Ini</span></h3>
+                                    </div>
+                                </div>
+                                <div class="card-actions">
+                                    <!-- ponytail: Filter rentang waktu partlist cost savings doughnut chart -->
+                                    <select id="partlist-location-time-filter" class="chart-time-filter">
+                                        <option value="week">Minggu Ini</option>
+                                        <option value="month">Bulan Ini</option>
+                                        <option value="year" selected>Tahun Ini</option>
+                                    </select>
+                                    <span class="badge badge-accent badge-live">Live Chart</span>
+                                </div>
                             </div>
-                            <div class="chart-container" style="position: relative; height: 260px; width: 100%;">
-                                <canvas id="partlistLocationChart"></canvas>
+                            <div class="chart-container doughnut-legend-layout">
+                                <div class="doughnut-canvas-wrapper">
+                                    <canvas id="partlistLocationChart"></canvas>
+                                </div>
+                                <div id="partlistLocationLegend"></div>
                             </div>
                         </div>
                     </div>
 
                     <!-- EJO Repair Parts Card -->
-                    <div class="job-table-view card-glass" id="partlist-ejo-table-wrapper" style="margin-bottom: 1.5rem; padding: 1.25rem;">
-                        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
-                            <i data-lucide="clipboard-list" style="width: 18px; height: 18px; color: var(--color-cyan);"></i> Daftar EJO Repair Part (Ticket)
+                    <div class="job-table-view card-glass" id="partlist-ejo-table-wrapper"
+                        style="margin-bottom: 1.5rem; padding: 1.25rem;">
+                        <h3
+                            style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="clipboard-list"
+                                style="width: 18px; height: 18px; color: var(--color-cyan);"></i> Daftar EJO Repair Part
+                            (Ticket)
                         </h3>
                         <table class="data-table">
                             <thead>
@@ -1436,12 +1849,11 @@
                                     <th>Ticket ID (Nomor EJO)</th>
                                     <th>MID</th>
                                     <th>Subject</th>
-                                    <th>Description</th>
                                     <th>Prioritas</th>
                                     <th>Harga Baru</th>
                                     <th>Durasi (Hari)</th>
                                     <th>Biaya/Hari</th>
-                                    <th>Total Biaya</th>
+                                    <th>Cost Man Power</th>
                                     <th>Cost Saving</th>
                                     <th>Aksi</th>
                                 </tr>
@@ -1451,65 +1863,149 @@
                             </tbody>
                         </table>
                     </div>
+                </section>
 
-                    <!-- Spare Parts Card -->
-                    <div class="job-table-view card-glass" id="partlist-table-wrapper" style="padding: 1.25rem;">
-                        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
-                            <i data-lucide="package" style="width: 18px; height: 18px; color: var(--color-green);"></i> Daftar Alokasi Spare Part (Stok)
-                        </h3>
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>No</th>
-                                    <th>Departemen</th>
-                                    <th>Ticket ID (Nomor EJO)</th>
-                                    <th>MID</th>
-                                    <th>Subject</th>
-                                    <th>Description</th>
-                                    <th>Prioritas</th>
-                                    <th>Harga Baru</th>
-                                    <th>Durasi (Hari)</th>
-                                    <th>Biaya/Hari</th>
-                                    <th>Total Biaya</th>
-                                    <th>Cost Saving</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="partlist-table-body">
-                                <!-- Data will be loaded dynamically -->
-                        </table>
+                <!-- ponytail: TAB: GALERI DRAWING TEKNIK -->
+                <section id="tab-drawing-gallery" class="tab-pane">
+                    <!-- Control bar Galeri Drawing -->
+                    <div class="control-bar card-glass"
+                        style="grid-template-columns: 1fr auto; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+                        <div>
+                            <h3
+                                style="font-size: 1.15rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="gallery-thumbnails"
+                                    style="width: 20px; height: 20px; color: var(--color-cyan);"></i>
+                                <span id="drawing-gallery-title-text">Galeri Drawing Teknik</span>
+                            </h3>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <div class="filter-group" style="margin: 0;">
+                                <select id="filter-drawing-gallery-cat"
+                                    style="height: 38px; padding: 0 12px; font-size: 0.8rem;">
+                                    <option value="all">Semua Kategori</option>
+                                    <option value="elektrik">Elektrik</option>
+                                    <option value="mekanik">Mekanik</option>
+                                    <option value="Repair Part">Repair Part</option>
+                                    <option value="sipil">Sipil</option>
+                                </select>
+                            </div>
+                            <div class="filter-group" style="margin: 0;">
+                                <select id="filter-drawing-gallery-dept"
+                                    style="height: 38px; padding: 0 12px; font-size: 0.8rem;">
+                                    <option value="all">Semua Dept</option>
+                                    <option value="PRD">PRD (Production)</option>
+                                    <option value="ENG">ENG (Engineering)</option>
+                                    <option value="EPR">EPR (Engineering Produksi)</option>
+                                    <option value="GA">GA (General Affair)</option>
+                                    <option value="QC">QC (Quality Control)</option>
+                                    <option value="WRH">WRH (Warehouse)</option>
+                                    <option value="TMB">TMB (Timbangan)</option>
+                                </select>
+                            </div>
+                            <div class="search-wrapper" style="min-width: 260px;">
+                                <input type="text" id="search-drawing-gallery"
+                                    placeholder="Cari judul, uploader, ID drawing...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gallery grid -->
+                    <div id="drawing-gallery-grid"
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.25rem;">
+                        <!-- Diisi oleh renderDrawingGallery() -->
+                    </div>
+                    <!-- Empty state -->
+                    <div id="drawing-gallery-empty"
+                        style="display: none; text-align: center; padding: 4rem 2rem; color: var(--text-muted);">
+                        <i data-lucide="image-off"
+                            style="width: 48px; height: 48px; opacity: 0.3; margin-bottom: 1rem;"></i>
+                        <p style="font-size: 0.95rem; font-weight: 500;">Belum ada gambar drawing yang di-upload untuk
+                            kategori ini.</p>
+                        <p style="font-size: 0.8rem; margin-top: 4px;">Upload drawing melalui menu <strong>Drawing EJO →
+                                Import Drawing</strong>.</p>
                     </div>
                 </section>
 
+                <!-- ponytail: TAB: GALERI SPARE PART -->
+                <section id="tab-partlist-gallery" class="tab-pane">
+                    <!-- Control bar -->
+                    <div class="control-bar card-glass"
+                        style="grid-template-columns: 1fr auto; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;">
+                        <div>
+                            <h3
+                                style="font-size: 1.15rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="images"
+                                    style="width: 20px; height: 20px; color: var(--color-green);"></i>
+                                Galeri Gambar Spare Part
+                            </h3>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="search-wrapper"
+                                style="min-width: 260px; display: flex; flex-direction: column;">
+                                <input type="text" id="search-partlist-gallery" list="gallery-part-datalist"
+                                    placeholder="Cari nama / kode spare part...">
+                                <datalist id="gallery-part-datalist"></datalist>
+                                <span id="gallery-part-search-info"
+                                    style="font-size: 0.75rem; color: var(--color-cyan); margin-top: 4px; display: none;"></span>
+                            </div>
+                        </div>
+                    </div>
 
+                    <!-- Gallery grid -->
+                    <div id="partlist-gallery-grid"
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.25rem;">
+                        <!-- Diisi oleh renderPartGallery() -->
+                    </div>
+                    <!-- Empty state -->
+                    <div id="partlist-gallery-empty"
+                        style="display: none; text-align: center; padding: 4rem 2rem; color: var(--text-muted);">
+                        <i data-lucide="image-off"
+                            style="width: 48px; height: 48px; opacity: 0.3; margin-bottom: 1rem;"></i>
+                        <p style="font-size: 0.95rem; font-weight: 500;">Belum ada gambar spare part yang diupload.</p>
+                        <p style="font-size: 0.8rem; margin-top: 4px;">Upload gambar melalui menu <strong>Dashboard Part
+                                → Upload Drawing</strong>.</p>
+                    </div>
+                </section>
 
                 <!-- TAB: HISTORY EJO (COMPLETED/CANCELLED) -->
                 <section id="tab-history" class="tab-pane">
                     <div class="control-bar card-glass"
                         style="display: flex; justify-content: space-between; align-items: center; gap: 1.25rem; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
                         <div style="min-width: 240px;">
-                            <h3 id="history-card-title" style="font-size: 1.15rem; font-weight:700; margin:0; display: flex; align-items: center; gap: 8px;">
-                                <i data-lucide="archive" style="width: 20px; height: 20px; color: var(--accent-color, #0ea5e9);"></i>
+                            <h3 id="history-card-title"
+                                style="font-size: 1.15rem; font-weight:700; margin:0; display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="archive"
+                                    style="width: 20px; height: 20px; color: var(--accent-color, #0ea5e9);"></i>
                                 <span>Riwayat General EJO Selesai</span>
                             </h3>
-                            <p id="history-card-subtitle" class="text-secondary text-xs" style="margin: 4px 0 0 0;">Daftar General EJO yang
+                            <p id="history-card-subtitle" class="text-secondary text-xs" style="margin: 4px 0 0 0;">
+                                Daftar General EJO yang
                                 sudah selesai dikerjakan atau dibatalkan.</p>
                         </div>
                         <!-- ponytail: History Date Range Filter -->
-                        <div class="history-filter-pill-box" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: rgba(255, 255, 255, 0.03); padding: 8px 14px; border-radius: var(--border-radius-md, 10px); border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));">
-                            <div style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary, #94a3b8); margin-right: 4px;">
-                                <i data-lucide="calendar" style="width: 15px; height: 15px; color: var(--accent-color, #0ea5e9);"></i>
+                        <div class="history-filter-pill-box"
+                            style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: rgba(255, 255, 255, 0.03); padding: 8px 14px; border-radius: var(--border-radius-md, 10px); border: 1px solid var(--card-border, rgba(255, 255, 255, 0.08));">
+                            <div
+                                style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary, #94a3b8); margin-right: 4px;">
+                                <i data-lucide="calendar"
+                                    style="width: 15px; height: 15px; color: var(--accent-color, #0ea5e9);"></i>
                                 <span>Tanggal:</span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 6px;">
-                                <label for="history-start-date" class="text-xs text-secondary" style="font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px;">Dari</label>
-                                <input type="date" id="history-start-date" class="form-control" style="padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; background: var(--bg-sidebar, #1e293b); border: 1px solid var(--card-border, #334155); color: var(--text-primary, #f8fafc); outline: none; transition: all 0.2s;">
+                                <label for="history-start-date" class="text-xs text-secondary"
+                                    style="font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px;">Dari</label>
+                                <input type="date" id="history-start-date" class="form-control"
+                                    style="padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; background: var(--bg-sidebar, #1e293b); border: 1px solid var(--card-border, #334155); color: var(--text-primary, #f8fafc); outline: none; transition: all 0.2s;">
                             </div>
-                            <span style="color: var(--text-muted, #64748b); font-size: 0.8rem; font-weight: 500;">–</span>
+                            <span
+                                style="color: var(--text-muted, #64748b); font-size: 0.8rem; font-weight: 500;">–</span>
                             <div style="display: flex; align-items: center; gap: 6px;">
-                                <input type="date" id="history-end-date" class="form-control" style="padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; background: var(--bg-sidebar, #1e293b); border: 1px solid var(--card-border, #334155); color: var(--text-primary, #f8fafc); outline: none; transition: all 0.2s;">
+                                <input type="date" id="history-end-date" class="form-control"
+                                    style="padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; background: var(--bg-sidebar, #1e293b); border: 1px solid var(--card-border, #334155); color: var(--text-primary, #f8fafc); outline: none; transition: all 0.2s;">
                             </div>
-                            <button id="btn-reset-history-date" class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem; height: 34px; display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; margin-left: 4px;" title="Reset Filter Tanggal">
+                            <button id="btn-reset-history-date" class="btn btn-secondary btn-sm"
+                                style="padding: 6px 12px; font-size: 0.8rem; height: 34px; display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; margin-left: 4px;"
+                                title="Reset Filter Tanggal">
                                 <i data-lucide="rotate-ccw" style="width: 14px; height: 14px;"></i> Reset
                             </button>
                         </div>
@@ -1550,19 +2046,209 @@
                         </button>
                     </div>
 
-                    <!-- ponytail: Server Database Management (Nuclear Option) -->
-                    <div class="control-bar card-glass" id="server-db-control-bar"
-                        style="display: none; grid-template-columns: 1fr auto; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border: 1px solid rgba(244, 63, 94, 0.2); background: rgba(244, 63, 94, 0.02);">
-                        <div>
-                            <h3 style="font-size: 1.15rem; font-weight:700; color: #f43f5e;">Server Database Management
-                            </h3>
-                            <p class="text-secondary text-xs" style="margin-top:2px;">Hapus seluruh database dan setel
-                                ulang ke konfigurasi default (Nuclear Option).</p>
+                    <!-- ponytail: Server Database Management (Modular Reset & Nuclear Option) -->
+                    <div class="card-glass" id="server-db-control-bar"
+                        style="display: none; flex-direction: column; gap: 1.25rem; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid rgba(244, 63, 94, 0.25); background: rgba(244, 63, 94, 0.03); border-radius: var(--border-radius-lg);">
+
+                        <!-- Top Header -->
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid rgba(244, 63, 94, 0.15); padding-bottom: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div
+                                    style="width: 42px; height: 42px; border-radius: 12px; background: rgba(244, 63, 94, 0.12); color: #f43f5e; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 12px rgba(244, 63, 94, 0.15); flex-shrink: 0;">
+                                    <i data-lucide="database-zap" style="width: 22px; height: 22px;"></i>
+                                </div>
+                                <div>
+                                    <h3
+                                        style="font-size: 1.15rem; font-weight: 700; color: #f43f5e; margin: 0; display: flex; align-items: center; gap: 8px;">
+                                        Server Database Management
+                                        <span
+                                            style="font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(244, 63, 94, 0.18); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3);">Eksklusif
+                                            Server</span>
+                                    </h3>
+                                    <p class="text-secondary text-xs" style="margin-top: 3px;">Hapus database per modul
+                                        menu navbar atau setel ulang seluruh database sistem.</p>
+                                </div>
+                            </div>
                         </div>
-                        <div style="display: flex; gap: 10px; align-items: center;">
+
+                        <!-- Modular Reset Grid (Per Menu Navbar) -->
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 0.75rem;">
+                                <i data-lucide="trash-2"
+                                    style="width: 15px; height: 15px; color: var(--text-secondary);"></i>
+                                <span
+                                    style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px;">Hapus
+                                    Database Per Menu Navbar:</span>
+                            </div>
+
+                            <div
+                                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;">
+
+                                <!-- 1. General EJO -->
+                                <div
+                                    style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: 0.2s;">
+                                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; border-radius: 8px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i data-lucide="layers" style="width: 18px; height: 18px;"></i>
+                                        </div>
+                                        <div>
+                                            <h4
+                                                style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                                                General EJO</h4>
+                                            <p class="text-secondary text-xs"
+                                                style="margin: 2px 0 0 0; line-height: 1.3;">Hapus semua tiket General
+                                                EJO (Fase 1-3).</p>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-outline btn-xs" id="btn-reset-gejo"
+                                        style="width: 100%; border-color: rgba(245, 158, 11, 0.4); color: #f59e0b; padding: 6px 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px;">
+                                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Hapus General
+                                        EJO
+                                    </button>
+                                </div>
+
+                                <!-- 2. Drawing EJO -->
+                                <div
+                                    style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: 0.2s;">
+                                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; border-radius: 8px; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i data-lucide="image" style="width: 18px; height: 18px;"></i>
+                                        </div>
+                                        <div>
+                                            <h4
+                                                style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                                                Drawing EJO</h4>
+                                            <p class="text-secondary text-xs"
+                                                style="margin: 2px 0 0 0; line-height: 1.3;">Hapus seluruh tiket &amp;
+                                                file Drawing.</p>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-outline btn-xs" id="btn-reset-drawing"
+                                        style="width: 100%; border-color: rgba(6, 182, 212, 0.4); color: var(--color-cyan); padding: 6px 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px;">
+                                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Hapus Drawing
+                                        EJO
+                                    </button>
+                                </div>
+
+                                <!-- 3. Project -->
+                                <div
+                                    style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: 0.2s;">
+                                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; border-radius: 8px; background: rgba(59, 130, 246, 0.15); color: #3b82f6; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i data-lucide="milestone" style="width: 18px; height: 18px;"></i>
+                                        </div>
+                                        <div>
+                                            <h4
+                                                style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                                                Project Monitoring</h4>
+                                            <p class="text-secondary text-xs"
+                                                style="margin: 2px 0 0 0; line-height: 1.3;">Hapus seluruh kartu Project
+                                                (Fase 1-4).</p>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-outline btn-xs" id="btn-reset-project"
+                                        style="width: 100%; border-color: rgba(59, 130, 246, 0.4); color: #3b82f6; padding: 6px 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px;">
+                                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Hapus Project
+                                    </button>
+                                </div>
+
+                                <!-- 4. Dashboard Part & Galeri Spare Part -->
+                                <div
+                                    style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: 0.2s;">
+                                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; border-radius: 8px; background: rgba(16, 185, 129, 0.15); color: #10b981; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i data-lucide="wrench" style="width: 18px; height: 18px;"></i>
+                                        </div>
+                                        <div>
+                                            <h4
+                                                style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                                                Dashboard &amp; Spare Part</h4>
+                                            <p class="text-secondary text-xs"
+                                                style="margin: 2px 0 0 0; line-height: 1.3;">Hapus data Repair Part
+                                                &amp; galeri spare part.</p>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-outline btn-xs" id="btn-reset-partlist"
+                                        style="width: 100%; border-color: rgba(16, 185, 129, 0.4); color: #10b981; padding: 6px 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px;">
+                                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Hapus Data
+                                        Spare Part
+                                    </button>
+                                </div>
+
+                                <!-- 5. History EJO -->
+                                <div
+                                    style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: 0.2s;">
+                                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; border-radius: 8px; background: rgba(168, 85, 247, 0.15); color: #a855f7; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i data-lucide="archive" style="width: 18px; height: 18px;"></i>
+                                        </div>
+                                        <div>
+                                            <h4
+                                                style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                                                History EJO</h4>
+                                            <p class="text-secondary text-xs"
+                                                style="margin: 2px 0 0 0; line-height: 1.3;">Hapus riwayat arsip &amp;
+                                                tiket selesai.</p>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-outline btn-xs" id="btn-reset-history"
+                                        style="width: 100%; border-color: rgba(168, 85, 247, 0.4); color: #a855f7; padding: 6px 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px;">
+                                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Hapus History
+                                        EJO
+                                    </button>
+                                </div>
+
+                                <!-- 6. User Accounts -->
+                                <div
+                                    style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: 0.2s;">
+                                    <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                        <div
+                                            style="width: 32px; height: 32px; border-radius: 8px; background: rgba(234, 179, 8, 0.15); color: #eab308; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i data-lucide="users" style="width: 18px; height: 18px;"></i>
+                                        </div>
+                                        <div>
+                                            <h4
+                                                style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                                                Akun Personel</h4>
+                                            <p class="text-secondary text-xs"
+                                                style="margin: 2px 0 0 0; line-height: 1.3;">Reset akun pengguna ke
+                                                default pabrik.</p>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-outline btn-xs" id="btn-reset-users"
+                                        style="width: 100%; border-color: rgba(234, 179, 8, 0.4); color: #eab308; padding: 6px 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px;">
+                                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> Reset Akun User
+                                    </button>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <!-- Danger Zone: Nuclear Option -->
+                        <div
+                            style="margin-top: 0.25rem; padding: 1rem 1.25rem; background: rgba(244, 63, 94, 0.08); border: 1px dashed rgba(244, 63, 94, 0.4); border-radius: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div
+                                    style="width: 38px; height: 38px; border-radius: 10px; background: #f43f5e; color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(244, 63, 94, 0.35);">
+                                    <i data-lucide="bomb" style="width: 20px; height: 20px;"></i>
+                                </div>
+                                <div>
+                                    <h4 style="font-size: 0.95rem; font-weight: 700; color: #f43f5e; margin: 0;">Zona
+                                        Bahaya: Nuclear Database (Reset Total)</h4>
+                                    <p class="text-secondary text-xs" style="margin: 2px 0 0 0;">Hapus seluruh data di
+                                        SEMUA modul sekaligus dan kembalikan sistem ke setelan awal.</p>
+                                </div>
+                            </div>
                             <button class="btn" id="btn-db-nuclear"
-                                style="gap: 8px; background: #f43f5e; color: white; display: flex; align-items: center; padding: 0.6rem 1.25rem; font-size: 0.85rem; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; transition: all 0.2s ease;">
-                                <i data-lucide="bomb" style="width: 16px; height: 16px;"></i> Nuclear Database
+                                style="gap: 8px; background: #f43f5e; color: white; display: flex; align-items: center; padding: 0.6rem 1.25rem; font-size: 0.85rem; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 14px rgba(244, 63, 94, 0.3);">
+                                <i data-lucide="bomb" style="width: 16px; height: 16px;"></i> Nuclear Database (Reset
+                                Total)
                             </button>
                         </div>
                     </div>
@@ -1581,9 +2267,16 @@
                                 <i data-lucide="download" style="width: 16px; height: 16px;"></i> Export Excel
                             </button>
                             <button class="btn btn-outline" id="btn-excel-import" style="gap: 8px;">
-                                <i data-lucide="upload" style="width: 16px; height: 16px;"></i> Import Excel
+                                <i data-lucide="upload" style="width: 16px; height: 16px;"></i> Import EJO Excel
                             </button>
                             <input type="file" id="excel-import-input" accept=".xlsx, .xls, .csv"
+                                style="display: none;">
+                            <button class="btn btn-outline" id="btn-wsp-admin-import"
+                                style="gap: 8px; color: var(--color-cyan); border-color: rgba(6, 182, 212, 0.4);">
+                                <i data-lucide="file-spreadsheet" style="width: 16px; height: 16px;"></i> Import WSP
+                                Material
+                            </button>
+                            <input type="file" id="wsp-admin-import-input" accept=".xlsx, .xls, .csv"
                                 style="display: none;">
                         </div>
                     </div>
@@ -1621,6 +2314,10 @@
                                     <label for="usr-username">Username <span class="required">*</span></label>
                                     <input type="text" id="usr-username" placeholder="Contoh: dani (lowercase, unik)"
                                         required>
+                                    <small id="usr-username-duplicate-hint"
+                                        style="display: none; color: var(--danger-color, #ef4444); font-size: 0.75rem; margin-top: 4px;">⚠️
+                                        Username ini sudah terdaftar oleh user lain. Silakan pilih username lain atau
+                                        edit dari tabel.</small>
                                 </div>
                                 <div class="form-field" id="user-password-field-container">
                                     <label for="usr-password">Password <span class="required">*</span></label>
@@ -1640,8 +2337,7 @@
                                     <input type="text" id="usr-fullname" placeholder="Contoh: Ahmad Dani" required>
                                 </div>
                                 <div class="form-field">
-                                    <label for="usr-dept">Departemen Personel <span
-                                            class="required">*</span></label>
+                                    <label for="usr-dept">Departemen Personel <span class="required">*</span></label>
                                     <select id="usr-dept" required>
                                         <option value="" disabled selected>Pilih Departemen</option>
                                         <option value="PRD">PRD (Production)</option>
@@ -1650,35 +2346,15 @@
                                         <option value="GA">GA (General Affair)</option>
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
+                                        <option value="TMB">TMB (Timbangan)</option>
                                     </select>
                                 </div>
                                 <div class="form-field">
                                     <label for="usr-role">Jabatan / Level Otoritas <span
                                             class="required">*</span></label>
-                                    <select id="usr-role" required>
-                                        <option value="" disabled selected id="role-placeholder">Pilih Departemen Terlebih Dahulu</option>
-                                        <option value="Foreman Eng">Foreman Eng (Akses Administrator)</option>
-                                        <option value="Admin Eng">Admin Eng (Akses Administrator)</option>
-                                        <option value="Manager Eng">Manager Eng (Akses Administrator)</option>
-                                        <option value="Plant Manager">Plant Manager (Akses Administrator)</option>
-                                        <option value="Factory Manager">Factory Manager (Akses Administrator)</option>
-                                        <option value="Supervisor Eng">Supervisor Eng (Akses Administrator)</option>
-                                        <option value="Server" id="role-option-server" style="display: none;">Server (Highest Authority)</option>
-                                        <option value="Drafter">Drafter</option>
-                                        <option value="Sipil">Sipil</option>
-                                        <option value="Mekanik">Mekanik</option>
-                                        <option value="Elektrik">Elektrik</option>
-                                        <option value="Program">Program</option>
-                                        <option value="Kalibrasi">Kalibrasi</option>
-                                        <option value="Otomotif">Otomotif</option>
-                                        <option value="user_PRD">user_PRD</option>
-                                        <option value="user_ENG">user_ENG</option>
-                                        <option value="user_EPR">user_EPR</option>
-                                        <option value="user_GA">user_GA</option>
-                                        <option value="user_QC">user_QC</option>
-                                        <option value="user_WRH">user_WRH</option>
-                                        <option value="Manager">Manager</option>
-                                        <option value="Supervisor">Supervisor</option>
+                                    <select id="usr-role" required disabled>
+                                        <option value="" disabled selected id="role-placeholder">Pilih Departemen
+                                            Terlebih Dahulu</option>
                                     </select>
                                 </div>
                                 <div class="form-field full-width">
@@ -1718,63 +2394,286 @@
                     </div>
                 </section>
 
+                <!-- TAB: SERVER DASHBOARD ACCESS CONFIGURATION (EKSKLUSIF SERVER) -->
+                <section id="tab-server-dashboard-access" class="tab-pane">
+                    <!-- Control Bar Header -->
+                    <div class="control-bar card-glass"
+                        style="grid-template-columns: 1fr auto; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-left: 4px solid var(--color-cyan);">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <i data-lucide="layout-dashboard"
+                                    style="color: var(--color-cyan); width: 20px; height: 20px;"></i>
+                                <h3 style="font-size: 1.2rem; font-weight:700;">Perizinan Tampil Modul Dashboard</h3>
+                                <span class="badge"
+                                    style="background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.7rem; font-weight: 700; border-radius: 6px; padding: 2px 8px;">Akses
+                                    Per Role & Akun</span>
+                            </div>
+                            <p class="text-secondary text-xs">Atur visibilitas setiap widget, komponen KPI, chart, dan
+                                tabel pada Dashboard utama secara terpusat berdasarkan Role / Akun pengguna.</p>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <button class="btn btn-primary" onclick="resetAllDashboardWidgetPermissions()"
+                                style="gap: 8px;">
+                                <i data-lucide="rotate-ccw"></i> Reset ke Tampil Semua
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard Widgets Permission Management Cards -->
+                    <div id="dashboard-access-widgets-container"
+                        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; margin-bottom: 2rem;">
+                        <!-- Rendered dynamically by renderServerDashboardAccessTab() -->
+                    </div>
+                </section>
+
+                <!-- TAB 7: SERVER ACCESS MANAGEMENT (EKSKLUSIF SERVER) -->
+                <section id="tab-server-access" class="tab-pane">
+                    <!-- Container for Main User Access Table View -->
+                    <div id="server-access-main-container">
+                        <!-- Control Bar Header -->
+                        <div class="control-bar card-glass"
+                            style="grid-template-columns: 1fr auto; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-left: 4px solid var(--color-cyan);">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                    <i data-lucide="shield-check"
+                                        style="color: var(--color-cyan); width: 20px; height: 20px;"></i>
+                                    <h3 style="font-size: 1.2rem; font-weight:700;">Manajemen Akses & Otoritas Server
+                                    </h3>
+                                    <span class="badge"
+                                        style="background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.7rem; font-weight: 700; border-radius: 6px; padding: 2px 8px;">Matriks
+                                        Role & Dept</span>
+                                </div>
+                                <p class="text-secondary text-xs">Kelola hak akses modul, status otoritas, dan atribusi
+                                    per Role & Departemen secara terpusat.</p>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <button class="btn btn-primary" id="btn-server-access-add-user" style="gap: 8px;">
+                                    <i data-lucide="user-plus"></i> Daftarkan User Baru
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Summary Stats Grid -->
+                        <div class="stats-grid"
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                            <div class="card-glass stat-card"
+                                style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem;">
+                                <div class="stat-icon-wrapper"
+                                    style="width: 44px; height: 44px; border-radius: 12px; background: rgba(6, 182, 212, 0.12); color: #06b6d4; display: flex; align-items: center; justify-content: center;">
+                                    <i data-lucide="shield" style="width: 22px; height: 22px;"></i>
+                                </div>
+                                <div>
+                                    <span class="text-secondary text-xs" style="font-weight: 500;">Total Role &
+                                        Otoritas</span>
+                                    <h3 id="stat-server-total-roles"
+                                        style="font-size: 1.4rem; font-weight: 700; margin-top: 2px;">0</h3>
+                                </div>
+                            </div>
+                            <div class="card-glass stat-card"
+                                style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem;">
+                                <div class="stat-icon-wrapper"
+                                    style="width: 44px; height: 44px; border-radius: 12px; background: rgba(139, 92, 246, 0.12); color: #8b5cf6; display: flex; align-items: center; justify-content: center;">
+                                    <i data-lucide="building" style="width: 22px; height: 22px;"></i>
+                                </div>
+                                <div>
+                                    <span class="text-secondary text-xs" style="font-weight: 500;">Total Dept</span>
+                                    <h3 id="stat-server-total-depts"
+                                        style="font-size: 1.4rem; font-weight: 700; margin-top: 2px;">0</h3>
+                                </div>
+                            </div>
+                            <div class="card-glass stat-card"
+                                style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem;">
+                                <div class="stat-icon-wrapper"
+                                    style="width: 44px; height: 44px; border-radius: 12px; background: rgba(59, 130, 246, 0.12); color: #3b82f6; display: flex; align-items: center; justify-content: center;">
+                                    <i data-lucide="users" style="width: 22px; height: 22px;"></i>
+                                </div>
+                                <div>
+                                    <span class="text-secondary text-xs" style="font-weight: 500;">Total Personel</span>
+                                    <h3 id="stat-server-total-users"
+                                        style="font-size: 1.4rem; font-weight: 700; margin-top: 2px;">0</h3>
+                                </div>
+                            </div>
+                            <div class="card-glass stat-card"
+                                style="padding: 1.25rem; display: flex; align-items: center; gap: 1rem;">
+                                <div class="stat-icon-wrapper"
+                                    style="width: 44px; height: 44px; border-radius: 12px; background: rgba(16, 185, 129, 0.12); color: #10b981; display: flex; align-items: center; justify-content: center;">
+                                    <i data-lucide="wifi" style="width: 22px; height: 22px;"></i>
+                                </div>
+                                <div>
+                                    <span class="text-secondary text-xs" style="font-weight: 500;">User Online</span>
+                                    <h3 id="stat-server-online-users"
+                                        style="font-size: 1.4rem; font-weight: 700; margin-top: 2px;">0</h3>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Search, Filter & View Mode Controls -->
+                        <div class="card-glass"
+                            style="padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
+                            <div
+                                style="display: flex; gap: 0.75rem; align-items: center; flex: 1; min-width: 280px; flex-wrap: wrap;">
+                                <div class="search-box" style="position: relative; width: 100%; max-width: 320px;">
+                                    <i data-lucide="search"
+                                        style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+                                    <input type="text" id="server-access-search"
+                                        placeholder="Cari role, dept, username..."
+                                        style="width: 100%; padding: 8px 12px 8px 36px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem;">
+                                </div>
+                                <select id="server-access-filter-dept"
+                                    style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
+                                    <option value="">Semua Dept</option>
+                                    <option value="ENG">ENG</option>
+                                    <option value="PRD">PRD</option>
+                                    <option value="EPR">EPR</option>
+                                    <option value="GA">GA</option>
+                                    <option value="QC">QC</option>
+                                    <option value="WRH">WRH</option>
+                                    <option value="TMB">TMB</option>
+                                </select>
+                                <select id="server-access-filter-status"
+                                    style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
+                                    <option value="">Semua Status</option>
+                                    <option value="active">Aktif</option>
+                                    <option value="suspended">Nonaktif / Suspend</option>
+                                    <option value="online">Ada User Online</option>
+                                </select>
+                            </div>
+                            <!-- View Toggle & Bulk Action -->
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <button id="btn-server-access-bulk-default" type="button" class="btn btn-outline btn-xs"
+                                    onclick="bulkResetAllUsersToDefaultRole()"
+                                    style="display: none; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 0.78rem; border-color: rgba(6, 182, 212, 0.4); color: var(--color-cyan); gap: 6px; align-items: center; height: 32px;"
+                                    title="Reset Hak Akses Seluruh Akun Personel ke Default Role & Dept">
+                                    <i data-lucide="rotate-ccw" style="width: 14px; height: 14px;"></i> Bulk Reset to
+                                    Default Role
+                                </button>
+                                <div
+                                    style="display: flex; align-items: center; gap: 4px; background: rgba(255, 255, 255, 0.04); padding: 4px; border-radius: 10px; border: 1px solid var(--card-border);">
+                                    <button id="server-access-mode-role" type="button" class="btn btn-xs"
+                                        onclick="switchServerAccessViewMode('role')"
+                                        style="padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 0.78rem; background: var(--color-cyan); color: #000;">
+                                        <i data-lucide="layers" style="width: 14px; height: 14px;"></i> Per Role & Dept
+                                    </button>
+                                    <button id="server-access-mode-user" type="button" class="btn btn-xs"
+                                        onclick="switchServerAccessViewMode('user')"
+                                        style="padding: 6px 12px; border-radius: 6px; font-weight: 500; font-size: 0.78rem; background: transparent; color: var(--text-secondary);">
+                                        <i data-lucide="user" style="width: 14px; height: 14px;"></i> Per Akun Personel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- User Access Table Container -->
+                        <div class="table-container card-glass">
+                            <table class="data-table">
+                                <thead id="server-access-table-head">
+                                    <tr>
+                                        <th>Dept</th>
+                                        <th>Role / Otoritas</th>
+                                        <th>Jumlah Akun</th>
+                                        <th>User Terkait / Member</th>
+                                        <th>Hak Akses Modul Role</th>
+                                        <th>Status Role</th>
+                                        <th style="text-align: right;">Aksi Kontrol</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="server-access-user-table-body">
+                                    <!-- Dynamically rendered -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Container for Flowchart Editor View -->
+                    <div id="server-access-flowchart-container" style="display: none;">
+                        <!-- Dynamically rendered by renderFlowchartEditor() -->
+                    </div>
+                </section>
+
+
             </div>
         </main>
     </div>
 
     <!-- MODAL ALIHKAN DRAWING KE PROJECT (REVIEW ONLY) -->
     <div class="modal-backdrop" id="transfer-drawing-project-modal" style="display: none;">
-        <div class="modal-card card-glass animate-in" style="max-width: 520px; width: 92%; padding: 0; overflow: hidden;">
+        <div class="modal-card card-glass animate-in"
+            style="max-width: 520px; width: 92%; padding: 0; overflow: hidden;">
             <!-- Header -->
-            <div class="modal-header" style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center;">
+            <div class="modal-header"
+                style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <div style="width: 42px; height: 42px; border-radius: 12px; background: rgba(0, 242, 254, 0.1); border: 1px solid rgba(0, 242, 254, 0.25); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <div
+                        style="width: 42px; height: 42px; border-radius: 12px; background: rgba(0, 242, 254, 0.1); border: 1px solid rgba(0, 242, 254, 0.25); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i data-lucide="external-link" style="width: 20px; height: 20px; color: var(--color-cyan);"></i>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 2px;">
-                        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary); line-height: 1.3;">Alihkan ke Project Monitoring</h3>
-                        <p style="margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.3;">Transfer Drawing EJO ke Fase 1 Project Review</p>
+                        <h3
+                            style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary); line-height: 1.3;">
+                            Alihkan ke Project Monitoring</h3>
+                        <p style="margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.3;">Transfer
+                            Drawing EJO ke Fase 1 Project Review</p>
                     </div>
                 </div>
-                <button type="button" class="modal-close" onclick="closeTransferDrawingToProjectModal()"><i data-lucide="x" style="width: 16px; height: 16px;"></i></button>
+                <button type="button" class="modal-close" onclick="closeTransferDrawingToProjectModal()"><i
+                        data-lucide="x" style="width: 16px; height: 16px;"></i></button>
             </div>
 
             <!-- Form & Body -->
-            <form id="transfer-drawing-project-form" onsubmit="submitTransferDrawingToProject(event)" style="margin: 0;">
+            <form id="transfer-drawing-project-form" onsubmit="submitTransferDrawingToProject(event)"
+                style="margin: 0;">
                 <div style="display: flex; flex-direction: column; gap: 1.25rem; padding: 1.25rem 1.5rem;">
                     <input type="hidden" id="transfer-drawing-id" value="" />
-                    
+
                     <!-- Card Info Drawing EJO -->
-                    <div style="background: rgba(0, 242, 254, 0.04); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 8px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <span style="font-size: 0.72rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; color: var(--text-muted);">Drawing EJO</span>
-                            <span id="transfer-drawing-info-id" class="ejo-id-badge" style="font-size: 0.75rem; padding: 3px 10px; border-radius: 6px;">DRW-XXXXXX</span>
+                    <div
+                        style="background: rgba(0, 242, 254, 0.04); border: 1px solid var(--card-border); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 8px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span
+                                style="font-size: 0.72rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; color: var(--text-muted);">Drawing
+                                EJO</span>
+                            <span id="transfer-drawing-info-id" class="ejo-id-badge"
+                                style="font-size: 0.75rem; padding: 3px 10px; border-radius: 6px;">DRW-XXXXXX</span>
                         </div>
-                        <div id="transfer-drawing-info-title" style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem; line-height: 1.4;">Judul Drawing</div>
+                        <div id="transfer-drawing-info-title"
+                            style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem; line-height: 1.4;">
+                            Judul Drawing</div>
                     </div>
 
                     <!-- Input Field Deskripsi -->
                     <div class="form-field" style="display: flex; flex-direction: column; gap: 0;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                            <label for="transfer-project-desc" style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin: 0;">Deskripsi Project</label>
-                            <span style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">Opsional</span>
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <label for="transfer-project-desc"
+                                style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin: 0;">Deskripsi
+                                Project</label>
+                            <span
+                                style="font-size: 0.75rem; color: var(--text-muted); font-style: italic;">Opsional</span>
                         </div>
-                        <textarea id="transfer-project-desc" class="form-control" rows="3" placeholder="Masukkan catatan atau deskripsi project tambahan..." style="width: 100%; box-sizing: border-box; resize: vertical; padding: 0.75rem 0.85rem; min-height: 90px; line-height: 1.5; font-size: 0.85rem; border-radius: 10px;"></textarea>
+                        <textarea id="transfer-project-desc" class="form-control" rows="3"
+                            placeholder="Masukkan catatan atau deskripsi project tambahan..."
+                            style="width: 100%; box-sizing: border-box; resize: vertical; padding: 0.75rem 0.85rem; min-height: 90px; line-height: 1.5; font-size: 0.85rem; border-radius: 10px;"></textarea>
                     </div>
 
                     <!-- Alert Info Callout -->
-                    <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 0.85rem 1rem; font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: flex-start; gap: 12px; line-height: 1.5;">
-                        <i data-lucide="info" style="width: 20px; height: 20px; color: #f59e0b; flex-shrink: 0; margin-top: 1px;"></i>
+                    <div
+                        style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 0.85rem 1rem; font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: flex-start; gap: 12px; line-height: 1.5;">
+                        <i data-lucide="info"
+                            style="width: 20px; height: 20px; color: #f59e0b; flex-shrink: 0; margin-top: 1px;"></i>
                         <div style="flex: 1;">
-                            Drawing EJO ini akan dimasukkan ke <strong style="color: var(--text-primary);">Fase 1 Project Monitoring (Review)</strong>.
+                            Drawing EJO ini akan dimasukkan ke <strong style="color: var(--text-primary);">Fase 1
+                                Project Monitoring (Review)</strong>.
                         </div>
                     </div>
                 </div>
 
                 <!-- Footer -->
-                <div style="padding: 1rem 1.5rem 1.25rem; border-top: 1px solid var(--card-border); display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
-                    <button type="button" class="btn btn-outline" onclick="closeTransferDrawingToProjectModal()" style="padding: 8px 18px; font-size: 0.85rem; height: 38px; border-radius: 8px;">Batal</button>
-                    <button type="submit" class="btn btn-primary" id="btn-submit-transfer-drawing" style="padding: 8px 20px; font-size: 0.85rem; height: 38px; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-weight: 600;">
+                <div
+                    style="padding: 1rem 1.5rem 1.25rem; border-top: 1px solid var(--card-border); display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
+                    <button type="button" class="btn btn-outline" onclick="closeTransferDrawingToProjectModal()"
+                        style="padding: 8px 18px; font-size: 0.85rem; height: 38px; border-radius: 8px;">Batal</button>
+                    <button type="submit" class="btn btn-primary" id="btn-submit-transfer-drawing"
+                        style="padding: 8px 20px; font-size: 0.85rem; height: 38px; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; font-weight: 600;">
                         <i data-lucide="send" style="width: 14px; height: 14px;"></i> Alihkan ke Project
                     </button>
                 </div>
@@ -1838,8 +2737,8 @@
                         </div>
                         <!-- ponytail: dynamic field to show assigned engineer details -->
                         <div class="meta-field" id="modal-ejo-engineer-field" style="display: none;">
-                            <span class="meta-label"><i data-lucide="wrench"
-                                    style="color: var(--color-green);"></i> Engineer (General)</span>
+                            <span class="meta-label"><i data-lucide="wrench" style="color: var(--color-green);"></i>
+                                Engineer (General)</span>
                             <span class="meta-value" id="modal-ejo-engineer"
                                 style="color: var(--color-green); font-weight: bold;">-</span>
                         </div>
@@ -1873,47 +2772,85 @@
                                 <span class="cost-saving-value" id="modal-ejo-saving">-</span>
                             </div>
                         </div>
+
+                        <!-- Quantity Analysis Card (Full Width) -->
+                        <div class="cost-analysis-card" id="modal-ejo-qty-analysis-field" style="display: none;">
+                            <div class="cost-analysis-header">
+                                <i data-lucide="boxes"></i>
+                                <span>Rincian Kuantitas Barang (Quantity Analysis)</span>
+                            </div>
+                            <div class="cost-analysis-grid">
+                                <div class="cost-stat-item">
+                                    <span class="cost-stat-label">Qty Total</span>
+                                    <span class="cost-stat-value" id="modal-ejo-qty-analysis-total">-</span>
+                                </div>
+                                <div class="cost-stat-item">
+                                    <span class="cost-stat-label">Kebutuhan Mesin</span>
+                                    <span class="cost-stat-value" id="modal-ejo-qty-analysis-needed">-</span>
+                                </div>
+                                <div class="cost-stat-item">
+                                    <span class="cost-stat-label">Stok Gudang</span>
+                                    <span class="cost-stat-value" id="modal-ejo-qty-analysis-stock">-</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="details-section">
-                        <h4><i data-lucide="align-left" style="color: var(--color-cyan);"></i> Deskripsi Masalah</h4>
+                        <h4><i data-lucide="align-left" style="color: var(--color-cyan);"></i> Deskripsi Masalah / Ruang
+                            Lingkup</h4>
                         <div class="details-desc-box" id="modal-ejo-desc">
                             Deskripsi pekerjaan secara mendetail akan ditampilkan di sini.
                         </div>
                     </div>
 
-                    <!-- Keterangan Urgent (Prioritas 1) -->
+                    <!-- Alasan Urgent (Prioritas 1) -->
                     <div class="details-section" id="modal-ejo-urgent-section" style="display: none;">
-                        <h4 style="color: var(--color-rose); border-bottom-color: rgba(244, 63, 94, 0.2);"><i data-lucide="alert-triangle" style="color: var(--color-rose);"></i> Keterangan Prioritas 1 (urgent)</h4>
+                        <h4 style="color: var(--color-rose); border-bottom-color: rgba(244, 63, 94, 0.2);"><i
+                                data-lucide="alert-triangle" style="color: var(--color-rose);"></i> Alasan Urgent</h4>
                         <div class="details-desc-box urgent-report-box" id="modal-ejo-urgent-reason">
                             Alasan urgent akan ditampilkan di sini.
                         </div>
                     </div>
 
-                    <!-- Foto Before (Kondisi Awal) -->
+                    <!-- Foto Before-->
                     <div class="details-section" id="modal-ejo-photo-before-section" style="display: none;">
-                        <h4><i data-lucide="camera" style="color: var(--color-blue);"></i> Foto Before (Kondisi Awal)</h4>
+                        <h4><i data-lucide="camera" style="color: var(--color-blue);"></i> Foto Before (Kondisi Awal)
+                        </h4>
                         <div class="photo-before-container">
                             <a id="modal-ejo-photo-before-link" href="#" target="_blank" class="photo-before-wrapper">
-                                <img id="modal-ejo-photo-before-img" src="" alt="Foto Before" class="photo-before-img" />
-                                <span class="photo-preview-hint"><i data-lucide="zoom-in" style="width: 12px; height: 12px;"></i> Klik untuk memperbesar</span>
+                                <img id="modal-ejo-photo-before-img" src="" alt="Foto Before"
+                                    class="photo-before-img" />
+                                <span class="photo-preview-hint"><i data-lucide="zoom-in"
+                                        style="width: 12px; height: 12px;"></i> Klik untuk memperbesar</span>
                             </a>
                         </div>
                     </div>
 
-                    <!-- Laporan Hasil Pekerjaan -->
+                    <!-- Foto After (Kondisi Setelah Pekerjaan) - rendered dynamically by renderModalGallery -->
+                    <div class="details-section" id="modal-ejo-photo-after-section" style="display: none;">
+                        <h4 style="color: var(--color-green); border-bottom-color: rgba(16, 185, 129, 0.15);"><i
+                                data-lucide="camera" style="color: var(--color-green);"></i> Foto After (Kondisi Setelah
+                            Pekerjaan)</h4>
+                        <div id="modal-ejo-photo-after-gallery">
+                            <!-- Dynamic Foto After gallery rendered by renderModalGallery() -->
+                        </div>
+                    </div>
+
+                    <!-- Laporan Hasil Pekerjaan (Drafter/Engineer) -->
                     <div class="details-section" id="modal-ejo-completion-report-section" style="display: none;">
                         <h4 class="completion-section-title"><i data-lucide="check-circle-2"
-                                style="color: var(--color-green);"></i> Laporan Hasil Pekerjaan</h4>
+                                style="color: var(--color-green);"></i> Laporan Hasil Pekerjaan (Drafter/Engineer)</h4>
                         <div class="details-desc-box completion-report-box" id="modal-ejo-completion-report">
                             Laporan penyelesaian pekerjaan akan ditampilkan di sini.
                         </div>
                     </div>
 
-                    <!-- Alasan Revisi -->
+                    <!-- Instruksi/Alasan Revisi -->
                     <div class="details-section" id="modal-ejo-revision-instruction-section" style="display: none;">
                         <h4 class="revision-section-title"><i data-lucide="alert-circle"
-                                style="color: var(--color-rose);"></i> Alasan Revisi (<span id="modal-ejo-revision-role">Lead/Admin</span>)</h4>
+                                style="color: var(--color-rose);"></i> Instruksi/Alasan Revisi (<span
+                                id="modal-ejo-revision-role">Lead/Admin</span>)</h4>
                         <div class="details-desc-box revision-report-box" id="modal-ejo-revision-instruction">
                             Instruksi revisi akan ditampilkan di sini.
                         </div>
@@ -1984,11 +2921,11 @@
                                 style="width: 100%; padding: 8px; font-size: 0.8rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-card); color: var(--text-main); font-family: inherit; resize: vertical; box-sizing: border-box;"></textarea>
                         </div>
                         <div class="form-field" style="margin-top: 0.75rem;">
-                            <label for="modal-attachment">Tambah Lampiran File / Gambar</label>
+                            <label for="modal-attachment">Upload Foto After / Lampiran</label>
                             <div class="file-upload-mock" id="modal-upload-mock"
                                 style="padding: 10px; font-size: 0.8rem; flex-direction: row; gap: 5px;">
-                                <i data-lucide="upload-cloud" style="width: 16px; height: 16px;"></i>
-                                <span id="modal-upload-span">Klik untuk tambah file / gambar</span>
+                                <i data-lucide="camera" style="width: 16px; height: 16px;"></i>
+                                <span id="modal-upload-span">Klik untuk upload foto after</span>
                                 <input type="file" id="modal-attachment" style="display: none;" multiple
                                     accept="image/*,.pdf,.dwg,.doc,.docx,.xls,.xlsx,.zip,.rar">
                             </div>
@@ -2052,11 +2989,6 @@
                         <i data-lucide="save"></i> Simpan Perubahan
                     </button>
 
-                    <button class="btn btn-primary glow-button full-width" id="btn-complete-ejo"
-                        style="margin-top: 1.5rem; display: none;">
-                        <i data-lucide="check-circle"></i> Selesaikan Pekerjaan
-                    </button>
-
                     <button class="btn btn-danger-outline full-width" id="btn-delete-ejo" style="margin-top: 0.75rem;">
                         <i data-lucide="trash-2"></i> Hapus EJO
                     </button>
@@ -2079,16 +3011,18 @@
                 <div class="modal-main-info" style="border-right: none; padding-right: 0; width: 100%;">
                     <h2 id="modal-part-name">Nama Spare Part</h2>
 
-                    <!-- Part Image Preview -->
+                    <!-- Part Image / PDF Preview -->
                     <div id="modal-part-image-container" style="margin-top: 1.5rem; text-align: center; display: none;">
                         <img id="modal-part-image-preview" src=""
-                            style="max-width: 100%; max-height: 250px; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); object-fit: contain;" />
+                            style="max-width: 100%; max-height: 250px; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); object-fit: contain; display: none;" />
+                        <iframe id="modal-part-pdf-preview" src=""
+                            style="width: 100%; height: 400px; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); display: none;"></iframe>
                     </div>
 
                     <div class="ejo-meta-fields" style="margin-top: 1.5rem;">
                         <div class="meta-field">
-                            <span class="meta-label">Kode / Part Number</span>
-                            <span class="meta-value" id="modal-part-code">SK-CYL-3</span>
+                            <span class="meta-label">Diupload Oleh</span>
+                            <span class="meta-value" id="modal-part-uploader">--</span>
                         </div>
                     </div>
 
@@ -2105,53 +3039,56 @@
     <!-- ponytail: MODAL DETAIL PROJECT -->
     <div class="modal-backdrop" id="project-detail-modal"
         style="display: none; justify-content: center; align-items: center; z-index: 11000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-        <div class="modal-card card-glass animate-in" style="max-width: 650px; width: 90%;">
+        <div class="modal-card card-glass animate-in"
+            style="max-width: 1050px; width: 95%; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header">
                 <div class="ejo-header-badge" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span id="modal-project-id" class="badge-ejo-code">PRJ-XXX</span>
                     <span id="modal-project-drawing-badge" style="display: none;"></span>
-                    <span id="modal-project-dept" class="badge badge-accent">Dept</span>
                 </div>
                 <button class="modal-close" id="modal-project-close-btn">&times;</button>
             </div>
 
             <div class="modal-body" style="grid-template-columns: 1fr; gap: 1.5rem;">
                 <div class="modal-main-info" style="border-right: none; padding-right: 0; width: 100%;">
-                    <h2 id="modal-project-title">Nama Project</h2>
-
-                    <div class="ejo-meta-fields" style="margin-top: 1.5rem;">
-                        <div class="meta-field">
-                            <span class="meta-label">PPIC / Requestor</span>
-                            <span class="meta-value" id="modal-project-pic">Ahmad Dani</span>
-                        </div>
-                        <div class="meta-field">
-                            <span class="meta-label">Fase Project</span>
-                            <span class="meta-value" id="modal-project-phase">Fase 1</span>
-                        </div>
+                    <h2 id="modal-project-title">Commisioning &amp; Serah Terima Project</h2>
+                    <p class="text-secondary" style="margin-top: -0.25rem; font-size: 0.85rem;">
+                        <i data-lucide="user"
+                            style="width: 14px; height: 14px; display: inline; vertical-align: middle; margin-right: 4px;"></i>
+                        Pengusul: <strong id="modal-project-pic" style="color: var(--text-primary);">Foreman</strong> |
+                        Dept: <strong id="modal-project-dept" style="color: var(--text-primary);">PRD</strong>
+                    </p>
+                    <div
+                        style="margin-top: 0.5rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                        <span id="modal-project-phase" class="badge badge-accent">Fase 1: Inisialisasi Ide</span>
+                        <span id="modal-project-custom-status"></span>
                     </div>
-
-                    <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">
-                        Deskripsi Gagasan & Rencana Kerja</h3>
-                    <div class="details-desc-box" id="modal-project-desc"
-                        style="min-height: 100px; padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-size: 0.85rem; line-height: 1.5; color: var(--text-main); white-space: pre-wrap;">
-                        Detail rencana kerja project capex...
-                    </div>
+                    <p id="modal-project-desc"
+                        style="font-size: 0.88rem; line-height: 1.5; color: var(--text-primary); margin-bottom: 1rem;">
+                    </p>
 
                     <!-- BOQ Section in Project Details Modal -->
-                    <div id="project-boq-docs-sec" style="margin-top: 1rem; border-top: 1px solid var(--card-border); padding-top: 1rem;">
-                        <h3 style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between; color: var(--color-cyan);">
-                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="paperclip" style="width:16px;height:16px;"></i> Dokumen BOQ (Bill of Quantities)</span>
+                    <div id="project-boq-docs-sec"
+                        style="margin-top: 1rem; border-top: 1px solid var(--card-border); padding-top: 1rem;">
+                        <h3
+                            style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between; color: var(--color-cyan);">
+                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="paperclip"
+                                    style="width:16px;height:16px;"></i> Dokumen BOQ (Bill of Quantities)</span>
                             <span id="modal-boq-upload-btn-container"></span>
                         </h3>
-                        <div id="project-boq-gallery" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                        <div id="project-boq-gallery"
+                            style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                             <!-- Injected dynamically -->
                         </div>
                     </div>
 
                     <!-- ponytail: Procurement PR / PO / GR Section in Project Details Modal (Phase 2 Only) -->
-                    <div id="project-procurement-sec" style="margin-top: 1rem; border-top: 1px solid var(--card-border); padding-top: 1rem; display: none;">
-                        <h3 style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between; color: var(--color-green);">
-                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="shopping-bag" style="width:16px;height:16px;"></i> Detail Status Procurement (PR / PO / GR)</span>
+                    <div id="project-procurement-sec"
+                        style="margin-top: 1rem; border-top: 1px solid var(--card-border); padding-top: 1rem; display: none;">
+                        <h3
+                            style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between; color: var(--color-green);">
+                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="shopping-bag"
+                                    style="width:16px;height:16px;"></i> Detail Status Procurement (PR / PO / GR)</span>
                             <span id="modal-procurement-edit-btn-container"></span>
                         </h3>
                         <div id="project-procurement-content">
@@ -2159,91 +3096,262 @@
                         </div>
                     </div>
 
-                    <h3
-                        style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
-                        <span>Persetujuan Bertingkat (Fase 1)</span>
-                        <span id="modal-project-sig-status"
-                            style="font-size: 0.7rem; font-weight: normal; color: var(--color-cyan); background: rgba(0, 242, 254, 0.1); padding: 2px 8px; border-radius: 12px; border: 1px solid rgba(0, 242, 254, 0.2);"></span>
-                    </h3>
-                    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 0.5rem;">
-                        <!-- PIC Card -->
-                        <div class="card-glass" id="card-proj-sig-pic"
-                            style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
-                            <div>
-                                <div id="proj-sig-title-pic"
-                                    style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">PENGUSUL
-                                    / REQUESTOR</div>
-                                <div id="proj-sig-info-pic"
-                                    style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
-                                </div>
-                            </div>
-                            <div id="proj-sig-img-container-pic" style="display: flex; align-items: center; gap: 8px;">
-                            </div>
-                        </div>
-
-                        <!-- Foreman Card -->
-                        <div class="card-glass" id="card-proj-sig-foreman"
-                            style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
-                            <div>
-                                <div id="proj-sig-title-foreman"
-                                    style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">FOREMAN ENG
-                                </div>
-                                <div id="proj-sig-info-foreman"
-                                    style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
-                                </div>
-                            </div>
-                            <div id="proj-sig-img-container-foreman"
-                                style="display: flex; align-items: center; gap: 8px;"></div>
-                        </div>
-
-                        <!-- Supervisor Card -->
-                        <div class="card-glass" id="card-proj-sig-supervisor"
-                            style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
-                            <div>
-                                <div id="proj-sig-title-supervisor"
-                                    style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">
-                                    SUPERVISOR ENG</div>
-                                <div id="proj-sig-info-supervisor"
-                                    style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
-                                </div>
-                            </div>
-                            <div id="proj-sig-img-container-supervisor"
-                                style="display: flex; align-items: center; gap: 8px;"></div>
-                        </div>
-
-                        <!-- Manager Card -->
-                        <div class="card-glass" id="card-proj-sig-manager"
-                            style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
-                            <div>
-                                <div id="proj-sig-title-manager"
-                                    style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">MANAGER ENG
-                                </div>
-                                <div id="proj-sig-info-manager"
-                                    style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
-                                </div>
-                            </div>
-                            <div id="proj-sig-img-container-manager"
-                                style="display: flex; align-items: center; gap: 8px;"></div>
+                    <!-- ponytail: Timeline Section in Project Details Modal (Phase 3 Only) -->
+                    <div id="project-timeline-sec"
+                        style="margin-top: 1rem; border-top: 1px solid var(--card-border); padding-top: 1rem; display: none;">
+                        <h3
+                            style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between; color: #f59e0b;">
+                            <span style="display: flex; align-items: center; gap: 6px;"><i data-lucide="calendar"
+                                    style="width:16px;height:16px;"></i> Timeline Eksekusi Proyek</span>
+                            <span id="modal-timeline-edit-btn-container"></span>
+                        </h3>
+                        <div id="project-timeline-content">
+                            <!-- Injected dynamically for Phase 3 -->
                         </div>
                     </div>
 
-                    <!-- Supporting Documents Section - ponytail: add supporting attachments section -->
-                    <div id="project-attachments-section"
+
+
+                    <!-- Berita Acara Handover Section (Moved right under Description) -->
+                    <div id="project-handover-docs-sec"
                         style="margin-top: 1.5rem; display: none; border-top: 1px solid var(--card-border); padding-top: 1.25rem;">
-                        <h3 style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600;">Dokumen / File Pendukung
-                            / BOQ</h3>
-                        <div id="project-attachments-list"
-                            style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+                        <h3
+                            style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="file-check" style="width:16px;height:16px;color: var(--color-green);"></i>
+                            Dokumen Form Berita Acara Serah Terima Pekerjaan
+                        </h3>
+                        <div id="project-handover-gallery"
+                            style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                             <!-- Injected dynamically -->
                         </div>
-                        <div class="file-upload-mock" id="proj-attachment-upload-mock"
-                            style="padding: 12px; font-size: 0.8rem; flex-direction: row; gap: 8px; cursor: pointer; border: 1px dashed var(--card-border); border-radius: var(--border-radius-sm); display: none; align-items: center; justify-content: center; background: rgba(255,255,255,0.02); transition: background 0.2s;">
-                            <i data-lucide="upload" style="width: 16px; height: 16px; color: var(--color-cyan);"></i>
-                            <span>Unggah File BOQ / Pendukung (Excel / PDF / Gambar)</span>
+
+                        <!-- ponytail: Berita Acara Handover Signatures Grid (6 Roles) -->
+                        <div id="project-handover-signatures-sec"
+                            style="display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 1.25rem; padding: 1rem; background: var(--bg-tertiary); border: 1px solid var(--card-border); border-radius: var(--border-radius-md); box-sizing: border-box;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 10px;">
+                                <span
+                                    style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
+                                    <i data-lucide="pen-tool"
+                                        style="width: 16px; height: 16px; color: var(--color-cyan);"></i>
+                                    Tanda Tangan Berita Acara Serah Terima (6 Pihak)
+                                </span>
+                                <span id="project-handover-sig-status" class="badge badge-accent"
+                                    style="font-size: 0.72rem; padding: 4px 10px; border-radius: 20px; font-weight: 600;">-</span>
+                            </div>
+
+                            <!-- 6 Signature Cards Grid -->
+                            <div
+                                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; width: 100%; margin-top: 6px;">
+                                <!-- Staff ENG -->
+                                <div class="card-glass" id="card-proj-handover-sig-staff_eng"
+                                    style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-size: 0.75rem; background: var(--bg-secondary);">
+                                    <span
+                                        style="font-size: 0.65rem; font-weight: 700; color: var(--color-cyan); text-transform: uppercase; letter-spacing: 0.5px;">Dibuat
+                                        Oleh:</span>
+                                    <span
+                                        style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">STAFF
+                                        ENG</span>
+                                    <div id="proj-handover-sig-img-container-staff_eng"
+                                        style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: var(--border-radius-sm); padding: 4px; border: 1px dashed var(--card-border); margin: 2px 0;">
+                                        <span
+                                            style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum
+                                            TTD</span>
+                                    </div>
+                                    <div id="proj-handover-sig-info-staff_eng"
+                                        style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center; color: var(--text-secondary);">
+                                        Menunggu TTD</div>
+                                </div>
+
+                                <!-- SPV ENG -->
+                                <div class="card-glass" id="card-proj-handover-sig-spv_eng"
+                                    style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-size: 0.75rem; background: var(--bg-secondary);">
+                                    <span
+                                        style="font-size: 0.65rem; font-weight: 700; color: var(--color-cyan); text-transform: uppercase; letter-spacing: 0.5px;">Diketahui
+                                        Oleh:</span>
+                                    <span
+                                        style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">SPV
+                                        ENG</span>
+                                    <div id="proj-handover-sig-img-container-spv_eng"
+                                        style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: var(--border-radius-sm); padding: 4px; border: 1px dashed var(--card-border); margin: 2px 0;">
+                                        <span
+                                            style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum
+                                            TTD</span>
+                                    </div>
+                                    <div id="proj-handover-sig-info-spv_eng"
+                                        style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center; color: var(--text-secondary);">
+                                        Menunggu TTD</div>
+                                </div>
+
+                                <!-- Manager ENG -->
+                                <div class="card-glass" id="card-proj-handover-sig-manager_eng"
+                                    style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-size: 0.75rem; background: var(--bg-secondary);">
+                                    <span
+                                        style="font-size: 0.65rem; font-weight: 700; color: var(--color-cyan); text-transform: uppercase; letter-spacing: 0.5px;">Disetujui
+                                        Oleh:</span>
+                                    <span
+                                        style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">MANAGER
+                                        ENG</span>
+                                    <div id="proj-handover-sig-img-container-manager_eng"
+                                        style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: var(--border-radius-sm); padding: 4px; border: 1px dashed var(--card-border); margin: 2px 0;">
+                                        <span
+                                            style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum
+                                            TTD</span>
+                                    </div>
+                                    <div id="proj-handover-sig-info-manager_eng"
+                                        style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center; color: var(--text-secondary);">
+                                        Menunggu TTD</div>
+                                </div>
+
+                                <!-- Manager User -->
+                                <div class="card-glass" id="card-proj-handover-sig-manager_user"
+                                    style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-size: 0.75rem; background: var(--bg-secondary);">
+                                    <span
+                                        style="font-size: 0.65rem; font-weight: 700; color: var(--color-yellow); text-transform: uppercase; letter-spacing: 0.5px;">Disetujui
+                                        Oleh:</span>
+                                    <span
+                                        style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">MANAGER
+                                        USER</span>
+                                    <div id="proj-handover-sig-img-container-manager_user"
+                                        style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: var(--border-radius-sm); padding: 4px; border: 1px dashed var(--card-border); margin: 2px 0;">
+                                        <span
+                                            style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum
+                                            TTD</span>
+                                    </div>
+                                    <div id="proj-handover-sig-info-manager_user"
+                                        style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center; color: var(--text-secondary);">
+                                        Menunggu TTD</div>
+                                </div>
+
+                                <!-- SPV User -->
+                                <div class="card-glass" id="card-proj-handover-sig-spv_user"
+                                    style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-size: 0.75rem; background: var(--bg-secondary);">
+                                    <span
+                                        style="font-size: 0.65rem; font-weight: 700; color: var(--color-yellow); text-transform: uppercase; letter-spacing: 0.5px;">Diketahui
+                                        Oleh:</span>
+                                    <span
+                                        style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">SPV
+                                        USER</span>
+                                    <div id="proj-handover-sig-img-container-spv_user"
+                                        style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: var(--border-radius-sm); padding: 4px; border: 1px dashed var(--card-border); margin: 2px 0;">
+                                        <span
+                                            style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum
+                                            TTD</span>
+                                    </div>
+                                    <div id="proj-handover-sig-info-spv_user"
+                                        style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center; color: var(--text-secondary);">
+                                        Menunggu TTD</div>
+                                </div>
+
+                                <!-- Staff User -->
+                                <div class="card-glass" id="card-proj-handover-sig-staff_user"
+                                    style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-size: 0.75rem; background: var(--bg-secondary);">
+                                    <span
+                                        style="font-size: 0.65rem; font-weight: 700; color: var(--color-yellow); text-transform: uppercase; letter-spacing: 0.5px;">Diterima
+                                        Oleh:</span>
+                                    <span
+                                        style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">STAFF
+                                        USER</span>
+                                    <div id="proj-handover-sig-img-container-staff_user"
+                                        style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-primary); border-radius: var(--border-radius-sm); padding: 4px; border: 1px dashed var(--card-border); margin: 2px 0;">
+                                        <span
+                                            style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum
+                                            TTD</span>
+                                    </div>
+                                    <div id="proj-handover-sig-info-staff_user"
+                                        style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center; color: var(--text-secondary);">
+                                        Menunggu TTD</div>
+                                </div>
+                            </div>
+
+                            <!-- Action Bar to Sign for Logged-in User -->
+                            <div id="proj-handover-sign-action-bar"
+                                style="display: none; width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--card-border); justify-content: flex-end;">
+                                <button id="proj-handover-btn-sign" type="button" class="btn btn-primary btn-sm"
+                                    style="display: inline-flex; align-items: center; gap: 8px; font-weight: 600; padding: 8px 16px; border-radius: var(--border-radius-sm); box-shadow: var(--shadow-sm);">
+                                    <i data-lucide="pen-tool" style="width: 15px; height: 15px;"></i>
+                                    <span>Tanda Tangani Berita Acara</span>
+                                </button>
+                            </div>
                         </div>
-                        <input type="file" id="proj-attachment-file-input" style="display: none;"
-                            accept=".xlsx,.xls,.csv,.pdf,image/*">
                     </div>
+
+                    <!-- Phase 1 Idea Approvals Section -->
+                    <div id="project-phase1-signatures-sec">
+                        <h3
+                            style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between;">
+                            <span>Persetujuan Bertingkat (Fase 1)</span>
+                            <span id="modal-project-sig-status"
+                                style="font-size: 0.7rem; font-weight: normal; color: var(--color-cyan); background: rgba(0, 242, 254, 0.1); padding: 2px 8px; border-radius: 12px; border: 1px solid rgba(0, 242, 254, 0.2);"></span>
+                        </h3>
+                        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 0.5rem;">
+                            <!-- PIC Card -->
+                            <div class="card-glass" id="card-proj-sig-pic"
+                                style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
+                                <div>
+                                    <div id="proj-sig-title-pic"
+                                        style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">
+                                        PENGUSUL
+                                        / REQUESTOR</div>
+                                    <div id="proj-sig-info-pic"
+                                        style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
+                                    </div>
+                                </div>
+                                <div id="proj-sig-img-container-pic"
+                                    style="display: flex; align-items: center; gap: 8px;">
+                                </div>
+                            </div>
+
+                            <!-- Foreman Card -->
+                            <div class="card-glass" id="card-proj-sig-foreman"
+                                style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
+                                <div>
+                                    <div id="proj-sig-title-foreman"
+                                        style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">
+                                        FOREMAN ENG
+                                    </div>
+                                    <div id="proj-sig-info-foreman"
+                                        style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
+                                    </div>
+                                </div>
+                                <div id="proj-sig-img-container-foreman"
+                                    style="display: flex; align-items: center; gap: 8px;"></div>
+                            </div>
+
+                            <!-- Supervisor Card -->
+                            <div class="card-glass" id="card-proj-sig-supervisor"
+                                style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
+                                <div>
+                                    <div id="proj-sig-title-supervisor"
+                                        style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">
+                                        SUPERVISOR ENG</div>
+                                    <div id="proj-sig-info-supervisor"
+                                        style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
+                                    </div>
+                                </div>
+                                <div id="proj-sig-img-container-supervisor"
+                                    style="display: flex; align-items: center; gap: 8px;"></div>
+                            </div>
+
+                            <!-- Manager Card -->
+                            <div class="card-glass" id="card-proj-sig-manager"
+                                style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
+                                <div>
+                                    <div id="proj-sig-title-manager"
+                                        style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">
+                                        MANAGER ENG
+                                    </div>
+                                    <div id="proj-sig-info-manager"
+                                        style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
+                                    </div>
+                                </div>
+                                <div id="proj-sig-img-container-manager"
+                                    style="display: flex; align-items: center; gap: 8px;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+
 
                     <!-- Documentation Photos Section -->
                     <div id="project-documentation-section"
@@ -2261,103 +3369,10 @@
                         </div>
                         <input type="file" id="proj-doc-file-input" style="display: none;" accept="image/*" multiple>
                     </div>
-
-                    <!-- Berita Acara Handover Section -->
-                    <div id="project-handover-docs-sec"
-                        style="margin-top: 1.5rem; display: none; border-top: 1px solid var(--card-border); padding-top: 1.25rem;">
-                        <h3 style="margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
-                            <i data-lucide="file-check" style="width:16px;height:16px;color: var(--color-green);"></i> Dokumen Form Berita Acara Serah Terima Pekerjaan
-                        </h3>
-                        <div id="project-handover-gallery"
-                            style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                            <!-- Injected dynamically -->
-                        </div>
-
-                        <!-- ponytail: Berita Acara Handover Signatures Grid (6 Roles) -->
-                        <div id="project-handover-signatures-sec" style="display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 1.25rem; padding: 1.25rem; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(8px); border: 1px solid var(--card-border); border-radius: var(--border-radius-md); box-sizing: border-box;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 10px;">
-                                <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
-                                    <i data-lucide="pen-tool" style="width: 16px; height: 16px; color: var(--color-cyan);"></i>
-                                    Tanda Tangan Berita Acara Serah Terima (6 Pihak)
-                                </span>
-                                <span id="project-handover-sig-status" class="badge badge-accent" style="font-size: 0.72rem; padding: 4px 10px; border-radius: 20px; font-weight: 600;">-</span>
-                            </div>
-
-                            <!-- 6 Signature Cards Grid -->
-                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; width: 100%; margin-top: 6px;">
-                                <!-- Staff ENG -->
-                                <div class="card-glass" id="card-proj-handover-sig-staff_eng" style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.75rem; background: rgba(0,0,0,0.15);">
-                                    <span style="font-size: 0.65rem; font-weight: 700; color: var(--color-cyan); text-transform: uppercase; letter-spacing: 0.5px;">Dibuat Oleh:</span>
-                                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">STAFF ENG</span>
-                                    <div id="proj-handover-sig-img-container-staff_eng" style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; border: 1px dashed rgba(255,255,255,0.1); margin: 2px 0;">
-                                        <span style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum TTD</span>
-                                    </div>
-                                    <div id="proj-handover-sig-info-staff_eng" style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center;">Menunggu TTD</div>
-                                </div>
-
-                                <!-- SPV ENG -->
-                                <div class="card-glass" id="card-proj-handover-sig-spv_eng" style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.75rem; background: rgba(0,0,0,0.15);">
-                                    <span style="font-size: 0.65rem; font-weight: 700; color: var(--color-cyan); text-transform: uppercase; letter-spacing: 0.5px;">Diketahui Oleh:</span>
-                                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">SPV / FOREMAN ENG</span>
-                                    <div id="proj-handover-sig-img-container-spv_eng" style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; border: 1px dashed rgba(255,255,255,0.1); margin: 2px 0;">
-                                        <span style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum TTD</span>
-                                    </div>
-                                    <div id="proj-handover-sig-info-spv_eng" style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center;">Menunggu TTD</div>
-                                </div>
-
-                                <!-- Manager ENG -->
-                                <div class="card-glass" id="card-proj-handover-sig-manager_eng" style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.75rem; background: rgba(0,0,0,0.15);">
-                                    <span style="font-size: 0.65rem; font-weight: 700; color: var(--color-cyan); text-transform: uppercase; letter-spacing: 0.5px;">Disetujui Oleh:</span>
-                                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">MANAGER ENG</span>
-                                    <div id="proj-handover-sig-img-container-manager_eng" style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; border: 1px dashed rgba(255,255,255,0.1); margin: 2px 0;">
-                                        <span style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum TTD</span>
-                                    </div>
-                                    <div id="proj-handover-sig-info-manager_eng" style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center;">Menunggu TTD</div>
-                                </div>
-
-                                <!-- Manager User -->
-                                <div class="card-glass" id="card-proj-handover-sig-manager_user" style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.75rem; background: rgba(0,0,0,0.15);">
-                                    <span style="font-size: 0.65rem; font-weight: 700; color: var(--color-yellow); text-transform: uppercase; letter-spacing: 0.5px;">Disetujui Oleh:</span>
-                                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">MANAGER USER</span>
-                                    <div id="proj-handover-sig-img-container-manager_user" style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; border: 1px dashed rgba(255,255,255,0.1); margin: 2px 0;">
-                                        <span style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum TTD</span>
-                                    </div>
-                                    <div id="proj-handover-sig-info-manager_user" style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center;">Menunggu TTD</div>
-                                </div>
-
-                                <!-- SPV User -->
-                                <div class="card-glass" id="card-proj-handover-sig-spv_user" style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.75rem; background: rgba(0,0,0,0.15);">
-                                    <span style="font-size: 0.65rem; font-weight: 700; color: var(--color-yellow); text-transform: uppercase; letter-spacing: 0.5px;">Diketahui Oleh:</span>
-                                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">SPV USER</span>
-                                    <div id="proj-handover-sig-img-container-spv_user" style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; border: 1px dashed rgba(255,255,255,0.1); margin: 2px 0;">
-                                        <span style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum TTD</span>
-                                    </div>
-                                    <div id="proj-handover-sig-info-spv_user" style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center;">Menunggu TTD</div>
-                                </div>
-
-                                <!-- Staff User -->
-                                <div class="card-glass" id="card-proj-handover-sig-staff_user" style="padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--card-border); border-radius: 8px; font-size: 0.75rem; background: rgba(0,0,0,0.15);">
-                                    <span style="font-size: 0.65rem; font-weight: 700; color: var(--color-yellow); text-transform: uppercase; letter-spacing: 0.5px;">Diterima Oleh:</span>
-                                    <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">STAFF USER</span>
-                                    <div id="proj-handover-sig-img-container-staff_user" style="min-height: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border-radius: 6px; padding: 4px; border: 1px dashed rgba(255,255,255,0.1); margin: 2px 0;">
-                                        <span style="font-size: 0.68rem; color: var(--text-muted); font-style: italic;">Belum TTD</span>
-                                    </div>
-                                    <div id="proj-handover-sig-info-staff_user" style="font-size: 0.68rem; line-height: 1.3; min-height: 28px; display: flex; flex-direction: column; justify-content: center;">Menunggu TTD</div>
-                                </div>
-                            </div>
-
-                            <!-- Action Bar to Sign for Logged-in User -->
-                            <div id="proj-handover-sign-action-bar" style="display: none; width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.1); justify-content: flex-end;">
-                                <button id="proj-handover-btn-sign" type="button" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 8px; font-weight: 600; padding: 8px 16px; border-radius: 6px; box-shadow: var(--shadow-sm);">
-                                    <i data-lucide="pen-tool" style="width: 15px; height: 15px;"></i>
-                                    <span>Tanda Tangani Berita Acara</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- ponytail: MODAL DETAIL DRAWING -->
@@ -2367,11 +3382,14 @@
             <div class="modal-header">
                 <div class="ejo-header-badge">
                     <span id="modal-drawing-id" class="badge-ejo-code">EJO-XXX</span>
+                    <span id="modal-drawing-category-badge" class="badge"
+                        style="background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.8rem; font-weight: 600; padding: 3px 10px; border-radius: 4px; display: none;">-</span>
                     <span id="modal-drawing-type-badge" class="badge" style="display: none;">Request</span>
-                    <span id="modal-drawing-status-badge" class="badge badge-accent">Pending Foreman Approval</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <button class="btn btn-primary btn-xs" id="modal-drawing-locate-btn" style="display: none; padding: 5px 10px; font-size: 0.75rem; align-items: center; gap: 4px; font-weight: 600;" title="Buka &amp; Filter di Kanban Drawing">
+                    <button class="btn btn-primary btn-xs" id="modal-drawing-locate-btn"
+                        style="display: none; padding: 5px 10px; font-size: 0.75rem; align-items: center; gap: 4px; font-weight: 600;"
+                        title="Buka &amp; Filter di Kanban Drawing">
                         <i data-lucide="external-link" style="width: 12px; height: 12px;"></i>
                         <span>Detail</span>
                     </button>
@@ -2383,12 +3401,39 @@
                 <!-- Left Panel: Preview & Metadata -->
                 <div class="modal-main-info modal-drawing-main-info">
                     <div id="modal-drawing-project-banner" style="display: none;"></div>
+                    <div id="modal-drawing-rejection-banner" style="display: none; margin-bottom: 0.85rem;">
+                        <div
+                            style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 10px; padding: 0.75rem 1rem; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                <div
+                                    style="display: flex; align-items: center; gap: 8px; color: #ef4444; font-weight: 700; font-size: 0.88rem;">
+                                    <i data-lucide="alert-triangle"
+                                        style="width: 18px; height: 18px; flex-shrink: 0;"></i>
+                                    <span id="modal-drawing-rejection-title">Drawing Dikembalikan / Ditolak</span>
+                                </div>
+                                <span id="modal-drawing-rejection-date"
+                                    style="font-size: 0.73rem; color: var(--text-muted); font-weight: 500;">-</span>
+                            </div>
+                            <div style="font-size: 0.82rem; color: var(--text-primary); line-height: 1.4;">
+                                <strong>Dikembalikan oleh:</strong> <span id="modal-drawing-rejection-by"
+                                    style="color: #f87171; font-weight: 600;">-</span>
+                            </div>
+                            <div style="font-size: 0.82rem; color: var(--text-secondary); background: rgba(0,0,0,0.25); border-left: 3px solid #ef4444; padding: 8px 10px; border-radius: 6px; font-style: italic; margin-top: 2px;"
+                                id="modal-drawing-rejection-reason">
+                                "-"
+                            </div>
+                        </div>
+                    </div>
                     <h2 id="modal-drawing-title">Judul Drawing</h2>
                     <p class="text-secondary" style="margin-top: -0.25rem; font-size: 0.85rem;">
                         <i data-lucide="user"
                             style="width: 14px; height: 14px; display: inline; vertical-align: middle; margin-right: 4px;"></i>
                         Uploaded by: <span id="modal-drawing-uploader">Drafter</span>
                         &bull; <span id="modal-drawing-date">28 Jun 2026</span>
+                        <span id="modal-drawing-cat-wrapper" style="display: none;">&bull; Kategori: <strong
+                                id="modal-drawing-category" style="color: var(--color-cyan);">-</strong></span>
+                        <span id="modal-drawing-loc-wrapper" style="display: none;">&bull; Lokasi: <strong
+                                id="modal-drawing-location" style="color: var(--text-primary);">-</strong></span>
                         &bull; Target Selesai: <strong id="modal-drawing-target-date"
                             style="color: var(--text-primary);">-</strong>
                         <span id="modal-drawing-est-date-wrapper" style="display: none;">&bull; Est. Selesai: <strong
@@ -2416,21 +3461,7 @@
                         </button>
                     </div>
 
-                    <!-- ponytail: Drafter/Admin/Server file upload section in modal -->
-                    <div id="modal-drawing-upload-section" class="card-glass"
-                        style="display: none; padding: 12px; border: 1px solid var(--card-border); margin-top: 0.5rem; flex-direction: column; gap: 8px;">
-                        <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">Unggah / Perbarui
-                            File Drawing:</div>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <input type="file" id="modal-drawing-file-input" accept=".jpg,.jpeg,.png,.webp,.pdf"
-                                style="font-size: 0.75rem; flex: 1;" />
-                            <button id="modal-drawing-upload-file-btn" class="btn btn-primary"
-                                style="padding: 6px 12px; font-size: 0.8rem; display: flex; align-items: center; gap: 4px; justify-content: center;">
-                                <i data-lucide="upload" style="width: 14px; height: 14px;"></i>
-                                <span>Unggah</span>
-                            </button>
-                        </div>
-                    </div>
+
                 </div>
 
                 <!-- Right Panel: Signatures & Logs -->
@@ -2449,9 +3480,13 @@
                         </div>
 
                         <!-- Edit mode (for Leads) -->
-                        <div id="drawing-assignment-edit" style="display: none; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;">
-                            <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Pilih Drafter yang Ditugaskan:</div>
-                            <div id="modal-drawing-assignee-container" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; width: 100%; box-sizing: border-box; padding-right: 4px; gap: 6px; margin-bottom: 6px;">
+                        <div id="drawing-assignment-edit"
+                            style="display: none; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;">
+                            <div
+                                style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
+                                Pilih Drafter yang Ditugaskan:</div>
+                            <div id="modal-drawing-assignee-container"
+                                style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; width: 100%; box-sizing: border-box; padding-right: 4px; gap: 6px; margin-bottom: 6px;">
                                 <!-- Will be populated dynamically by JS -->
                             </div>
                             <button id="modal-drawing-save-assignee-btn" class="btn btn-primary"
@@ -2489,14 +3524,14 @@
                             <div class="card-glass" id="card-sig-dept"
                                 style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
                                 <div>
-                                    <div class="sig-title" id="sig-title-dept" style="font-weight: 700; font-size: 0.82rem; color: var(--text-primary); text-transform: uppercase;">
+                                    <div class="sig-title" id="sig-title-dept"
+                                        style="font-weight: 700; font-size: 0.82rem; color: var(--text-primary); text-transform: uppercase;">
                                         SPV (DEPT)</div>
                                     <div id="sig-info-dept"
                                         style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
                                     </div>
                                 </div>
-                                <div id="sig-img-container-dept"
-                                    style="display: flex; align-items: center; gap: 8px;">
+                                <div id="sig-img-container-dept" style="display: flex; align-items: center; gap: 8px;">
                                     <!-- Canvas or Image signature -->
                                 </div>
                             </div>
@@ -2649,26 +3684,31 @@
                     <i data-lucide="alert-triangle" style="width: 18px; height: 18px;"></i>
                 </div>
                 <div>
-                    <h4 style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-primary);">Alasan Urgent (Prioritas 1)</h4>
+                    <h4 style="margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-primary);">Alasan Urgent
+                        (Prioritas 1)</h4>
                 </div>
             </div>
 
             <div style="width: 100%;">
-                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; display: block;">
-                    Keterangan urgent <span class="required">*</span>
+                <label
+                    style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; display: block;">
+                    Alasan Urgent <span class="required">*</span>
                 </label>
                 <textarea id="urgent-reason-input"
                     placeholder="Contoh: Line Stop pada Line 2, Bahaya K3/HSE, atau potensi kerusakan berat..."
                     style="width: 100%; padding: 0.65rem 0.75rem; font-size: 0.88rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); font-family: inherit; resize: vertical; box-sizing: border-box;"
                     rows="3"></textarea>
-                <span id="urgent-reason-error" style="color: var(--color-rose); font-size: 0.75rem; display: none; margin-top: 4px; font-weight: 600;">
-                    <i data-lucide="alert-circle" style="width: 12px; height: 12px; vertical-align: middle;"></i> Alasan urgent wajib diisi!
+                <span id="urgent-reason-error"
+                    style="color: var(--color-rose); font-size: 0.75rem; display: none; margin-top: 4px; font-weight: 600;">
+                    <i data-lucide="alert-circle" style="width: 12px; height: 12px; vertical-align: middle;"></i> Alasan
+                    urgent wajib diisi!
                 </span>
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 0.5rem; width: 100%; margin-top: 0.25rem;">
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-urgent-reason">Batal</button>
-                <button type="button" class="btn btn-primary btn-sm" id="btn-submit-urgent-reason" style="background: var(--color-rose); border-color: var(--color-rose);">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-submit-urgent-reason"
+                    style="background: var(--color-rose); border-color: var(--color-rose);">
                     Simpan
                 </button>
             </div>
@@ -2696,17 +3736,27 @@
                     rows="3"></textarea>
             </div>
             <!-- ponytail: premium file upload container for revisions -->
-            <div id="prompt-modal-upload-container" style="width: 100%; display: none; flex-direction: column; gap: 0.5rem; box-sizing: border-box;">
-                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Upload Foto / File Pendukung:</label>
+            <div id="prompt-modal-upload-container"
+                style="width: 100%; display: none; flex-direction: column; gap: 0.5rem; box-sizing: border-box;">
+                <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Upload Foto / File
+                    Pendukung:</label>
                 <div style="width: 100%; position: relative;">
-                    <input type="file" id="prompt-modal-file-input" style="display: none;" accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx" />
-                    <div id="prompt-modal-upload-trigger" style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1.25rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;" onmouseover="this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)';" onmouseout="this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
+                    <input type="file" id="prompt-modal-file-input" style="display: none;"
+                        accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx" />
+                    <div id="prompt-modal-upload-trigger"
+                        style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1.25rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;"
+                        onmouseover="this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)';"
+                        onmouseout="this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
                         <i data-lucide="upload-cloud" style="width: 24px; height: 24px; color: var(--color-cyan);"></i>
-                        <span id="prompt-modal-upload-filename" style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih file atau seret ke sini</span>
+                        <span id="prompt-modal-upload-filename"
+                            style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih
+                            file atau seret ke sini</span>
                     </div>
                 </div>
-                <div id="prompt-modal-file-preview" style="display: none; width: 100%; max-height: 150px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
-                    <img id="prompt-modal-file-preview-img" style="max-width: 100%; max-height: 150px; object-fit: contain;" src="" />
+                <div id="prompt-modal-file-preview"
+                    style="display: none; width: 100%; max-height: 150px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
+                    <img id="prompt-modal-file-preview-img"
+                        style="max-width: 100%; max-height: 150px; object-fit: contain;" src="" />
                 </div>
             </div>
             <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.5rem;">
@@ -2734,38 +3784,44 @@
             <p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; width: 100%;">
                 Masukkan angka progress (persentase %) untuk tiap grup procurement (PR, PO, GR):
             </p>
-            
+
             <div style="width: 100%; display: flex; flex-direction: column; gap: 0.85rem;">
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--color-cyan); display: flex; align-items: center; gap: 4px;">
+                    <label
+                        style="font-size: 0.8rem; font-weight: 600; color: var(--color-cyan); display: flex; align-items: center; gap: 4px;">
                         <i data-lucide="file-text" style="width: 13px; height: 13px;"></i> Angka Progress PR (%):
                     </label>
                     <div style="position: relative; display: flex; align-items: center;">
                         <input type="number" id="procurement-input-pr" min="0" max="100" placeholder="0 - 100"
                             style="width: 100%; padding: 0.6rem 2.2rem 0.6rem 0.75rem; font-size: 0.9rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;">
-                        <span style="position: absolute; right: 12px; font-weight: 700; color: var(--text-muted); font-size: 0.9rem;">%</span>
+                        <span
+                            style="position: absolute; right: 12px; font-weight: 700; color: var(--text-muted); font-size: 0.9rem;">%</span>
                     </div>
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 0.8rem; font-weight: 600; color: #f59e0b; display: flex; align-items: center; gap: 4px;">
+                    <label
+                        style="font-size: 0.8rem; font-weight: 600; color: #f59e0b; display: flex; align-items: center; gap: 4px;">
                         <i data-lucide="shopping-bag" style="width: 13px; height: 13px;"></i> Angka Progress PO (%):
                     </label>
                     <div style="position: relative; display: flex; align-items: center;">
                         <input type="number" id="procurement-input-po" min="0" max="100" placeholder="0 - 100"
                             style="width: 100%; padding: 0.6rem 2.2rem 0.6rem 0.75rem; font-size: 0.9rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;">
-                        <span style="position: absolute; right: 12px; font-weight: 700; color: var(--text-muted); font-size: 0.9rem;">%</span>
+                        <span
+                            style="position: absolute; right: 12px; font-weight: 700; color: var(--text-muted); font-size: 0.9rem;">%</span>
                     </div>
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--color-green); display: flex; align-items: center; gap: 4px;">
+                    <label
+                        style="font-size: 0.8rem; font-weight: 600; color: var(--color-green); display: flex; align-items: center; gap: 4px;">
                         <i data-lucide="package-check" style="width: 13px; height: 13px;"></i> Angka Progress GR (%):
                     </label>
                     <div style="position: relative; display: flex; align-items: center;">
                         <input type="number" id="procurement-input-gr" min="0" max="100" placeholder="0 - 100"
                             style="width: 100%; padding: 0.6rem 2.2rem 0.6rem 0.75rem; font-size: 0.9rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;">
-                        <span style="position: absolute; right: 12px; font-weight: 700; color: var(--text-muted); font-size: 0.9rem;">%</span>
+                        <span
+                            style="position: absolute; right: 12px; font-weight: 700; color: var(--text-muted); font-size: 0.9rem;">%</span>
                     </div>
                 </div>
             </div>
@@ -2774,7 +3830,8 @@
                 <button class="btn btn-outline full-width" id="procurement-btn-cancel"
                     style="padding: 0.6rem;">Batal</button>
                 <button class="btn btn-primary full-width" id="procurement-btn-ok"
-                    style="padding: 0.6rem; font-weight: 600; background: var(--color-green); border-color: var(--color-green);">Simpan Progress</button>
+                    style="padding: 0.6rem; font-weight: 600; background: var(--color-green); border-color: var(--color-green);">Simpan
+                    Progress</button>
             </div>
         </div>
     </div>
@@ -2789,7 +3846,8 @@
                     style="background: rgba(6, 182, 212, 0.1); color: var(--color-cyan); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                     <i data-lucide="check-circle" style="width: 20px; height: 20px;"></i>
                 </div>
-                <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Selesaikan &amp; Unggah Drawing</h4>
+                <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Selesaikan &amp;
+                    Unggah Drawing</h4>
             </div>
 
             <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.4;">
@@ -2797,57 +3855,105 @@
             </p>
 
             <div style="width: 100%; display: flex; flex-direction: column; gap: 0.35rem; box-sizing: border-box;">
-                <label for="drawing-upload-complete-etiket-category" style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Kategori Etiket <span style="color: var(--color-danger, #ef4444);">*</span></label>
-                <select id="drawing-upload-complete-etiket-category" style="width: 100%; padding: 0.6rem 0.75rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-surface, rgba(255,255,255,0.05)); color: var(--text-primary); font-size: 0.875rem; box-sizing: border-box; outline: none;">
+                <label for="drawing-upload-complete-etiket-category"
+                    style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Kategori Etiket <span
+                        style="color: var(--color-danger, #ef4444);">*</span></label>
+                <select id="drawing-upload-complete-etiket-category"
+                    style="width: 100%; padding: 0.6rem 0.75rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-surface, rgba(255,255,255,0.05)); color: var(--text-primary); font-size: 0.875rem; box-sizing: border-box; outline: none;">
                     <option value="Mekanik / Part">Mekanik / Part</option>
                     <option value="Sipil">Sipil</option>
                 </select>
             </div>
 
-            <!-- ponytail: Sample Etiket Preview Section (Landscape & Portrait) -->
-            <div id="drawing-upload-complete-etiket-samples-wrapper" style="width: 100%; border: 1px solid var(--card-border, rgba(255,255,255,0.12)); border-radius: var(--border-radius-sm, 8px); padding: 0.75rem; background: rgba(0,0,0,0.15); box-sizing: border-box; display: flex; flex-direction: column; gap: 0.6rem;">
+            <!-- ponytail: Sample Etiket Preview Section (Landscape & Portrait Clickable Cards) -->
+            <div id="drawing-upload-complete-etiket-samples-wrapper"
+                style="width: 100%; border: 1px solid var(--card-border, rgba(255,255,255,0.12)); border-radius: var(--border-radius-sm, 8px); padding: 0.75rem; background: rgba(0,0,0,0.15); box-sizing: border-box; display: flex; flex-direction: column; gap: 0.6rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span style="font-size: 0.78rem; font-weight: 700; color: var(--color-cyan, #06b6d4); text-transform: uppercase; letter-spacing: 0.4px; display: flex; align-items: center; gap: 5px;">
-                        <i data-lucide="eye" style="width: 14px; height: 14px;"></i> Sampel Etiket <span id="etiket-category-badge" style="font-size: 0.7rem; font-weight: 600; text-transform: none; padding: 2px 6px; border-radius: 4px; background: rgba(6,182,212,0.15); color: var(--color-cyan, #06b6d4);">Mekanik / Part</span>
+                    <span
+                        style="font-size: 0.78rem; font-weight: 700; color: var(--color-cyan, #06b6d4); text-transform: uppercase; letter-spacing: 0.4px; display: flex; align-items: center; gap: 5px;">
+                        <i data-lucide="eye" style="width: 14px; height: 14px;"></i> Sampel Etiket <span
+                            id="etiket-category-badge"
+                            style="font-size: 0.7rem; font-weight: 600; text-transform: none; padding: 2px 6px; border-radius: 4px; background: rgba(6,182,212,0.15); color: var(--color-cyan, #06b6d4);">Mekanik
+                            / Part</span>
                     </span>
-                    <span style="font-size: 0.72rem; color: var(--text-tertiary, #9ca3af);">Pilih orientasi gambar</span>
+                    <span style="font-size: 0.72rem; color: var(--text-tertiary, #9ca3af);">Klik kartu untuk memilih
+                        orientasi</span>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; width: 100%; box-sizing: border-box;">
-                    <div id="etiket-sample-card-landscape" style="cursor: pointer; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; transition: all 0.2s ease;" onmouseover="this.style.borderColor='var(--color-cyan)'; this.style.background='rgba(6,182,212,0.05)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.12)'; this.style.background='rgba(255,255,255,0.03)';">
-                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 4px;">
-                            <i data-lucide="layout-template" style="width: 13px; height: 13px; color: var(--color-cyan);"></i> Landscape
+                <div
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; width: 100%; box-sizing: border-box;">
+                    <div id="etiket-sample-card-landscape"
+                        style="cursor: pointer; background: rgba(6,182,212,0.12); border: 2px solid var(--color-cyan, #06b6d4); border-radius: 6px; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; transition: all 0.2s ease; position: relative;">
+                        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+                            <div
+                                style="font-size: 0.75rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 4px;">
+                                <i data-lucide="layout-template"
+                                    style="width: 13px; height: 13px; color: var(--color-cyan);"></i> Landscape
+                            </div>
+                            <span id="etiket-landscape-badge"
+                                style="font-size: 0.68rem; font-weight: 700; color: #ffffff; background: var(--color-cyan, #06b6d4); padding: 1px 6px; border-radius: 4px;">✓
+                                Terpilih</span>
                         </div>
-                        <div id="etiket-sample-landscape-preview" style="width: 100%; height: 150px; background: #ffffff; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.25); position: relative;">
+                        <div id="etiket-sample-landscape-preview"
+                            style="width: 100%; height: 150px; background: #ffffff; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.25); position: relative;">
                         </div>
-                        <span style="font-size: 0.7rem; color: var(--color-cyan); font-weight: 500;">🔍 Perbesar</span>
+                        <button type="button" id="etiket-zoom-landscape-btn"
+                            style="width: 100%; padding: 0.4rem 0.5rem; font-size: 0.78rem; font-weight: 600; color: var(--color-cyan, #06b6d4); background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.2s ease;"
+                            onclick="event.stopPropagation(); openEtiketZoomModal('landscape');"
+                            onmouseover="this.style.background='rgba(6, 182, 212, 0.2)'; this.style.borderColor='var(--color-cyan)';"
+                            onmouseout="this.style.background='rgba(6, 182, 212, 0.1)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
+                            <i data-lucide="eye" style="width: 13px; height: 13px;"></i> Preview
+                        </button>
                     </div>
 
-                    <div id="etiket-sample-card-portrait" style="cursor: pointer; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; transition: all 0.2s ease;" onmouseover="this.style.borderColor='var(--color-cyan)'; this.style.background='rgba(6,182,212,0.05)';" onmouseout="this.style.borderColor='rgba(255,255,255,0.12)'; this.style.background='rgba(255,255,255,0.03)';">
-                        <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 4px;">
-                            <i data-lucide="file-text" style="width: 13px; height: 13px; color: var(--color-cyan);"></i> Portrait
+                    <div id="etiket-sample-card-portrait"
+                        style="cursor: pointer; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; transition: all 0.2s ease; position: relative;">
+                        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center;">
+                            <div
+                                style="font-size: 0.75rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 4px;">
+                                <i data-lucide="file-text"
+                                    style="width: 13px; height: 13px; color: var(--color-cyan);"></i> Portrait
+                            </div>
+                            <span id="etiket-portrait-badge"
+                                style="font-size: 0.68rem; font-weight: 500; color: var(--text-tertiary, #9ca3af); background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 4px;">Pilih</span>
                         </div>
-                        <div id="etiket-sample-portrait-preview" style="width: 100%; height: 150px; background: #ffffff; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.25); position: relative;">
+                        <div id="etiket-sample-portrait-preview"
+                            style="width: 100%; height: 150px; background: #ffffff; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.25); position: relative;">
                         </div>
-                        <span style="font-size: 0.7rem; color: var(--color-cyan); font-weight: 500;">🔍 Perbesar</span>
+                        <button type="button" id="etiket-zoom-portrait-btn"
+                            style="width: 100%; padding: 0.4rem 0.5rem; font-size: 0.78rem; font-weight: 600; color: var(--color-cyan, #06b6d4); background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.2s ease;"
+                            onclick="event.stopPropagation(); openEtiketZoomModal('portrait');"
+                            onmouseover="this.style.background='rgba(6, 182, 212, 0.2)'; this.style.borderColor='var(--color-cyan)';"
+                            onmouseout="this.style.background='rgba(6, 182, 212, 0.1)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
+                            <i data-lucide="eye" style="width: 13px; height: 13px;"></i> Preview
+                        </button>
                     </div>
                 </div>
             </div>
 
             <div style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem; box-sizing: border-box;">
                 <div style="width: 100%; position: relative;">
-                    <input type="file" id="drawing-upload-complete-file-input" style="display: none;" accept="image/*,.pdf" />
-                    <div id="drawing-upload-complete-trigger" style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1.25rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;" onmouseover="if (!this.dataset.hasError) { this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)'; }" onmouseout="if (!this.dataset.hasError) { this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)'; }">
+                    <input type="file" id="drawing-upload-complete-file-input" style="display: none;"
+                        accept="image/*,.pdf" />
+                    <div id="drawing-upload-complete-trigger"
+                        style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1.25rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;"
+                        onmouseover="if (!this.dataset.hasError) { this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)'; }"
+                        onmouseout="if (!this.dataset.hasError) { this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)'; }">
                         <i data-lucide="upload-cloud" style="width: 24px; height: 24px; color: var(--color-cyan);"></i>
-                        <span id="drawing-upload-complete-filename" style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih file Drawing (PDF/Gambar)</span>
+                        <span id="drawing-upload-complete-filename"
+                            style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih
+                            file Drawing (PDF/Gambar)</span>
                     </div>
                 </div>
-                <div id="drawing-upload-complete-file-error" style="display: none; width: 100%; padding: 0.5rem 0.75rem; border-radius: var(--border-radius-sm, 6px); background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; font-size: 0.8rem; font-weight: 600; align-items: center; gap: 6px; box-sizing: border-box;">
+                <div id="drawing-upload-complete-file-error"
+                    style="display: none; width: 100%; padding: 0.5rem 0.75rem; border-radius: var(--border-radius-sm, 6px); background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; font-size: 0.8rem; font-weight: 600; align-items: center; gap: 6px; box-sizing: border-box;">
                     <i data-lucide="alert-circle" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
                     <span>Silakan pilih/unggah file drawing terlebih dahulu sebelum menyelesaikan tugas!</span>
                 </div>
-                <div id="drawing-upload-complete-preview" style="display: none; width: 100%; max-height: 150px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
-                    <img id="drawing-upload-complete-preview-img" style="max-width: 100%; max-height: 150px; object-fit: contain;" src="" />
+                <div id="drawing-upload-complete-preview"
+                    style="display: none; width: 100%; max-height: 150px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
+                    <img id="drawing-upload-complete-preview-img"
+                        style="max-width: 100%; max-height: 150px; object-fit: contain;" src="" />
                 </div>
             </div>
 
@@ -2861,18 +3967,25 @@
     </div>
 
     <!-- ponytail: Zoom / Detail Modal for Etiket Sample Preview -->
-    <div id="etiket-zoom-modal" class="modal-backdrop" style="display: none; justify-content: center; align-items: center; z-index: 12000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(5px);">
-        <div class="card-glass animate-in" style="width: 98vw; max-width: 98vw; height: 92vh; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; align-items: stretch; text-align: left; box-shadow: var(--shadow-lg);">
+    <div id="etiket-zoom-modal" class="modal-backdrop"
+        style="display: none; justify-content: center; align-items: center; z-index: 12000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(5px);">
+        <div class="card-glass animate-in"
+            style="width: 98vw; max-width: 98vw; height: 92vh; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; align-items: stretch; text-align: left; box-shadow: var(--shadow-lg);">
             <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <i data-lucide="file-check" style="width: 20px; height: 20px; color: var(--color-cyan);"></i>
-                    <h4 id="etiket-zoom-title" style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">Detail Sampel Etiket</h4>
+                    <h4 id="etiket-zoom-title"
+                        style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">Detail
+                        Sampel Etiket</h4>
                 </div>
-                <button id="etiket-zoom-close" class="btn btn-outline" style="padding: 2px 8px; font-size: 0.85rem; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">✕</button>
+                <button id="etiket-zoom-close" class="btn btn-outline"
+                    style="padding: 2px 8px; font-size: 0.85rem; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">✕</button>
             </div>
-            <div id="etiket-zoom-body" style="width: 100%; flex: 1; min-height: 0; background: #ffffff; border-radius: 6px; padding: 0.75rem; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: auto; box-shadow: inset 0 0 10px rgba(0,0,0,0.12);">
+            <div id="etiket-zoom-body"
+                style="width: 100%; flex: 1; min-height: 0; background: #ffffff; border-radius: 6px; padding: 0.75rem; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: auto; box-shadow: inset 0 0 10px rgba(0,0,0,0.12);">
             </div>
-            <p id="etiket-zoom-desc" style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; background: rgba(255,255,255,0.04); padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid var(--card-border);">
+            <p id="etiket-zoom-desc"
+                style="margin: 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; background: rgba(255,255,255,0.04); padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid var(--card-border);">
             </p>
         </div>
     </div>
@@ -2882,22 +3995,26 @@
         style="display: none; justify-content: center; align-items: center; z-index: 11000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
         <div class="card-glass animate-in"
             style="width: 90%; max-width: 450px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; align-items: flex-start; text-align: left; box-shadow: var(--shadow-lg);">
-            
+
             <div style="display: flex; gap: 0.75rem; align-items: center; width: 100%;">
-                <div style="background: rgba(16, 185, 129, 0.1); color: var(--color-green); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <div
+                    style="background: rgba(16, 185, 129, 0.1); color: var(--color-green); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
                     <i data-lucide="check-square" style="width: 18px; height: 18px;"></i>
                 </div>
-                <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Persetujuan &amp; Penugasan EJO</h4>
+                <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Persetujuan
+                    &amp; Penugasan EJO</h4>
             </div>
 
             <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.4;">
-                General EJO ini akan disetujui. Silakan tentukan engineer yang ditugaskan untuk pekerjaan ini dan sub-status Checking.
+                General EJO ini akan disetujui. Silakan tentukan engineer yang ditugaskan untuk pekerjaan ini dan
+                sub-status Checking.
             </p>
 
             <div style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem;">
                 <!-- ponytail: added id for dynamic engineer label update -->
                 <label id="gejo-approve-engineers-label"
-                    style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Pilih Engineer (Bisa beberapa):</label>
+                    style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Pilih Engineer (Bisa
+                    beberapa):</label>
                 <div id="gejo-approve-engineers"
                     style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; width: 100%; box-sizing: border-box; padding-right: 4px;">
                     <!-- Checkboxes will be populated dynamically -->
@@ -2905,7 +4022,8 @@
             </div>
 
             <div style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem;">
-                <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Pilih Sub-status Checking:</label>
+                <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Pilih Sub-status
+                    Checking:</label>
                 <div class="segmented-control">
                     <label class="segment-option">
                         <input type="checkbox" name="gejo-approve-sub-status" value="Drawing Ready" checked>
@@ -2923,28 +4041,42 @@
             </div>
 
             <!-- ponytail: premium file upload container for general EJO drawing -->
-            <div id="gejo-approve-drawing-container" style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem; box-sizing: border-box;">
-                <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Unggah Drawing (PDF / Gambar) <span class="required">*</span>:</label>
+            <div id="gejo-approve-drawing-container"
+                style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem; box-sizing: border-box;">
+                <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Unggah Drawing (PDF /
+                    Gambar) <span class="required">*</span>:</label>
                 <div style="width: 100%; position: relative;">
                     <input type="file" id="gejo-approve-drawing-file" style="display: none;" accept="image/*,.pdf" />
-                    <div id="gejo-approve-drawing-trigger" style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;" onmouseover="this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)';" onmouseout="this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
+                    <div id="gejo-approve-drawing-trigger"
+                        style="border: 2px dashed rgba(6, 182, 212, 0.3); border-radius: var(--border-radius-sm); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; background: rgba(6, 182, 212, 0.02); transition: all 0.2s ease-in-out; box-sizing: border-box;"
+                        onmouseover="this.style.background='rgba(6, 182, 212, 0.06)'; this.style.borderColor='var(--color-cyan)';"
+                        onmouseout="this.style.background='rgba(6, 182, 212, 0.02)'; this.style.borderColor='rgba(6, 182, 212, 0.3)';">
                         <i data-lucide="upload-cloud" style="width: 24px; height: 24px; color: var(--color-cyan);"></i>
-                        <span id="gejo-approve-drawing-filename" style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih file Drawing (PDF/Gambar)</span>
+                        <span id="gejo-approve-drawing-filename"
+                            style="font-size: 0.8rem; color: var(--text-secondary); text-align: center; word-break: break-all; font-weight: 500;">Pilih
+                            file Drawing (PDF/Gambar)</span>
                     </div>
                 </div>
-                <div id="gejo-approve-drawing-preview" style="display: none; width: 100%; max-height: 120px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
-                    <img id="gejo-approve-drawing-preview-img" style="max-width: 100%; max-height: 120px; object-fit: contain;" src="" />
+                <div id="gejo-approve-drawing-preview"
+                    style="display: none; width: 100%; max-height: 120px; overflow: hidden; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 4px; box-sizing: border-box; background: rgba(0,0,0,0.1); align-items: center; justify-content: center;">
+                    <img id="gejo-approve-drawing-preview-img"
+                        style="max-width: 100%; max-height: 120px; object-fit: contain;" src="" />
                 </div>
             </div>
 
             <div style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem;">
-                <label for="gejo-approve-est-date" style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Estimasi Selesai (Opsional):</label>
-                <input type="date" id="gejo-approve-est-date" style="width: 100%; padding: 0.6rem; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;" />
+                <label for="gejo-approve-est-date"
+                    style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Estimasi Selesai
+                    (Opsional):</label>
+                <input type="date" id="gejo-approve-est-date"
+                    style="width: 100%; padding: 0.6rem; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;" />
             </div>
 
             <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
-                <button class="btn btn-outline full-width" id="gejo-approve-btn-cancel" style="padding: 0.6rem;">Batal</button>
-                <button class="btn btn-primary full-width" id="gejo-approve-btn-ok" style="padding: 0.6rem; font-weight: 600;">Setujui &amp; Tugaskan</button>
+                <button class="btn btn-outline full-width" id="gejo-approve-btn-cancel"
+                    style="padding: 0.6rem;">Batal</button>
+                <button class="btn btn-primary full-width" id="gejo-approve-btn-ok"
+                    style="padding: 0.6rem; font-weight: 600;">Setujui &amp; Tugaskan</button>
             </div>
         </div>
     </div>
@@ -2964,32 +4096,32 @@
                     Penyelesaian Pekerjaan (Drafter)</h4>
             </div>
 
-            <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.4;">
-                Silakan isi log laporan pekerjaan Anda dan tambahkan lampiran gambar (jika ada) untuk menyelesaikan
-                pekerjaan ini.
-            </p>
 
             <div class="form-field" style="width: 100%;">
-                <label for="gejo-complete-log" style="font-weight: 600;">Catatan Log / Laporan Pekerjaan <span class="required">*</span></label>
+                <label for="gejo-complete-log" style="font-weight: 600;">Laporan Pekerjaan <span
+                        class="required">*</span></label>
                 <textarea id="gejo-complete-log" rows="3"
                     placeholder="Tulis rincian log laporan pekerjaan / alasan selesai di sini..."
                     style="width: 100%; font-family: inherit; resize: vertical; box-sizing: border-box;"></textarea>
             </div>
 
             <div class="form-field" style="width: 100%;">
-                <label style="font-weight: 600;">Lampiran File & Gambar Lapangan <span class="required">*</span></label>
-                <div class="file-upload-mock" id="gejo-complete-upload-mock" style="padding: 1.25rem; font-size: 0.85rem;">
+                <label style="font-weight: 600;">Upload Dokumentasi <span class="required">*</span></label>
+                <div class="file-upload-mock" id="gejo-complete-upload-mock"
+                    style="padding: 1.25rem; font-size: 0.85rem;">
                     <i data-lucide="upload-cloud" style="width: 28px; height: 28px; color: var(--color-cyan);"></i>
                     <span id="gejo-complete-upload-span">Klik untuk tambah file / gambar (maks. 6)</span>
                     <input type="file" id="gejo-complete-attachment" style="display: none;" multiple
                         accept="image/*,.pdf,.dwg,.doc,.docx,.xls,.xlsx,.zip,.rar">
                 </div>
                 <!-- ponytail: separated camera button to prevent double-trigger and event bubbling on mobile -->
-                <button type="button" class="btn btn-outline" id="gejo-complete-btn-camera" style="width: 100%; margin-top: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; border-color: var(--color-cyan); color: var(--color-cyan); background: rgba(6, 182, 212, 0.05); padding: 0.6rem; font-size: 0.85rem;">
+                <button type="button" class="btn btn-outline" id="gejo-complete-btn-camera"
+                    style="width: 100%; margin-top: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; border-color: var(--color-cyan); color: var(--color-cyan); background: rgba(6, 182, 212, 0.05); padding: 0.6rem; font-size: 0.85rem;">
                     <i data-lucide="camera" style="width: 18px; height: 18px; color: var(--color-cyan);"></i>
                     Ambil Foto dari Kamera HP
                 </button>
-                <input type="file" id="gejo-complete-camera" style="display: none;" accept="image/*" capture="environment">
+                <input type="file" id="gejo-complete-camera" style="display: none;" accept="image/*"
+                    capture="environment">
                 <!-- Thumbnail preview area -->
                 <div id="gejo-complete-preview-container"
                     style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 0.25rem; width: 100%;"></div>
@@ -3003,6 +4135,109 @@
             </div>
         </div>
     </div>
+
+    <!-- ponytail: Modal Input Biaya Perbaikan (Repair Part Cost Modal) -->
+    <div id="gejo-repair-part-cost-modal" class="modal-backdrop"
+        style="display: none; justify-content: center; align-items: center; z-index: 12000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(6px);">
+        <div class="card-glass animate-in"
+            style="width: 92%; max-width: 480px; max-height: 90vh; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; align-items: flex-start; text-align: left; box-shadow: var(--shadow-lg); box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <div
+                        style="background: var(--color-green-glow); color: var(--color-green); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i data-lucide="calculator" style="width: 20px; height: 20px;"></i>
+                    </div>
+                    <div>
+                        <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Input /
+                            Edit Biaya Perbaikan</h4>
+                        <span id="repair-part-cost-ejo-id" class="text-xs text-muted" style="font-weight: 600;">EJO ID:
+                            -</span>
+                    </div>
+                </div>
+                <button type="button" class="modal-close" onclick="closeRepairPartCostModal()"
+                    style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px;">
+                    <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+                </button>
+            </div>
+
+
+            <div class="form-field" style="width: 100%; box-sizing: border-box; margin-bottom: 0.75rem;">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 4px;">
+                    <label for="repair-part-cost-price-new"
+                        style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0;">Harga Baru Part (SAP) (Rp) <span
+                            class="required">*</span></label>
+                    <span id="repair-part-cost-qty-badge" class="badge badge-blue"
+                        style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: rgba(59, 130, 246, 0.15); color: var(--color-blue); border: 1px solid rgba(59, 130, 246, 0.3);">0/0</span>
+                </div>
+                <input type="number" id="repair-part-cost-price-new" class="input-sm"
+                    placeholder="Otomatis terisi dari Harga by SAP..." readonly
+                    style="width: 100%; box-sizing: border-box; height: 40px; background-color: var(--bg-muted, #f3f4f6); cursor: not-allowed; opacity: 0.85;"
+                    min="0" step="any">
+            </div>
+
+            <div
+                style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; width: 100%; box-sizing: border-box;">
+                <div class="form-field" style="width: 100%;">
+                    <label for="repair-part-cost-quantity" style="font-weight: 600; font-size: 0.85rem;">Qty Total (Pcs)
+                        <span class="required">*</span></label>
+                    <input type="number" id="repair-part-cost-quantity" class="input-sm" placeholder="Misal: 1" readonly
+                        style="width: 100%; box-sizing: border-box; height: 40px; background-color: var(--bg-muted, #f3f4f6); cursor: not-allowed; opacity: 0.85;"
+                        min="1" step="1">
+                </div>
+
+                <div class="form-field" style="width: 100%;">
+                    <label for="repair-part-cost-duration" style="font-weight: 600; font-size: 0.85rem;">Durasi (Hari)
+                        <span class="required">*</span></label>
+                    <input type="number" id="repair-part-cost-duration" class="input-sm"
+                        placeholder="Otomatis dari konfirmasi" readonly
+                        style="width: 100%; box-sizing: border-box; height: 40px; background-color: var(--bg-muted, #f3f4f6); cursor: not-allowed; opacity: 0.85;"
+                        min="0" step="1">
+                </div>
+
+                <div class="form-field" style="width: 100%;">
+                    <label for="repair-part-cost-per-day" style="font-weight: 600; font-size: 0.85rem;">Tarif / Hari
+                        (Rp) <span class="required">*</span></label>
+                    <input type="number" id="repair-part-cost-per-day" class="input-sm" placeholder="Misal: 100000"
+                        style="width: 100%; box-sizing: border-box; height: 40px;" min="0" step="any">
+                </div>
+            </div>
+
+            <!-- Live Cost Analysis Calculation Preview -->
+            <div class="cost-analysis-card"
+                style="width: 100%; margin: 0; box-sizing: border-box; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px;">
+                <div class="cost-analysis-header"
+                    style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: var(--color-cyan); font-weight: 600; font-size: 0.85rem;">
+                    <i data-lucide="sparkles" style="width: 14px; height: 14px;"></i>
+                    <span>Kalkulasi Otomatis Biaya &amp; Hemat</span>
+                </div>
+                <div class="cost-analysis-grid"
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                    <div class="cost-stat-item" style="display: flex; flex-direction: column;">
+                        <span class="cost-stat-label" style="font-size: 0.75rem; color: var(--text-muted);">Total Biaya
+                            Perbaikan</span>
+                        <span class="cost-stat-value" id="repair-part-cost-total-display"
+                            style="font-size: 0.95rem; font-weight: 700; color: var(--color-blue);">Rp 0</span>
+                    </div>
+                    <div class="cost-stat-item" style="display: flex; flex-direction: column;">
+                        <span class="cost-stat-label" style="font-size: 0.75rem; color: var(--text-muted);">Cost Saving
+                            (Hemat)</span>
+                        <span class="cost-stat-value" id="repair-part-cost-saving-display"
+                            style="font-size: 0.95rem; font-weight: 700; color: var(--color-green);">Rp 0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
+                <button type="button" class="btn btn-outline full-width" onclick="closeRepairPartCostModal()"
+                    style="padding: 0.6rem; height: 40px;">Batal</button>
+                <button type="button" class="btn btn-primary full-width glow-button" id="repair-part-cost-save-btn"
+                    onclick="saveRepairPartCostModal()" style="padding: 0.6rem; font-weight: 600; height: 40px;">Simpan
+                    Data Biaya</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ponytail: Custom User Profile / Account Settings Modal -->
     <div id="user-profile-modal" class="modal-backdrop"
         style="display: none; justify-content: center; align-items: center; z-index: 11000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
@@ -3022,7 +4257,8 @@
                 style="width: 100%; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; margin: 0.5rem 0;">
                 <div
                     style="position: relative; width: 90px; height: 90px; border-radius: 50%; overflow: hidden; border: 2px solid var(--color-cyan); background: var(--bg-sidebar);">
-                    <img id="profile-modal-avatar" src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80"
+                    <img id="profile-modal-avatar"
+                        src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80"
                         style="width: 100%; height: 100%; object-fit: cover;">
                 </div>
                 <button class="btn btn-outline btn-xs" id="btn-profile-change-avatar"
@@ -3092,7 +4328,8 @@
                 <label for="profile-modal-password"
                     style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Password Baru</label>
                 <div class="password-input-wrapper">
-                    <input type="password" id="profile-modal-password" placeholder="Kosongkan jika tidak ingin mengubah..."
+                    <input type="password" id="profile-modal-password"
+                        placeholder="Kosongkan jika tidak ingin mengubah..."
                         style="width: 100%; padding: 0.6rem; padding-right: 3.25rem !important; border-radius: var(--border-radius-md); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); box-sizing: border-box;">
                     <button type="button" class="btn-toggle-password" title="Tampilkan Password">
                         <i data-lucide="eye" style="width: 16px; height: 16px;"></i>
@@ -3105,6 +4342,88 @@
                     style="padding: 0.6rem;">Batal</button>
                 <button class="btn btn-primary full-width" id="btn-profile-modal-save"
                     style="padding: 0.6rem; font-weight: 600;">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ponytail: Modal Tulis Tanda Tangan Canvas (Digital Signature Pad) -->
+    <div id="signature-pad-modal" class="modal-backdrop"
+        style="display: none; justify-content: center; align-items: center; z-index: 12500; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(5px);">
+        <div class="card-glass animate-in"
+            style="width: 92%; max-width: 480px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; align-items: stretch; text-align: left; box-shadow: var(--shadow-xl); border-radius: var(--border-radius-lg);">
+
+            <!-- Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <div
+                        style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i data-lucide="pen-tool" style="width: 18px; height: 18px;"></i>
+                    </div>
+                    <div>
+                        <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-primary);">Tulis
+                            Tanda Tangan Digital</h4>
+                        <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: var(--text-secondary);">Goreskan tanda
+                            tangan Anda pada area canvas di bawah</p>
+                    </div>
+                </div>
+                <button type="button" class="btn-text-xs" id="btn-sigpad-close"
+                    style="padding: 4px; border-radius: 50%; color: var(--text-muted); cursor: pointer; background: transparent; border: none;"
+                    title="Tutup">
+                    <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+                </button>
+            </div>
+
+            <!-- Canvas Wrapper -->
+            <div class="signature-pad-wrapper" id="signature-pad-wrapper"
+                style="position: relative; width: 100%; height: 210px; background: #ffffff; border-radius: var(--border-radius-md); border: 2px dashed rgba(6, 182, 212, 0.4); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.06); overflow: hidden; touch-action: none; cursor: crosshair; user-select: none;">
+                <canvas id="signature-pad-canvas" class="signature-pad-canvas"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; touch-action: none; display: block; cursor: crosshair;"></canvas>
+                <div class="signature-pad-guide"
+                    style="position: absolute; bottom: 35px; left: 25px; right: 25px; border-bottom: 1px dashed rgba(0, 0, 0, 0.25); pointer-events: none; display: flex; justify-content: space-between; align-items: center; padding-bottom: 4px;">
+                    <span
+                        style="font-size: 0.65rem; color: rgba(0, 0, 0, 0.35); font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;">Area
+                        Tanda Tangan</span>
+                    <span style="font-size: 0.65rem; color: rgba(0, 0, 0, 0.35); font-weight: 500;">PT. BAS EJO</span>
+                </div>
+            </div>
+
+            <!-- Toolbar (Color, Thickness, Reset) -->
+            <div class="signature-pad-tools"
+                style="display: flex; align-items: center; justify-content: space-between; width: 100%; flex-wrap: wrap; gap: 0.5rem;">
+                <!-- Color Selector -->
+                <div class="signature-pad-tool-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <span style="font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);">Warna:</span>
+                    <button type="button" class="signature-color-btn active" data-color="#0f172a"
+                        style="background: #0f172a;" title="Hitam"></button>
+                    <button type="button" class="signature-color-btn" data-color="#1e40af" style="background: #1e40af;"
+                        title="Biru Gelap"></button>
+                    <button type="button" class="signature-color-btn" data-color="#047857" style="background: #047857;"
+                        title="Hijau Gelap"></button>
+                </div>
+
+                <!-- Thickness Selector -->
+                <div class="signature-pad-tool-group" style="display: flex; align-items: center; gap: 0.4rem;">
+                    <span style="font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);">Ketebalan:</span>
+                    <button type="button" class="signature-width-btn" data-width="1.8">Halus</button>
+                    <button type="button" class="signature-width-btn active" data-width="2.8">Standar</button>
+                    <button type="button" class="signature-width-btn" data-width="4.2">Tebal</button>
+                </div>
+
+                <!-- Clear Canvas Button -->
+                <button type="button" class="btn btn-outline btn-xs" id="btn-sigpad-clear"
+                    style="padding: 3px 8px; font-size: 0.72rem; gap: 4px; display: inline-flex; align-items: center;">
+                    <i data-lucide="rotate-ccw" style="width: 12px; height: 12px;"></i> Bersihkan
+                </button>
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="sigpad-actions" style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
+                <button type="button" class="btn btn-outline full-width" id="btn-sigpad-cancel"
+                    style="padding: 0.6rem; font-size: 0.85rem;">Batal</button>
+                <button type="button" class="btn btn-primary full-width" id="btn-sigpad-save"
+                    style="padding: 0.6rem; font-weight: 600; font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                    <i data-lucide="check" style="width: 14px; height: 14px;"></i> Gunakan Tanda Tangan
+                </button>
             </div>
         </div>
     </div>
@@ -3135,16 +4454,16 @@
             </div>
 
             <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.4;">
-                Silakan pilih ke mana pekerjaan ini akan dikembalikan dan berikan alasannya.
+                Silakan berikan alasan mengapa pekerjaan ini ditolak. Pekerjaan akan dikembalikan ke Engineer.
             </p>
 
-            <div style="width: 100%; display: flex; flex-direction: column; gap: 0.5rem;">
+            <div style="width: 100%; display: none; flex-direction: column; gap: 0.5rem;">
                 <label for="gejo-reject-target"
                     style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Kembalikan Ke <span
                         style="color: var(--color-red);">*</span></label>
                 <select id="gejo-reject-target"
                     style="padding: 10px; font-size: 0.9rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); width: 100%; box-sizing: border-box;">
-                    <!-- Options populated dynamically -->
+                    <option value="In Progress">Kembalikan ke Engineer (In Progress)</option>
                 </select>
             </div>
 
@@ -3227,166 +4546,826 @@
             </div>
             <div class="modal-body" style="grid-template-columns: 1fr; gap: 1.5rem; padding: 1.5rem;">
                 <div style="display: flex; flex-direction: column; gap: 1rem; width: 100%;">
-                    <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Update Persentase KPI</h3>
-                    <p class="text-secondary text-xs">Masukkan persentase pencapaian KPI General EJO saat ini (0-100) untuk diperbarui setiap minggunya.</p>
-                    
+                    <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Update Persentase KPI
+                    </h3>
+                    <p class="text-secondary text-xs">Masukkan persentase pencapaian KPI General EJO saat ini (0-100)
+                        untuk diperbarui setiap minggunya.</p>
+
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
-                        <label for="input-kpi-percentage" style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary);">Persentase KPI (%)</label>
-                        <input type="number" id="input-kpi-percentage" min="0" max="100" class="input-sm" style="width: 100%;" placeholder="Contoh: 85">
+                        <label for="input-kpi-percentage"
+                            style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary);">Persentase KPI
+                            (%)</label>
+                        <input type="number" id="input-kpi-percentage" min="0" max="100" class="input-sm"
+                            style="width: 100%;" placeholder="Contoh: 85">
                     </div>
-                    
+
                     <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 1rem;">
-                        <button class="btn btn-outline" id="btn-cancel-kpi-modal" style="padding: 0.5rem 1rem;">Batal</button>
-                        <button class="btn btn-primary" id="btn-save-kpi-modal" style="padding: 0.5rem 1.25rem;">Simpan</button>
+                        <button class="btn btn-outline" id="btn-cancel-kpi-modal"
+                            style="padding: 0.5rem 1rem;">Batal</button>
+                        <button class="btn btn-primary" id="btn-save-kpi-modal"
+                            style="padding: 0.5rem 1.25rem;">Simpan</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    <!-- ponytail: MODAL UPLOAD FILE BOQ (FASE 2 PROJECT) -->
-    <div id="project-boq-upload-modal" class="modal-backdrop" style="display: none; justify-content: center; align-items: center; z-index: 12000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-        <div class="card-glass animate-in" style="width: 90%; max-width: 480px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; align-items: flex-start; text-align: left; box-shadow: var(--shadow-lg);">
-            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <div style="display: flex; gap: 0.75rem; align-items: center;">
-                    <div style="background: rgba(14, 165, 233, 0.12); color: var(--color-cyan); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                        <i data-lucide="file-spreadsheet" style="width: 20px; height: 20px;"></i>
+
+
+    <!-- ponytail: MODAL EDIT TIMELINE PROYEK (FASE 3) -->
+    <div id="project-timeline-edit-modal" class="modal-backdrop"
+        style="display: none; justify-content: center; align-items: center; z-index: 12000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
+        <div class="modal-card card-glass animate-in"
+            style="max-width: 620px; width: 92%; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <div class="ejo-header-badge" style="display: flex; align-items: center; gap: 8px;">
+                    <span class="badge-ejo-code" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.4);">TIMELINE
+                        PROYEK</span>
+                    <span id="proj-timeline-modal-project-id"
+                        style="font-size: 0.8rem; font-weight: 700; color: var(--color-cyan);">-</span>
+                </div>
+                <button class="modal-close" id="proj-timeline-btn-close">&times;</button>
+            </div>
+            <div class="modal-body" style="grid-template-columns: 1fr; gap: 1.25rem; padding: 1.25rem;">
+                <div style="display: flex; flex-direction: column; gap: 1rem; width: 100%;">
+                    <h3
+                        style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="calendar" style="width: 18px; height: 18px; color: #f59e0b;"></i> Kelola
+                        Timeline Proyek
+                    </h3>
+                    <p class="text-secondary text-xs" style="margin: 0; line-height: 1.4;">
+                        Tambah atau perbarui entri timeline proyek. Masukkan tanggal (Tanggal, Bulan, Tahun) dan
+                        deskripsi kegiatan.
+                    </p>
+
+                    <!-- Existing Timeline List Container -->
+                    <div id="timeline-edit-items-container"
+                        style="display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; padding: 6px; border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); background: var(--bg-secondary);">
+                        <!-- Dynamic item rows inserted here -->
                     </div>
-                    <div>
-                        <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Unggah Dokumen / File BOQ</h4>
-                        <span id="proj-boq-modal-project-id" style="font-size: 0.75rem; color: var(--color-cyan); font-weight: 600;">-</span>
+
+                    <!-- New Entry Form Box -->
+                    <div
+                        style="background: rgba(245, 158, 11, 0.05); border: 1px dashed rgba(245, 158, 11, 0.3); border-radius: var(--border-radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 8px;">
+                        <span
+                            style="font-size: 0.8rem; font-weight: 700; color: #f59e0b; display: flex; align-items: center; gap: 4px;">
+                            <i data-lucide="plus-circle" style="width: 14px; height: 14px;"></i> Tambah Entri Timeline
+                            Baru
+                        </span>
+                        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px; width: 100%;">
+                            <div>
+                                <label
+                                    style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 3px;">Tanggal,
+                                    Bulan, Tahun</label>
+                                <input type="date" id="input-new-timeline-date" class="input-sm"
+                                    style="width: 100%; font-size: 0.82rem; box-sizing: border-box;">
+                            </div>
+                            <div>
+                                <label
+                                    style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 3px;">Deskripsi
+                                    Timeline</label>
+                                <input type="text" id="input-new-timeline-desc" class="input-sm"
+                                    style="width: 100%; font-size: 0.82rem; box-sizing: border-box;"
+                                    placeholder="Contoh: Pemasangan & Testing Komponen A">
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 2px;">
+                            <button class="btn btn-outline btn-xs" id="btn-add-timeline-item"
+                                style="border-color: #f59e0b; color: #f59e0b; padding: 4px 10px; font-size: 0.78rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+                                <i data-lucide="plus" style="width: 12px; height: 12px;"></i> Tambah Ke Daftar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 0.5rem;">
+                        <button class="btn btn-outline" id="btn-cancel-timeline-modal"
+                            style="padding: 0.5rem 1rem;">Batal</button>
+                        <button class="btn btn-primary" id="btn-save-timeline-modal"
+                            style="padding: 0.5rem 1.25rem; background: #f59e0b; border-color: #f59e0b;">Simpan
+                            Timeline</button>
                     </div>
                 </div>
-                <button class="modal-close" id="proj-boq-btn-close" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
-            </div>
-
-            <p style="margin: 0; font-size: 0.88rem; color: var(--text-secondary); line-height: 1.4;">
-                Silakan pilih atau seret file BOQ (Bill of Quantities / Excel, PDF, atau Gambar) untuk melanjutkan proyek ke fase pengadaan.
-            </p>
-
-            <!-- Error Alert Box -->
-            <div id="proj-boq-error-alert" style="display: none; width: 100%; padding: 10px 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--border-radius-sm); color: #f87171; font-size: 0.82rem; font-weight: 600; align-items: center; gap: 8px; box-sizing: border-box;">
-                <i data-lucide="alert-triangle" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
-                <span id="proj-boq-error-text">Wajib memilih/mengunggah file BOQ terlebih dahulu!</span>
-            </div>
-
-            <!-- Existing Uploaded BOQ Files Container -->
-            <div id="proj-boq-modal-existing-files" style="display: none; width: 100%; flex-direction: column; gap: 6px;">
-                <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">File BOQ Terunggah Saat Ini:</span>
-                <div id="proj-boq-modal-existing-files-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
-            </div>
-
-            <!-- Drag & Drop File Upload Box -->
-            <div id="proj-boq-upload-dropzone" class="file-upload-mock" style="width: 100%; min-height: 120px; border: 2px dashed var(--card-border); border-radius: var(--border-radius-sm); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s; box-sizing: border-box; padding: 1.25rem;">
-                <i data-lucide="upload-cloud" style="width: 28px; height: 28px; color: var(--color-cyan);"></i>
-                <span id="proj-boq-file-label" style="font-size: 0.88rem; font-weight: 600; color: var(--text-primary); text-align: center;">Klik atau Seret File BOQ (Excel / PDF / Gambar)</span>
-                <span style="font-size: 0.75rem; color: var(--text-muted);">Mendukung XLSX, XLS, PDF, CSV, JPG, PNG</span>
-                <input type="file" id="proj-boq-modal-file-input" style="display: none;" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp">
-            </div>
-
-            <!-- File Preview Thumbnail & PDF Viewer Box -->
-            <div id="proj-boq-file-preview-sec" style="display: none; width: 100%; flex-direction: column; justify-content: center; align-items: center; gap: 8px; padding: 10px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); box-sizing: border-box;">
-                <img id="proj-boq-file-preview-img" style="display: none; max-height: 160px; max-width: 100%; object-fit: contain; border-radius: 6px; box-shadow: var(--shadow-sm);" alt="Preview">
-                <div id="proj-boq-pdf-preview-box" style="display: none; width: 100%; flex-direction: column; gap: 8px; align-items: center;">
-                    <object id="proj-boq-pdf-preview-object" type="application/pdf" style="width: 100%; height: 180px; border-radius: 6px; border: 1px solid var(--card-border); background: #fff;"></object>
-                    <a id="proj-boq-pdf-preview-link" href="#" target="_blank" class="btn btn-xs btn-outline" style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; color: var(--color-cyan); border-color: var(--color-cyan);">
-                        <i data-lucide="external-link" style="width: 12px; height: 12px;"></i> Buka PDF di Tab Baru
-                    </a>
-                </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.5rem;">
-                <button class="btn btn-outline full-width" id="proj-boq-btn-cancel" type="button" style="padding: 0.65rem;">Batal</button>
-                <button class="btn btn-primary full-width" id="proj-boq-btn-confirm" type="button" style="padding: 0.65rem; font-weight: 600;">Unggah &amp; Lanjutkan</button>
             </div>
         </div>
     </div>
 
     <!-- ponytail: MODAL UPLOAD FOTO DOKUMENTASI EKSEKUSI (FASE 3 PROJECT) -->
-    <div id="project-execution-doc-modal" class="modal-backdrop" style="display: none; justify-content: center; align-items: center; z-index: 12000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-        <div class="card-glass animate-in" style="width: 90%; max-width: 500px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; align-items: flex-start; text-align: left; box-shadow: var(--shadow-lg);">
+    <div id="project-execution-doc-modal" class="modal-backdrop"
+        style="display: none; justify-content: center; align-items: center; z-index: 12000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
+        <div class="card-glass animate-in"
+            style="width: 90%; max-width: 500px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; align-items: flex-start; text-align: left; box-shadow: var(--shadow-lg);">
             <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                 <div style="display: flex; gap: 0.75rem; align-items: center;">
-                    <div style="background: rgba(14, 165, 233, 0.12); color: var(--color-cyan); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                    <div
+                        style="background: rgba(14, 165, 233, 0.12); color: var(--color-cyan); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
                         <i data-lucide="camera" style="width: 20px; height: 20px;"></i>
                     </div>
                     <div>
-                        <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Foto Dokumentasi Eksekusi</h4>
-                        <span id="proj-exec-modal-project-id" style="font-size: 0.75rem; color: var(--color-cyan); font-weight: 600;">-</span>
+                        <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Foto
+                            Dokumentasi Eksekusi</h4>
+                        <span id="proj-exec-modal-project-id"
+                            style="font-size: 0.75rem; color: var(--color-cyan); font-weight: 600;">-</span>
                     </div>
                 </div>
-                <button class="modal-close" id="proj-exec-btn-close" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
+                <button class="modal-close" id="proj-exec-btn-close"
+                    style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-secondary);">&times;</button>
             </div>
 
             <p style="margin: 0; font-size: 0.88rem; color: var(--text-secondary); line-height: 1.4;">
-                Silakan pilih atau seret foto dokumentasi hasil pekerjaan eksekusi untuk melanjutkan proyek ke fase Commissioning &amp; Serah Terima.
+                Silakan pilih atau seret foto dokumentasi hasil pekerjaan eksekusi untuk melanjutkan proyek ke fase
+                Commissioning &amp; Serah Terima.
             </p>
 
             <!-- Error Alert Box -->
-            <div id="proj-exec-error-alert" style="display: none; width: 100%; padding: 10px 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--border-radius-sm); color: #f87171; font-size: 0.82rem; font-weight: 600; align-items: center; gap: 8px; box-sizing: border-box;">
+            <div id="proj-exec-error-alert"
+                style="display: none; width: 100%; padding: 10px 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--border-radius-sm); color: #f87171; font-size: 0.82rem; font-weight: 600; align-items: center; gap: 8px; box-sizing: border-box;">
                 <i data-lucide="alert-triangle" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
-                <span id="proj-exec-error-text">Wajib memilih/mengunggah foto dokumentasi eksekusi terlebih dahulu!</span>
+                <span id="proj-exec-error-text">Wajib memilih/mengunggah foto dokumentasi eksekusi terlebih
+                    dahulu!</span>
             </div>
 
             <!-- Existing Uploaded Execution Photos Gallery -->
-            <div id="proj-exec-modal-existing-sec" style="display: none; width: 100%; flex-direction: column; gap: 6px;">
-                <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Foto Dokumentasi Terunggah Saat Ini:</span>
+            <div id="proj-exec-modal-existing-sec"
+                style="display: none; width: 100%; flex-direction: column; gap: 6px;">
+                <span
+                    style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Foto
+                    Dokumentasi Terunggah Saat Ini:</span>
                 <div id="proj-exec-modal-existing-list" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
             </div>
 
             <!-- Drag & Drop Photo Upload Box -->
-            <div id="proj-exec-upload-dropzone" class="file-upload-mock" style="width: 100%; min-height: 110px; border: 2px dashed var(--card-border); border-radius: var(--border-radius-sm); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s; box-sizing: border-box; padding: 1.25rem;">
-                <i data-lucide="upload-cloud" style="width: 28px; height: 28px; color: var(--color-cyan);"></i>
-                <span id="proj-exec-file-label" style="font-size: 0.88rem; font-weight: 600; color: var(--text-primary); text-align: center;">Klik atau Seret Foto Dokumentasi (JPG / PNG)</span>
-                <span style="font-size: 0.75rem; color: var(--text-muted);">Mendukung JPG, JPEG, PNG, WEBP</span>
-                <input type="file" id="proj-exec-modal-file-input" style="display: none;" accept="image/jpeg,image/png,image/webp">
+            <div id="proj-exec-upload-dropzone" class="file-upload-mock"
+                style="width: 100%; min-height: 110px; border: 2px dashed var(--card-border); border-radius: var(--border-radius-sm); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s; box-sizing: border-box; padding: 1.25rem;">
+                <i data-lucide="camera" style="width: 28px; height: 28px; color: var(--color-cyan);"></i>
+                <span id="proj-exec-file-label"
+                    style="font-size: 0.88rem; font-weight: 600; color: var(--text-primary); text-align: center;">Klik
+                    atau Ambil Foto via Kamera (Galeri / Kamera HP)</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Mendukung Langsung Kamera HP (JPG, PNG,
+                    WEBP)</span>
+                <input type="file" id="proj-exec-modal-file-input" style="display: none;" accept="image/*"
+                    capture="environment">
             </div>
 
             <!-- Live Image Thumbnail Preview Box -->
-            <div id="proj-exec-file-preview-sec" style="display: none; width: 100%; justify-content: center; align-items: center; padding: 10px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); box-sizing: border-box;">
-                <img id="proj-exec-file-preview-img" style="max-height: 150px; max-width: 100%; object-fit: contain; border-radius: 6px; box-shadow: var(--shadow-sm);" alt="Preview">
+            <div id="proj-exec-file-preview-sec"
+                style="display: none; width: 100%; justify-content: center; align-items: center; padding: 10px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); box-sizing: border-box;">
+                <img id="proj-exec-file-preview-img"
+                    style="max-height: 150px; max-width: 100%; object-fit: contain; border-radius: 6px; box-shadow: var(--shadow-sm);"
+                    alt="Preview">
             </div>
 
             <!-- Action Buttons -->
             <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.5rem;">
-                <button class="btn btn-outline full-width" id="proj-exec-btn-cancel" type="button" style="padding: 0.65rem;">Batal</button>
-                <button class="btn btn-primary full-width" id="proj-exec-btn-confirm" type="button" style="padding: 0.65rem; font-weight: 600;">Unggah &amp; Lanjutkan</button>
+                <button class="btn btn-outline full-width" id="proj-exec-btn-cancel" type="button"
+                    style="padding: 0.65rem;">Batal</button>
+                <button class="btn btn-primary full-width" id="proj-exec-btn-confirm" type="button"
+                    style="padding: 0.65rem; font-weight: 600;">Unggah &amp; Lanjutkan</button>
             </div>
         </div>
     </div>
 
     <!-- ponytail: GLOBAL IMAGE LIGHTBOX PREVIEW POPUP MODAL -->
-    <div id="image-preview-modal" class="modal-backdrop" style="display: none; justify-content: center; align-items: center; z-index: 15000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px);" onclick="if(event.target === this) closeImagePreviewModal();">
-        <div class="card-glass animate-in" style="width: 92vw; max-width: 900px; max-height: 92vh; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; align-items: stretch; text-align: left; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.15);">
-            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; border-bottom: 1px solid var(--card-border); padding-bottom: 0.75rem;">
+    <div id="image-preview-modal" class="modal-backdrop"
+        style="display: none; justify-content: center; align-items: center; z-index: 15000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px);"
+        onclick="if(event.target === this) closeImagePreviewModal();">
+        <div class="card-glass animate-in"
+            style="width: 92vw; max-width: 900px; max-height: 92vh; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; align-items: stretch; text-align: left; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.15);">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; width: 100%; border-bottom: 1px solid var(--card-border); padding-bottom: 0.75rem;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <i data-lucide="image" style="width: 20px; height: 20px; color: var(--color-cyan);"></i>
-                    <h4 id="image-preview-modal-title" style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Pratinjau Foto Dokumentasi</h4>
+                    <h4 id="image-preview-modal-title"
+                        style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">Pratinjau
+                        Foto Dokumentasi</h4>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <button id="image-preview-modal-delete-btn" type="button" class="btn btn-danger-outline btn-xs" style="padding: 4px 10px; font-size: 0.75rem; display: none; align-items: center; gap: 4px; border-color: rgba(239, 68, 68, 0.45); color: #f87171;" title="Hapus foto ini">
+                    <button id="image-preview-modal-delete-btn" type="button" class="btn btn-danger-outline btn-xs"
+                        style="padding: 4px 10px; font-size: 0.75rem; display: none; align-items: center; gap: 4px; border-color: rgba(239, 68, 68, 0.45); color: #f87171;"
+                        title="Hapus foto ini">
                         <i data-lucide="trash-2" style="width: 13px; height: 13px;"></i> Hapus Foto
                     </button>
-                    <a id="image-preview-modal-external-btn" href="#" target="_blank" class="btn btn-outline btn-xs" style="padding: 4px 10px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;" title="Buka gambar di tab baru">
+                    <a id="image-preview-modal-external-btn" href="#" target="_blank" class="btn btn-outline btn-xs"
+                        style="padding: 4px 10px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;"
+                        title="Buka gambar di tab baru">
                         <i data-lucide="external-link" style="width: 13px; height: 13px;"></i> Buka Tab Baru
                     </a>
-                    <button id="image-preview-modal-close-btn" onclick="closeImagePreviewModal()" class="modal-close" style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--card-border); font-size: 1.2rem; cursor: pointer; color: var(--text-primary); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s;" title="Tutup (Esc)">&times;</button>
+                    <button id="image-preview-modal-close-btn" onclick="closeImagePreviewModal()" class="modal-close"
+                        style="background: rgba(255, 255, 255, 0.08); border: 1px solid var(--card-border); font-size: 1.2rem; cursor: pointer; color: var(--text-primary); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s;"
+                        title="Tutup (Esc)">&times;</button>
                 </div>
             </div>
-            <div class="image-preview-container" style="width: 100%; flex: 1; min-height: 0; border-radius: var(--border-radius-md); display: flex; align-items: center; justify-content: center; overflow: auto; padding: 1rem; box-sizing: border-box;">
-                <img id="image-preview-modal-img" src="" alt="Pratinjau Foto" style="max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); transition: transform 0.2s ease;" />
+            <div class="image-preview-container"
+                style="width: 100%; flex: 1; min-height: 0; border-radius: var(--border-radius-md); display: flex; align-items: center; justify-content: center; overflow: auto; padding: 1rem; box-sizing: border-box;">
+                <img id="image-preview-modal-img" src="" alt="Pratinjau Foto"
+                    style="max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 6px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); transition: transform 0.2s ease;" />
             </div>
         </div>
     </div>
 
+    <!-- MODAL EDIT AKSES & OTORITAS USER (SERVER EXCLUSIVE) -->
+    <div class="modal-backdrop" id="modal-user-access-edit"
+        style="display: none; justify-content: center; align-items: center; z-index: 14000; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(6px);">
+        <div class="modal-card card-glass animate-in"
+            style="max-width: 680px; width: 92%; padding: 0; overflow: hidden; border-radius: 16px; border: 1px solid rgba(6, 182, 212, 0.3); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);">
+            <div class="modal-header"
+                style="padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; background: rgba(6, 182, 212, 0.08);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div
+                        style="width: 40px; height: 40px; border-radius: 10px; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); display: flex; align-items: center; justify-content: center;">
+                        <i data-lucide="sliders" style="width: 22px; height: 22px;"></i>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 1.15rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                            Pengaturan Hak Akses Akun</h3>
+                        <p class="text-secondary text-xs" style="margin: 3px 0 0 0;" id="modal-user-access-subtitle">
+                            Konfigurasi hak akses modul & status akun</p>
+                    </div>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closeUserAccessModal()"
+                    style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s;"
+                    title="Tutup">
+                    <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+                </button>
+            </div>
+
+            <div class="modal-body"
+                style="padding: 1.5rem; max-height: 75vh; overflow-y: auto; display: flex; flex-direction: column; gap: 1.25rem;">
+                <input type="hidden" id="access-modal-target-username">
+                <input type="hidden" id="access-modal-target-dept">
+                <input type="hidden" id="access-modal-target-role">
+
+                <!-- Top Row: Account Status Box & Quick Presets Bar side-by-side -->
+                <div style="display: grid; grid-template-columns: 1fr 1.1fr; gap: 1rem; align-items: stretch;">
+                    <!-- Account Status Box -->
+                    <div class="account-status-box" style="margin: 0; height: 100%; box-sizing: border-box;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div
+                                style="width: 36px; height: 36px; border-radius: 50%; background: rgba(16, 185, 129, 0.12); color: #10b981; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                <i data-lucide="user-check" style="width: 18px; height: 18px;"></i>
+                            </div>
+                            <div>
+                                <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">
+                                    Status Akun</h4>
+                                <p class="text-secondary text-xs" style="margin: 2px 0 0 0;">Toggle status aktif /
+                                    suspend user.</p>
+                            </div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="access-modal-is-active" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- Quick Presets Bar -->
+                    <div
+                        style="padding: 0.85rem 1rem; border-radius: 12px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--card-border); display: flex; flex-direction: column; justify-content: center; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="zap" style="width: 13px; height: 13px; color: var(--color-cyan);"></i>
+                            <label
+                                style="font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin: 0;">Preset
+                                Akses Cepat</label>
+                        </div>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-outline text-xs"
+                                onclick="applyAccessPreset('default_role')"
+                                style="padding: 4px 8px; font-size: 0.72rem; border-radius: 6px; border-color: rgba(6, 182, 212, 0.4); color: var(--color-cyan); font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+                                <i data-lucide="shield-check" style="width: 12px; height: 12px;"></i> Default Role &
+                                Dept
+                            </button>
+                            <button type="button" class="btn btn-outline text-xs"
+                                onclick="applyAccessPreset('all_access')"
+                                style="padding: 4px 8px; font-size: 0.72rem; border-radius: 6px;">
+                                Full Access
+                            </button>
+                            <button type="button" class="btn btn-outline text-xs"
+                                onclick="applyAccessPreset('engineer')"
+                                style="padding: 4px 8px; font-size: 0.72rem; border-radius: 6px;">
+                                Engineer
+                            </button>
+                            <button type="button" class="btn btn-outline text-xs" onclick="applyAccessPreset('staff')"
+                                style="padding: 4px 8px; font-size: 0.72rem; border-radius: 6px;">
+                                Staff
+                            </button>
+                            <button type="button" class="btn btn-outline text-xs"
+                                onclick="applyAccessPreset('readonly')"
+                                style="padding: 4px 8px; font-size: 0.72rem; border-radius: 6px;">
+                                Read-Only
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 1: Hak Akses Modul Utama -->
+                <div>
+                    <div
+                        style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--card-border); padding-bottom: 6px;">
+                        <i data-lucide="layout-grid" style="width: 15px; height: 15px; color: var(--color-cyan);"></i>
+                        <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">Hak
+                            Akses Modul Utama</h4>
+                    </div>
+
+                    <div class="perm-matrix-grid">
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(6, 182, 212, 0.12); color: #06b6d4;"><i
+                                        data-lucide="layout-dashboard" style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">Dashboard (Overview)</h5>
+                                    <p class="perm-card-desc">Ringkasan & KPI</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-overview" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"><i data-lucide="file-text"
+                                        style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">General EJO</h5>
+                                    <p class="perm-card-desc">Pekerjaan langsung</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-gejo" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(59, 130, 246, 0.12); color: #3b82f6;"><i data-lucide="image"
+                                        style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">Drawing EJO</h5>
+                                    <p class="perm-card-desc">Gambar & desain</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-drawing" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(139, 92, 246, 0.12); color: #8b5cf6;"><i
+                                        data-lucide="folder-kanban" style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">Project Monitoring</h5>
+                                    <p class="perm-card-desc">Proyek 4 fase</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-project" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(16, 185, 129, 0.12); color: #10b981;"><i
+                                        data-lucide="wrench" style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">Dashboard Part</h5>
+                                    <p class="perm-card-desc">Repair part & cost</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-partlist" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;"><i
+                                        data-lucide="archive" style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">History EJO</h5>
+                                    <p class="perm-card-desc">Arsip selesai & batal</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-history" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(239, 68, 68, 0.12); color: #ef4444;"><i
+                                        data-lucide="shield-alert" style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">Admin Panel</h5>
+                                    <p class="perm-card-desc">Kelola database</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-admin">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Hak Otoritas & Tanda Tangan -->
+                <div>
+                    <div
+                        style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--card-border); padding-bottom: 6px;">
+                        <i data-lucide="check-square" style="width: 15px; height: 15px; color: var(--color-cyan);"></i>
+                        <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">Hak
+                            Otoritas & Tanda Tangan</h4>
+                    </div>
+
+                    <div class="perm-matrix-grid">
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9;"><i
+                                        data-lucide="check-square" style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">Otoritas Approval</h5>
+                                    <p class="perm-card-desc">Menyetujui EJO</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-approval" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="perm-card">
+                            <div class="perm-card-info">
+                                <div class="perm-card-icon"
+                                    style="background: rgba(168, 85, 247, 0.12); color: #a855f7;"><i
+                                        data-lucide="pen-tool" style="width: 16px; height: 16px;"></i></div>
+                                <div>
+                                    <h5 class="perm-card-title">Input Tanda Tangan</h5>
+                                    <p class="perm-card-desc">Upload tanda tangan</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="perm-signature" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer"
+                style="padding: 1.1rem 1.5rem; border-top: 1px solid var(--card-border); display: flex; justify-content: flex-end; gap: 12px; background: rgba(0, 0, 0, 0.2);">
+                <button type="button" class="btn btn-outline" onclick="closeUserAccessModal()"
+                    style="padding: 8px 16px; font-size: 0.85rem;">Batal</button>
+                <button type="button" class="btn btn-primary glow-button" onclick="saveUserAccessSettings()"
+                    style="padding: 8px 20px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 8px;">
+                    <i data-lucide="save" style="width: 16px; height: 16px;"></i> Simpan Hak Akses
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DASHBOARD WIDGET ACCESS PERMISSION EDIT (EKSKLUSIF SERVER) -->
+    <div class="modal-backdrop" id="modal-dashboard-widget-access"
+        onclick="if(event.target === this) closeDashboardWidgetAccessModal()"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; align-items: center; justify-content: center; z-index: 15000; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(6px);">
+        <div class="modal-card card-glass animate-in"
+            style="max-width: 680px; width: 92%; padding: 0; overflow: hidden; border-radius: 16px; border: 1px solid rgba(6, 182, 212, 0.3); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);">
+            <div class="modal-header widget-access-modal-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div
+                        style="width: 40px; height: 40px; border-radius: 10px; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); display: flex; align-items: center; justify-content: center;">
+                        <i data-lucide="layout-dashboard" style="width: 22px; height: 22px;"></i>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 1.15rem; font-weight: 700; margin: 0; color: var(--text-primary);"
+                            id="widget-access-modal-title">Konfigurasi Akses Widget</h3>
+                        <p class="text-secondary text-xs" style="margin: 3px 0 0 0;" id="widget-access-modal-subtitle">
+                            Tentukan role mana saja yang diizinkan melihat widget ini di Dashboard.</p>
+                    </div>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closeDashboardWidgetAccessModal()"
+                    style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s;"
+                    title="Tutup">
+                    <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+                </button>
+            </div>
+
+            <div class="modal-body"
+                style="padding: 1.5rem; max-height: 75vh; overflow-y: auto; display: flex; flex-direction: column; gap: 1.25rem;">
+                <input type="hidden" id="widget-access-target-key" value="">
+
+                <!-- Access Mode Selector -->
+                <div class="widget-access-mode-box">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <i data-lucide="shield" style="width: 16px; height: 16px; color: var(--color-cyan);"></i>
+                        <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); margin: 0;"
+                            id="widget-access-mode-label">Mode Akses Tampil Widget:</label>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <label class="widget-access-mode-tile">
+                            <input type="radio" name="widget-access-mode" value="all" checked
+                                onchange="toggleWidgetRoleSelector()">
+                            <span id="widget-access-label-all"><strong>Tampilkan ke Semua Role & Akun</strong>
+                                (Default)</span>
+                        </label>
+                        <label class="widget-access-mode-tile">
+                            <input type="radio" name="widget-access-mode" value="custom"
+                                onchange="toggleWidgetRoleSelector()">
+                            <span id="widget-access-label-custom"><strong>Batasi Akses Tampil</strong> (Pilih Role
+                                tertentu yang BISA melihat)</span>
+                        </label>
+                        <label class="widget-access-mode-tile">
+                            <input type="radio" name="widget-access-mode" value="exclude"
+                                onchange="toggleWidgetRoleSelector()">
+                            <span id="widget-access-label-exclude"><strong>Tampilkan ke Semua, KECUALI...</strong>
+                                (Pilih Role yang DISEMBUNYIKAN / TIDAK BISA melihat)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Roles Checkboxes Container -->
+                <div id="widget-role-selector-container" style="display: none; flex-direction: column; gap: 10px;">
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="users" style="width: 16px; height: 16px; color: var(--color-cyan);"></i>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary);"
+                                id="widget-role-selector-title">Pilih Role Yang Diizinkan Melihat Widget Ini:</span>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn btn-outline btn-xs" onclick="selectAllWidgetRoles(true)"
+                                style="padding: 3px 10px; font-size: 0.75rem; border-radius: 6px;">Pilih Semua</button>
+                            <button type="button" class="btn btn-outline btn-xs" onclick="selectAllWidgetRoles(false)"
+                                style="padding: 3px 10px; font-size: 0.75rem; border-radius: 6px;">Hapus Semua</button>
+                        </div>
+                    </div>
+                    <div id="widget-roles-checkbox-grid">
+                        <!-- Checkboxes dynamically generated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer widget-access-modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeDashboardWidgetAccessModal()"
+                    style="padding: 8px 18px; font-size: 0.85rem; border-radius: 8px;">Batal</button>
+                <button type="button" class="btn btn-primary glow-button" onclick="saveDashboardWidgetPermission()"
+                    style="padding: 8px 22px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px;">
+                    <i data-lucide="save" style="width: 16px; height: 16px;"></i> Simpan Hak Akses
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+
+
+    <!-- TOAST POPUP FOR ALERTS -->
+    <div class="perm-card">
+        <div class="perm-card-info">
+            <div class="perm-card-icon" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6;"><i
+                    data-lucide="image" style="width: 16px; height: 16px;"></i></div>
+            <div>
+                <h5 class="perm-card-title">Drawing EJO</h5>
+                <p class="perm-card-desc">Gambar & desain</p>
+            </div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" id="perm-drawing" checked>
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="perm-card">
+        <div class="perm-card-info">
+            <div class="perm-card-icon" style="background: rgba(139, 92, 246, 0.12); color: #8b5cf6;"><i
+                    data-lucide="folder-kanban" style="width: 16px; height: 16px;"></i></div>
+            <div>
+                <h5 class="perm-card-title">Project Monitoring</h5>
+                <p class="perm-card-desc">Proyek 4 fase</p>
+            </div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" id="perm-project" checked>
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="perm-card">
+        <div class="perm-card-info">
+            <div class="perm-card-icon" style="background: rgba(16, 185, 129, 0.12); color: #10b981;"><i
+                    data-lucide="wrench" style="width: 16px; height: 16px;"></i></div>
+            <div>
+                <h5 class="perm-card-title">Dashboard Part</h5>
+                <p class="perm-card-desc">Repair part & cost</p>
+            </div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" id="perm-partlist" checked>
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="perm-card">
+        <div class="perm-card-info">
+            <div class="perm-card-icon" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;"><i
+                    data-lucide="archive" style="width: 16px; height: 16px;"></i></div>
+            <div>
+                <h5 class="perm-card-title">History EJO</h5>
+                <p class="perm-card-desc">Arsip selesai & batal</p>
+            </div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" id="perm-history" checked>
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="perm-card">
+        <div class="perm-card-info">
+            <div class="perm-card-icon" style="background: rgba(239, 68, 68, 0.12); color: #ef4444;"><i
+                    data-lucide="shield-alert" style="width: 16px; height: 16px;"></i></div>
+            <div>
+                <h5 class="perm-card-title">Admin Panel</h5>
+                <p class="perm-card-desc">Kelola database</p>
+            </div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" id="perm-admin">
+            <span class="slider"></span>
+        </label>
+    </div>
+    </div>
+    </div>
+
+    <!-- Section 2: Hak Otoritas & Tanda Tangan -->
+    <div>
+        <div
+            style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--card-border); padding-bottom: 6px;">
+            <i data-lucide="check-square" style="width: 15px; height: 15px; color: var(--color-cyan);"></i>
+            <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--text-primary);">Hak Otoritas & Tanda
+                Tangan</h4>
+        </div>
+
+        <div class="perm-matrix-grid">
+            <div class="perm-card">
+                <div class="perm-card-info">
+                    <div class="perm-card-icon" style="background: rgba(14, 165, 233, 0.12); color: #0ea5e9;"><i
+                            data-lucide="check-square" style="width: 16px; height: 16px;"></i></div>
+                    <div>
+                        <h5 class="perm-card-title">Otoritas Approval</h5>
+                        <p class="perm-card-desc">Menyetujui EJO</p>
+                    </div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="perm-approval" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="perm-card">
+                <div class="perm-card-info">
+                    <div class="perm-card-icon" style="background: rgba(168, 85, 247, 0.12); color: #a855f7;"><i
+                            data-lucide="pen-tool" style="width: 16px; height: 16px;"></i></div>
+                    <div>
+                        <h5 class="perm-card-title">Input Tanda Tangan</h5>
+                        <p class="perm-card-desc">Upload tanda tangan</p>
+                    </div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="perm-signature" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <div class="modal-footer"
+        style="padding: 1.1rem 1.5rem; border-top: 1px solid var(--card-border); display: flex; justify-content: flex-end; gap: 12px; background: rgba(0, 0, 0, 0.2);">
+        <button type="button" class="btn btn-outline" onclick="closeUserAccessModal()"
+            style="padding: 8px 16px; font-size: 0.85rem;">Batal</button>
+        <button type="button" class="btn btn-primary glow-button" onclick="saveUserAccessSettings()"
+            style="padding: 8px 20px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 8px;">
+            <i data-lucide="save" style="width: 16px; height: 16px;"></i> Simpan Hak Akses
+        </button>
+    </div>
+    </div>
+    </div>
+
+    <!-- MODAL DASHBOARD WIDGET ACCESS PERMISSION EDIT (EKSKLUSIF SERVER) -->
+    <div class="modal-backdrop" id="modal-dashboard-widget-access"
+        onclick="if(event.target === this) closeDashboardWidgetAccessModal()"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; align-items: center; justify-content: center; z-index: 15000; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(6px);">
+        <div class="modal-card card-glass animate-in"
+            style="max-width: 680px; width: 92%; padding: 0; overflow: hidden; border-radius: 16px; border: 1px solid rgba(6, 182, 212, 0.3); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);">
+            <div class="modal-header widget-access-modal-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div
+                        style="width: 40px; height: 40px; border-radius: 10px; background: rgba(6, 182, 212, 0.15); color: var(--color-cyan); display: flex; align-items: center; justify-content: center;">
+                        <i data-lucide="layout-dashboard" style="width: 22px; height: 22px;"></i>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 1.15rem; font-weight: 700; margin: 0; color: var(--text-primary);"
+                            id="widget-access-modal-title">Konfigurasi Akses Widget</h3>
+                        <p class="text-secondary text-xs" style="margin: 3px 0 0 0;" id="widget-access-modal-subtitle">
+                            Tentukan role mana saja yang diizinkan melihat widget ini di Dashboard.</p>
+                    </div>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closeDashboardWidgetAccessModal()"
+                    style="background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: 0.2s;"
+                    title="Tutup">
+                    <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+                </button>
+            </div>
+
+            <div class="modal-body"
+                style="padding: 1.5rem; max-height: 75vh; overflow-y: auto; display: flex; flex-direction: column; gap: 1.25rem;">
+                <input type="hidden" id="widget-access-target-key" value="">
+
+                <!-- Access Mode Selector -->
+                <div class="widget-access-mode-box">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <i data-lucide="shield" style="width: 16px; height: 16px; color: var(--color-cyan);"></i>
+                        <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); margin: 0;"
+                            id="widget-access-mode-label">Mode Akses Tampil Widget:</label>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <label class="widget-access-mode-tile">
+                            <input type="radio" name="widget-access-mode" value="all" checked
+                                onchange="toggleWidgetRoleSelector()">
+                            <span id="widget-access-label-all"><strong>Tampilkan ke Semua Role & Akun</strong>
+                                (Default)</span>
+                        </label>
+                        <label class="widget-access-mode-tile">
+                            <input type="radio" name="widget-access-mode" value="custom"
+                                onchange="toggleWidgetRoleSelector()">
+                            <span id="widget-access-label-custom"><strong>Batasi Akses Tampil</strong> (Pilih Role
+                                tertentu yang BISA melihat)</span>
+                        </label>
+                        <label class="widget-access-mode-tile">
+                            <input type="radio" name="widget-access-mode" value="exclude"
+                                onchange="toggleWidgetRoleSelector()">
+                            <span id="widget-access-label-exclude"><strong>Tampilkan ke Semua, KECUALI...</strong>
+                                (Pilih Role yang DISEMBUNYIKAN / TIDAK BISA melihat)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Roles Checkboxes Container -->
+                <div id="widget-role-selector-container" style="display: none; flex-direction: column; gap: 10px;">
+                    <div
+                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="users" style="width: 16px; height: 16px; color: var(--color-cyan);"></i>
+                            <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary);"
+                                id="widget-role-selector-title">Pilih Role Yang Diizinkan Melihat Widget Ini:</span>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn btn-outline btn-xs" onclick="selectAllWidgetRoles(true)"
+                                style="padding: 3px 10px; font-size: 0.75rem; border-radius: 6px;">Pilih Semua</button>
+                            <button type="button" class="btn btn-outline btn-xs" onclick="selectAllWidgetRoles(false)"
+                                style="padding: 3px 10px; font-size: 0.75rem; border-radius: 6px;">Hapus Semua</button>
+                        </div>
+                    </div>
+                    <div id="widget-roles-checkbox-grid">
+                        <!-- Checkboxes dynamically generated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer widget-access-modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeDashboardWidgetAccessModal()"
+                    style="padding: 8px 18px; font-size: 0.85rem; border-radius: 8px;">Batal</button>
+                <button type="button" class="btn btn-primary glow-button" onclick="saveDashboardWidgetPermission()"
+                    style="padding: 8px 22px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px;">
+                    <i data-lucide="save" style="width: 16px; height: 16px;"></i> Simpan Hak Akses
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+
+
     <!-- TOAST POPUP FOR ALERTS -->
     <div class="toast-container" id="toast-container"></div>
+
 
     <!-- Script -->
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- ponytail: update cache bust version to 7.5 -->
-    <script src="app.js?v=7.5"></script>
+    <!-- ponytail: App Logic -->
+    <script src="app.js?v=21.1"></script>
 </body>
 
 </html>
