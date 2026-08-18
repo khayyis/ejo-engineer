@@ -20,6 +20,9 @@ _pm/
 
 # Media recordings & screen captures
 *.mp4
+!202607301136.mp4
+!laravel/public/202607301136.mp4
+202607301136_original.mp4
 *.mkv
 *.avi
 0[1-9]_*.png
