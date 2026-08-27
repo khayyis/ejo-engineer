@@ -5413,7 +5413,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=61.0"></script>
+    <script src="app.js?v=62.0"></script>
 </body>
 
 </html>

@@ -1,0 +1,11 @@
+exclude:
+  - "laravel/**"
+  - "vendor/**"
+  - "node_modules/**"
+  - ".git/**"
+  - "chart.js"
+  - "*.min.js"
+rules:
+  ai-slop/narrative-comment: error
+  ai-slop/trivial-comment: warning
+  security/hardcoded-secret: error
