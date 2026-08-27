@@ -725,10 +725,10 @@
                         </div>
                     </div>
 
-                    <!-- Log Aktivitas Engineer (Card Minimalis / Trigger Button Popup Tengah) -->
+                    <!-- Log Aktivitas Engineer (Di Bawah EJO URGENT) -->
                     <div class="overview-activity-standalone-row" id="overview-eng-activity-panel" style="margin-top: 1.5rem; width: 100%;">
-                        <div class="list-card card-glass eng-activity-card" style="padding: 1rem 1.25rem;">
-                            <div class="card-header" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
+                        <div class="list-card card-glass eng-activity-card">
+                            <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border);">
                                 <div class="card-header-left" style="gap: 10px;">
                                     <div class="card-icon-wrap card-icon-cyan" style="width: 34px; height: 34px; border-radius: 8px;">
                                         <i data-lucide="clipboard-list" style="width: 18px; height: 18px;"></i>
@@ -737,7 +737,7 @@
                                         <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); margin: 0;">
                                             Log Aktivitas Engineer
                                         </h3>
-                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap laporan tugas &amp; status personil harian</p>
+                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap laporan tugas &amp; status personil per tanggal</p>
                                     </div>
                                 </div>
                                 <div class="card-actions" style="display: flex; align-items: center; gap: 8px;">
@@ -749,15 +749,11 @@
                                     <button class="btn btn-primary btn-xs" id="btn-add-daily-activity" style="display: none; padding: 5px 10px; font-size: 0.75rem; border-radius: 6px; gap: 4px;" onclick="openAddDailyActivityModal()">
                                         <i data-lucide="plus" style="width: 12px; height: 12px;"></i> Tambah Log
                                     </button>
-                                    <!-- Button to Open Modal Popup in Center -->
-                                    <button class="btn btn-outline btn-xs" style="padding: 5px 12px; font-size: 0.78rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; color: var(--color-cyan); border-color: rgba(6,182,212,0.4);" onclick="openDailyActivityTableModal()">
-                                        <i data-lucide="external-link" style="width: 12px; height: 12px;"></i> Buka Rekap Tabel
-                                    </button>
                                     <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Entri</span>
                                 </div>
                             </div>
-                            <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list" style="display: none;">
-                                <!-- Hidden in main card; rendered in modal popup instead -->
+                            <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list">
+                                <!-- Dynamic dual table of engineer activities -->
                             </div>
                         </div>
                     </div>
@@ -5392,7 +5388,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=38.0"></script>
+    <script src="app.js?v=39.0"></script>
 </body>
 
 </html>

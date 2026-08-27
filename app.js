@@ -7083,11 +7083,10 @@ window.deleteDailyActivityLog = async function(id, event) {
 
 // ponytail: extract, sort, and render live engineer activity stream in WhatsApp/Daily Recap style
 function renderOverviewActivityLog() {
-    const container = document.getElementById("modal-overview-eng-activity-list") || document.getElementById("overview-eng-activity-list");
+    const container = document.getElementById("overview-eng-activity-list");
     const panel = document.getElementById("overview-eng-activity-panel");
     const totalBadge = document.getElementById("eng-activity-total-badge");
     const addBtn = document.getElementById("btn-add-daily-activity");
-    const modalAddBtn = document.getElementById("modal-btn-add-activity");
     const mainDateInput = document.getElementById("eng-activity-date-input");
     
     const isEng = isCurrentUserEngDept();
@@ -7098,9 +7097,6 @@ function renderOverviewActivityLog() {
     const canManage = canManageDailyActivity();
     if (addBtn) {
         addBtn.style.display = canManage ? "inline-flex" : "none";
-    }
-    if (modalAddBtn) {
-        modalAddBtn.style.display = canManage ? "inline-flex" : "none";
     }
 
     if (mainDateInput && !mainDateInput.value) {
