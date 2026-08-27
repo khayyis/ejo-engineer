@@ -7063,12 +7063,9 @@ function renderOverviewActivityLog() {
 
     const filterDate = mainDateInput ? mainDateInput.value : state.selectedDailyActivityDate;
 
-    // Gather all items with logs across all types filtered by date
-    const allItems = [...(state.generalEjos || []), ...(state.drawings || []), ...(state.ejos || [])];
+    // Full Manual Daily Activity Logs Only (from daily_activity_logs database)
     const rawActivities = [];
-    const seenLogKeys = new Set();
 
-    // 1. Manual logs from daily_activity_logs table for this date
     (state.dailyActivityLogs || []).forEach(mLog => {
         rawActivities.push({
             id: mLog.ejo_id || '',
@@ -7083,93 +7080,6 @@ function renderOverviewActivityLog() {
             manualId: mLog.id,
             isDrawing: mLog.group_type === 'TIM_DRAFTER'
         });
-    });
-
-    // 2. Automatic logs from tickets that occurred on filterDate
-    allItems.forEach(item => {
-        const logs = parseLogs(item.logs || item);
-        if (Array.isArray(logs) && logs.length > 0) {
-            logs.forEach((log) => {
-                const rawMsg = log.cleanMessage || log.message || log.text || "";
-                if (!rawMsg) return;
-
-                let rawDate = log.date || item.updated_at || item.createdDate || "";
-                const logDateOnly = String(rawDate).slice(0, 10);
-                
-                // If filtering by date and date does not match, skip
-                if (filterDate && logDateOnly && !logDateOnly.includes(filterDate)) {
-                    return;
-                }
-
-                // Clean message
-                let cleanMsg = rawMsg.replace(/\s*Laporan Penyelesaian:\s*.*$/, "")
-                                     .replace(/\s*Laporan Revisi:\s*.*$/, "")
-                                     .replace(/\s*Instruksi revisi:\s*.*$/, "")
-                                     .replace(/\s*Alasan revisi:\s*.*$/, "")
-                                     .replace(/\s*Alasan Penolakan:\s*.*$/, "");
-
-                let sortTime = 0;
-                if (rawDate) {
-                    const dt = new Date(rawDate.replace(/-/g, '/'));
-                    if (!isNaN(dt.getTime())) {
-                        sortTime = dt.getTime();
-                    } else {
-                        const fallbackDate = parseDateToYYYYMMDD(rawDate);
-                        const fbDt = new Date(fallbackDate);
-                        sortTime = !isNaN(fbDt.getTime()) ? fbDt.getTime() : 0;
-                    }
-                }
-
-                // Detect category badge per message
-                let itemCategory = item.category || (item.isDrawing ? 'Drawing' : 'General');
-                const matchedDiscipline = cleanMsg.match(/\((Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter)\)/i);
-                if (matchedDiscipline && matchedDiscipline[1]) {
-                    itemCategory = matchedDiscipline[1];
-                }
-
-                // Extract engineer name
-                let engineerName = "";
-                const assignedToMatch = cleanMsg.match(/(?:kepada|ditugaskan kepada|ditunjuk:?)\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
-                if (assignedToMatch && assignedToMatch[1] && assignedToMatch[1].toLowerCase() !== 'unassigned') {
-                    engineerName = assignedToMatch[1].trim();
-                } else {
-                    const matchedEng = cleanMsg.match(/oleh\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
-                    if (matchedEng && matchedEng[1]) {
-                        const actor = matchedEng[1].trim();
-                        if ((actor.toLowerCase().includes('server') || actor.toLowerCase().includes('admin')) && item.engineer && item.engineer !== 'Unassigned') {
-                            engineerName = item.engineer.split(',')[0].trim();
-                        } else {
-                            engineerName = actor;
-                        }
-                    } else if (item.engineer && item.engineer !== 'Unassigned') {
-                        engineerName = item.engineer.split(',')[0].trim();
-                    } else if (item.drafter) {
-                        engineerName = item.drafter.split(',')[0].trim();
-                    }
-                }
-
-                if (!engineerName || engineerName.toLowerCase() === 'user' || engineerName.toLowerCase() === 'unassigned') {
-                    engineerName = item.engineer && item.engineer !== 'Unassigned' ? item.engineer.split(',')[0].trim() : 'Teknisi';
-                }
-
-                const uniqueKey = `${item.id}_${engineerName}_${cleanMsg}`;
-                if (seenLogKeys.has(uniqueKey)) return;
-                seenLogKeys.add(uniqueKey);
-
-                rawActivities.push({
-                    id: item.id,
-                    title: item.title || "Pekerjaan EJO",
-                    category: itemCategory,
-                    engineer: engineerName,
-                    dept: item.dept || "ENG",
-                    message: cleanMsg,
-                    date: rawDate,
-                    sortTime: sortTime,
-                    item: item,
-                    isDrawing: !!item.isDrawing
-                });
-            });
-        }
     });
 
     if (totalBadge) {

@@ -736,9 +736,8 @@
                                     <div>
                                         <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
                                             Log Aktivitas Engineer
-                                            <span class="badge badge-accent badge-live" style="font-size: 0.65rem; padding: 2px 6px;">Live</span>
                                         </h3>
-                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap interaksi & pembaruan teknisi realtime</p>
+                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap laporan tugas &amp; aktivitas teknisi per tanggal</p>
                                     </div>
                                 </div>
                                 <div class="card-actions" style="display: flex; align-items: center; gap: 8px;">
