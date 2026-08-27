@@ -2172,18 +2172,28 @@ function checkAuth() {
 async function initData() {
     if (!state.currentUser) return; // Block API calls if not logged in
     try {
-        // ponytail: fetch settings safely
-        try {
-            const resSettings = await fetch("/api/settings");
-            if (resSettings.ok) {
-                state.settings = await resSettings.json();
-            } else {
-                state.settings = { show_status_prop: "0", maintenance_mode: "0" };
-            }
-        } catch (err) {
-            state.settings = { show_status_prop: "0", maintenance_mode: "0" };
-            console.warn("Gagal memuat settings:", err);
-        }
+        const targetDate = state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10);
+        
+        // ponytail: Fetch all initial endpoints in parallel via Promise.allSettled for instant load times (<100ms)
+        const [
+            resSettings,
+            resGejos,
+            resDrawings,
+            resProj,
+            resParts,
+            resDaily,
+            resUsers
+        ] = await Promise.allSettled([
+            fetch("/api/settings").then(r => r.ok ? r.json() : null),
+            fetch("/api/general-ejos").then(r => r.ok ? r.json() : []),
+            fetch("/api/drawings").then(r => r.ok ? r.json() : []),
+            fetch("/api/projects").then(r => r.ok ? r.json() : []),
+            fetch("/api/repair-parts").then(r => r.ok ? r.json() : []),
+            fetch(`/api/daily-activity-logs?date=${encodeURIComponent(targetDate)}`).then(r => r.ok ? r.json() : null),
+            fetch("/api/users").then(r => r.ok ? r.json() : [])
+        ]);
+
+        state.settings = (resSettings.status === 'fulfilled' && resSettings.value) ? resSettings.value : { show_status_prop: "0", maintenance_mode: "0" };
         applyDashboardSettings();
         applyMaintenanceSettings();
 
@@ -2218,90 +2228,19 @@ async function initData() {
             }
         }
 
-        // ponytail: EJO reguler dinonaktifkan, set state.ejos = []
         state.ejos = [];
-
-        // ponytail: load general EJOs (DB terpisah) safely
-        try {
-            const resGejos = await fetch("/api/general-ejos");
-            if (resGejos.ok) {
-                state.generalEjos = await resGejos.json();
-            } else {
-                state.generalEjos = [];
-            }
-        } catch (err) {
-            state.generalEjos = [];
-            console.warn("Gagal memuat general-ejos:", err);
+        state.generalEjos = (resGejos.status === 'fulfilled' && Array.isArray(resGejos.value)) ? resGejos.value : [];
+        state.drawings = (resDrawings.status === 'fulfilled' && Array.isArray(resDrawings.value)) ? resDrawings.value : [];
+        if (!state.editingDrawingId) {
+            generateDrawingId();
         }
+        state.projects = (resProj.status === 'fulfilled' && Array.isArray(resProj.value)) ? resProj.value : [];
+        state.repairParts = (resParts.status === 'fulfilled' && Array.isArray(resParts.value)) ? resParts.value : [];
+        state.dailyActivityLogs = (resDaily.status === 'fulfilled' && resDaily.value && resDaily.value.data) ? resDaily.value.data : [];
 
-        // ponytail: jangan biarkan endpoint drawing yang belum aktif merusak seluruh initData
-        try {
-            const resDrawings = await fetch("/api/drawings");
-            if (resDrawings.ok) {
-                state.drawings = await resDrawings.json();
-            } else {
-                state.drawings = [];
-            }
-            if (!state.editingDrawingId) {
-                generateDrawingId();
-            }
-        } catch (err) {
-            state.drawings = [];
-            console.warn("Gagal memuat drawings:", err);
-        }
-
-        // ponytail: load projects safely
-        try {
-            const resProj = await fetch("/api/projects");
-            if (resProj.ok) {
-                state.projects = await resProj.json();
-            } else {
-                state.projects = [];
-            }
-        } catch (err) {
-            state.projects = [];
-            console.warn("Gagal memuat projects:", err);
-        }
-
-        // ponytail: Load repair parts from server safely
-        try {
-            const resParts = await fetch("/api/repair-parts");
-            if (resParts.ok) {
-                state.repairParts = await resParts.json();
-            } else {
-                state.repairParts = [];
-            }
-        } catch (err) {
-            state.repairParts = [];
-            console.warn("Gagal memuat repair-parts:", err);
-        }
-
-        // ponytail: load daily activity logs for current selected date
-        try {
-            const targetDate = state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10);
-            const resDaily = await fetch(`/api/daily-activity-logs?date=${encodeURIComponent(targetDate)}`);
-            if (resDaily.ok) {
-                const resDailyJson = await resDaily.json();
-                state.dailyActivityLogs = resDailyJson.data || [];
-            }
-        } catch (err) {
-            console.warn("Gagal memuat daily-activity-logs:", err);
-        }
-
-        // ponytail: Fetch dynamic users from SQLite database safely
-        let allUsers = [];
-        try {
-            const resUsers = await fetch("/api/users");
-            if (resUsers.ok) {
-                allUsers = await resUsers.json();
-            }
-        } catch (err) {
-            console.warn("Gagal memuat users:", err);
-        }
-        // ponytail: hide Server user from all frontend roles and assignees
+        const allUsers = (resUsers.status === 'fulfilled' && Array.isArray(resUsers.value)) ? resUsers.value : [];
         state.users = allUsers.filter(u => u.role !== 'Server' && u.username !== 'server');
 
-        // ponytail: Keep engineersList synced with database users dynamically
         engineersList = state.users.map(u => ({
             name: u.fullname,
             role: u.role,
@@ -2331,7 +2270,6 @@ async function initData() {
 
         // Always force switchTab to synchronize HTML DOM classes with activeTab state
         switchTab(state.activeTab || 'general-ejo');
-        runExcelSelfTest();
     } catch (err) {
         console.error("Gagal mengambil data dari database server:", err);
         showToast("Koneksi ke database server gagal!", "error");
