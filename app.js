@@ -6986,11 +6986,28 @@ function renderOverviewActivityLog() {
                     itemCategory = matchedDiscipline[1];
                 }
 
-                // Extract engineer name from log message (e.g. "oleh Yuli (Mekanik)" -> "Yuli", "oleh Thorik" -> "Thorik")
-                let engineerName = item.engineer || item.drafter || item.pic || "";
-                const matchedEng = cleanMsg.match(/oleh\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
-                if (matchedEng && matchedEng[1]) {
-                    engineerName = matchedEng[1].trim();
+                // Extract engineer name from log message or assignment
+                let engineerName = "";
+                
+                // 1. Check if log message mentions "kepada [Engineer]" or "ditunjuk: [Engineer]" or "oleh [Engineer]"
+                const assignedToMatch = cleanMsg.match(/(?:kepada|ditugaskan kepada|ditunjuk:?)\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
+                if (assignedToMatch && assignedToMatch[1] && assignedToMatch[1].toLowerCase() !== 'unassigned') {
+                    engineerName = assignedToMatch[1].trim();
+                } else {
+                    const matchedEng = cleanMsg.match(/oleh\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
+                    if (matchedEng && matchedEng[1]) {
+                        const actor = matchedEng[1].trim();
+                        // If actor is admin/system server, prioritize assigned technician if available
+                        if ((actor.toLowerCase().includes('server') || actor.toLowerCase().includes('admin')) && item.engineer && item.engineer !== 'Unassigned') {
+                            engineerName = item.engineer.split(',')[0].trim();
+                        } else {
+                            engineerName = actor;
+                        }
+                    } else if (item.engineer && item.engineer !== 'Unassigned') {
+                        engineerName = item.engineer.split(',')[0].trim();
+                    } else if (item.drafter) {
+                        engineerName = item.drafter.split(',')[0].trim();
+                    }
                 }
 
                 rawActivities.push({
@@ -11630,9 +11647,26 @@ async function saveModalChanges() {
     if (oldStatus !== nextStatus) {
         const uRoleStr = state.currentUser ? (state.currentUser.role || '') : '';
         const roleSuffix = uRoleStr ? ` (${uRoleStr})` : '';
+        const actorName = state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : 'User';
+        
+        let statusMsg = "";
+        if (nextStatus.startsWith('In Progress') && nextAssignee && nextAssignee !== 'Unassigned') {
+            statusMsg = `EJO ditugaskan kepada ${nextAssignee} (Status In Progress) oleh ${actorName}${roleSuffix}.`;
+        } else if (nextStatus === 'Requested') {
+            statusMsg = `EJO diajukan ke Engineering oleh ${actorName}${roleSuffix}.`;
+        } else if (nextStatus === 'Checking') {
+            statusMsg = `EJO disetujui untuk pengecekan ${nextAssignee && nextAssignee !== 'Unassigned' ? 'oleh ' + nextAssignee : ''} (Foreman: ${actorName}).`;
+        } else if (nextStatus === 'Pending User Approval') {
+            statusMsg = `Pekerjaan diselesaikan oleh ${nextAssignee && nextAssignee !== 'Unassigned' ? nextAssignee : actorName}, menunggu persetujuan User.`;
+        } else if (nextStatus === 'Completed') {
+            statusMsg = `Pekerjaan selesai & disetujui oleh User (${actorName}).`;
+        } else {
+            statusMsg = `Status dirubah dari ${oldStatus} menjadi ${nextStatus} oleh ${actorName}${roleSuffix}.${rejectionReason ? ' Alasan Penolakan: ' + rejectionReason : ''}`;
+        }
+
         updatedFields.logs.push({
             date: timestamp,
-            message: `Status dirubah dari ${oldStatus} menjadi ${nextStatus} oleh ${state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : 'User'}${roleSuffix}.${rejectionReason ? ' Alasan Penolakan: ' + rejectionReason : ''}`
+            message: statusMsg
         });
         // ponytail: notifikasi status sekarang di-generate server-side (update_ejo)
     }
@@ -19474,9 +19508,21 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
         }
     }
 
-    let logMessage = `Status dirubah dari ${oldStatus} menjadi ${finalStatus} oleh ${state.currentUser ? state.currentUser.fullname : 'User'}.${rejectionReason ? ' Alasan Penolakan: ' + rejectionReason : ''}`;
-    if (oldStatus === 'Waiting Dept Approval' && finalStatus === 'Requested') {
-        logMessage = `EJO disetujui oleh Manager/Supervisor ${state.currentUser.dept} (${state.currentUser.fullname}).`;
+    const uRoleStr = state.currentUser ? (state.currentUser.role || '') : '';
+    const roleSuffix = uRoleStr ? ` (${uRoleStr})` : '';
+    const actorName = state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : 'User';
+
+    let logMessage = `Status dirubah dari ${oldStatus} menjadi ${finalStatus} oleh ${actorName}${roleSuffix}.${rejectionReason ? ' Alasan Penolakan: ' + rejectionReason : ''}`;
+    if (finalStatus.startsWith('In Progress') && finalEngineer && finalEngineer !== 'Unassigned') {
+        logMessage = `EJO ditugaskan kepada ${finalEngineer} (Status In Progress) oleh ${actorName}${roleSuffix}.`;
+    } else if (oldStatus === 'Waiting Dept Approval' && finalStatus === 'Requested') {
+        logMessage = `EJO disetujui oleh Manager/Supervisor ${state.currentUser.dept} (${actorName}).`;
+    } else if (finalStatus === 'Checking') {
+        logMessage = `EJO disetujui untuk pengecekan ${finalEngineer && finalEngineer !== 'Unassigned' ? 'oleh ' + finalEngineer : ''} (Foreman: ${actorName}).`;
+    } else if (finalStatus === 'Pending User Approval') {
+        logMessage = `Pekerjaan diselesaikan oleh ${finalEngineer && finalEngineer !== 'Unassigned' ? finalEngineer : actorName}, menunggu persetujuan User.`;
+    } else if (finalStatus === 'Completed') {
+        logMessage = `Pekerjaan selesai & disetujui oleh User (${actorName}).`;
     }
     if (rejectionImage) {
         logMessage += `<br/><img src="${rejectionImage}" onclick="openRejectionImage(this.src)" style="max-width: 100%; max-height: 150px; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); margin-top: 8px; cursor: pointer; display: block; object-fit: contain;" title="Klik untuk memperbesar gambar bukti penolakan" />`;
