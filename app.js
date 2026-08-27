@@ -6903,7 +6903,22 @@ window.openAddDailyActivityModal = function() {
     }
     
     // Populate engineer dropdown
-    handleActivityGroupChange();
+    const groupSel = document.getElementById("input-activity-group");
+    const engSel = document.getElementById("input-activity-engineer");
+    if (groupSel && engSel) {
+        const group = groupSel.value || 'TIM_EJO';
+        const users = state.users || [];
+        let filteredUsers = [];
+        if (group === 'TIM_DRAFTER') {
+            filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && (u.role || '').toLowerCase().includes('drafter'));
+        } else {
+            filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && !(u.role || '').toLowerCase().includes('drafter'));
+        }
+        if (filteredUsers.length === 0) {
+            filteredUsers = users.filter(u => u.dept === 'ENG' || u.department === 'ENG');
+        }
+        engSel.innerHTML = filteredUsers.map(u => `<option value="${u.fullname || u.username}" data-role="${u.role || ''}">${u.fullname || u.username} (${u.role || 'Teknisi'})</option>`).join('');
+    }
     
     // Clear inputs
     const textInput = document.getElementById("input-activity-text");
@@ -6911,9 +6926,12 @@ window.openAddDailyActivityModal = function() {
     const ejoTitleInput = document.getElementById("input-activity-ejotitle");
     if (ejoTitleInput) ejoTitleInput.value = "";
 
-    modal.style.removeProperty("display");
+    // Force remove inline display none & add active class
+    modal.style.display = "flex";
     modal.classList.add("active");
-    lucide.createIcons();
+    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+        lucide.createIcons();
+    }
 };
 
 window.closeAddDailyActivityModal = function() {
