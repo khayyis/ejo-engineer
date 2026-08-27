@@ -3500,12 +3500,7 @@ function initEventListeners() {
         if (e.target === document.getElementById("part-detail-modal")) closePartModal();
     });
 
-    // ponytail: Daily Activity Modal listeners
-    document.getElementById("btn-add-daily-activity")?.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        openAddDailyActivityModal();
-    });
+    // ponytail: Daily Activity Modal listeners (onclick attribute handles open, this handles backdrop-click-to-close)
     document.getElementById("modal-daily-activity")?.addEventListener("click", (e) => {
         if (e.target === document.getElementById("modal-daily-activity")) closeAddDailyActivityModal();
     });
@@ -6900,51 +6895,122 @@ function canManageDailyActivity() {
 
 // Explicit global functions for Daily Activity Modal
 function openAddDailyActivityModal() {
-    const modal = document.getElementById("modal-daily-activity");
-    if (!modal) {
-        console.error("Modal #modal-daily-activity not found in DOM");
-        return;
-    }
-    
-    // Set default date
-    const dateInput = document.getElementById("input-activity-date");
-    if (dateInput) {
-        const mainDate = document.getElementById("eng-activity-date-input");
-        dateInput.value = (mainDate && mainDate.value) ? mainDate.value : (state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10));
-    }
-    
-    // Populate engineer dropdown
-    const groupSel = document.getElementById("input-activity-group");
-    const engSel = document.getElementById("input-activity-engineer");
-    if (groupSel && engSel) {
-        const group = groupSel.value || 'TIM_EJO';
-        const users = state.users || [];
-        let filteredUsers = [];
-        if (group === 'TIM_DRAFTER') {
-            filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && (u.role || '').toLowerCase().includes('drafter'));
-        } else {
-            filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && !(u.role || '').toLowerCase().includes('drafter'));
+    try {
+        const modal = document.getElementById("modal-daily-activity");
+        if (!modal) {
+            console.error("Modal #modal-daily-activity not found in DOM");
+            alert("Error: Modal form tidak ditemukan. Silakan refresh halaman.");
+            return;
         }
-        if (filteredUsers.length === 0) {
-            filteredUsers = users.filter(u => u.dept === 'ENG' || u.department === 'ENG');
-        }
-        engSel.innerHTML = filteredUsers.map(u => `<option value="${u.fullname || u.username}" data-role="${u.role || ''}">${u.fullname || u.username} (${u.role || 'Teknisi'})</option>`).join('');
-    }
-    
-    // Clear inputs
-    const textInput = document.getElementById("input-activity-text");
-    if (textInput) textInput.value = "";
-    const ejoTitleInput = document.getElementById("input-activity-ejotitle");
-    if (ejoTitleInput) ejoTitleInput.value = "";
+        
+        // Reset mode to ADD
+        const editIdInput = document.getElementById("input-activity-edit-id");
+        if (editIdInput) editIdInput.value = "";
 
-    // Force style & class
-    modal.style.setProperty("display", "flex", "important");
-    modal.classList.add("active");
-    if (typeof lucide !== 'undefined' && lucide.createIcons) {
-        lucide.createIcons();
+        const titleText = document.getElementById("modal-activity-title-text");
+        if (titleText) titleText.textContent = "Tambah Log Aktivitas Manual";
+
+        const submitBtnText = document.getElementById("btn-submit-daily-activity-text");
+        if (submitBtnText) submitBtnText.textContent = "Simpan Log";
+
+        // Set default date
+        const dateInput = document.getElementById("input-activity-date");
+        if (dateInput) {
+            const mainDate = document.getElementById("eng-activity-date-input");
+            dateInput.value = (mainDate && mainDate.value) ? mainDate.value : (state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10));
+        }
+        
+        // Populate engineer checklist
+        renderActivityEngineersList();
+        
+        // Populate active EJOs dropdown directly
+        populateActivityActiveEjosDropdown();
+
+        // Clear inputs
+        const textInput = document.getElementById("input-activity-text");
+        if (textInput) textInput.value = "";
+        const ejoSel = document.getElementById("input-activity-ejo-select");
+        if (ejoSel) ejoSel.value = "";
+
+        // Force style & class — both methods to guarantee visibility
+        modal.style.setProperty("display", "flex", "important");
+        modal.classList.add("active");
+        document.body.style.overflow = 'hidden';
+        
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            try { lucide.createIcons(); } catch(iconErr) { console.warn("lucide.createIcons error:", iconErr); }
+        }
+    } catch (err) {
+        console.error("openAddDailyActivityModal error:", err);
+        alert("Gagal membuka form Tambah Log. Error: " + err.message);
     }
 }
 window.openAddDailyActivityModal = openAddDailyActivityModal;
+
+function openEditDailyActivityModal(manualId, event) {
+    if (event) event.stopPropagation();
+    try {
+        const modal = document.getElementById("modal-daily-activity");
+        if (!modal) return;
+
+        const logEntry = (state.dailyActivityLogs || []).find(l => String(l.id) === String(manualId));
+        if (!logEntry) {
+            showToast("Data log tidak ditemukan", "error");
+            return;
+        }
+
+        // Set EDIT mode
+        const editIdInput = document.getElementById("input-activity-edit-id");
+        if (editIdInput) editIdInput.value = logEntry.id;
+
+        const titleText = document.getElementById("modal-activity-title-text");
+        if (titleText) titleText.textContent = "Edit Log Aktivitas";
+
+        const submitBtnText = document.getElementById("btn-submit-daily-activity-text");
+        if (submitBtnText) submitBtnText.textContent = "Update Log";
+
+        const dateInput = document.getElementById("input-activity-date");
+        if (dateInput) dateInput.value = logEntry.log_date || '';
+
+        const groupSel = document.getElementById("input-activity-group");
+        if (groupSel) groupSel.value = logEntry.group_type || 'ALL';
+
+        renderActivityEngineersList();
+
+        // Check the matching engineer
+        const checkboxes = document.querySelectorAll("#input-activity-engineers-list .activity-eng-check");
+        checkboxes.forEach(cb => {
+            const isMatch = cb.value.toLowerCase() === (logEntry.engineer_name || '').toLowerCase();
+            cb.checked = isMatch;
+            const row = cb.closest('.engineer-select-row');
+            if (row) row.classList.toggle('selected', isMatch);
+        });
+        updateActivitySelectedCount();
+
+        const textInput = document.getElementById("input-activity-text");
+        if (textInput) textInput.value = logEntry.activity || '';
+
+        const ejoSel = document.getElementById("input-activity-ejo-select");
+        if (ejoSel) {
+            const eId = logEntry.ejo_id || '';
+            const eTitle = logEntry.ejo_title || '';
+            const matchVal = (eId && eTitle) ? `${eId} - ${eTitle}` : (eId || eTitle);
+            ejoSel.value = matchVal;
+        }
+
+        modal.style.setProperty("display", "flex", "important");
+        modal.classList.add("active");
+        document.body.style.overflow = 'hidden';
+
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            try { lucide.createIcons(); } catch(iconErr) { console.warn("lucide.createIcons error:", iconErr); }
+        }
+    } catch (err) {
+        console.error("openEditDailyActivityModal error:", err);
+        alert("Gagal membuka form Edit Log. Error: " + err.message);
+    }
+}
+window.openEditDailyActivityModal = openEditDailyActivityModal;
 
 function closeAddDailyActivityModal() {
     const modal = document.getElementById("modal-daily-activity");
@@ -6952,68 +7018,332 @@ function closeAddDailyActivityModal() {
         modal.classList.remove("active");
         modal.style.setProperty("display", "none", "important");
     }
+    document.body.style.overflow = '';
 }
 window.closeAddDailyActivityModal = closeAddDailyActivityModal;
 
-window.handleActivityGroupChange = function() {
+function renderActivityEngineersList() {
     const groupSel = document.getElementById("input-activity-group");
-    const engSel = document.getElementById("input-activity-engineer");
-    if (!groupSel || !engSel) return;
+    const listContainer = document.getElementById("input-activity-engineers-list");
+    const searchInput = document.getElementById("input-activity-engineer-search");
+    if (!listContainer) return;
 
-    const group = groupSel.value; // 'TIM_EJO' or 'TIM_DRAFTER'
+    const currentSearch = searchInput ? searchInput.value : "";
+
+    const group = groupSel ? groupSel.value : 'ALL';
     const users = state.users || [];
     
     let filteredUsers = [];
     if (group === 'TIM_DRAFTER') {
         filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && (u.role || '').toLowerCase().includes('drafter'));
-    } else {
+    } else if (group === 'TIM_EJO') {
         filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && !(u.role || '').toLowerCase().includes('drafter'));
+    } else {
+        filteredUsers = users.filter(u => u.dept === 'ENG' || u.department === 'ENG');
     }
 
     if (filteredUsers.length === 0) {
         filteredUsers = users.filter(u => u.dept === 'ENG' || u.department === 'ENG');
     }
 
-    engSel.innerHTML = filteredUsers.map(u => `<option value="${u.fullname || u.username}" data-role="${u.role || ''}">${u.fullname || u.username} (${u.role || 'Teknisi'})</option>`).join('');
-};
+    let html = "";
+    filteredUsers.forEach((u) => {
+        const avatarUrl = u.avatar ? (u.avatar.startsWith('http') ? u.avatar : u.avatar.startsWith('photo-') ? 'https://images.unsplash.com/' + u.avatar : u.avatar.startsWith('/') ? u.avatar : '/' + u.avatar) : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+        const roleClass = 'role-badge-' + (u.role || 'teknisi').toLowerCase().replace(/\s+/g, '-');
 
-window.submitManualDailyActivity = async function() {
-    const dateInput = document.getElementById("input-activity-date");
+        html += `
+            <div class="engineer-select-row" style="margin-bottom: 4px; padding: 6px 10px;" onclick="toggleEngineerRowSelection(this)">
+                <div class="eng-info" style="gap: 8px;">
+                    <img src="${avatarUrl}" class="eng-avatar" alt="${u.fullname || u.username}" style="width: 28px; height: 28px;" />
+                    <div class="eng-details">
+                        <span class="eng-name" style="font-size: 0.82rem;">${u.fullname || u.username}</span>
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <span class="eng-role-badge ${roleClass}" style="font-size: 0.65rem; padding: 1px 6px;">${u.role || 'Teknisi'}</span>
+                            <span class="eng-role-badge" style="background: var(--color-cyan-glow); color: var(--color-cyan); text-transform: uppercase; font-size: 0.65rem; padding: 1px 6px;">${getActiveEjoCountForUser(u.fullname || u.username)} EJO</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="custom-checkbox">
+                    <input type="checkbox" class="activity-eng-check" value="${u.fullname || u.username}" data-role="${u.role || ''}" onclick="event.stopPropagation(); syncEngineerRowSelection(this)">
+                    <span class="checkmark"></span>
+                </div>
+            </div>
+        `;
+    });
+    listContainer.innerHTML = html;
+    if (currentSearch) {
+        filterActivityEngineersList(currentSearch);
+    }
+    updateActivitySelectedCount();
+}
+window.renderActivityEngineersList = renderActivityEngineersList;
+
+function handleActivityGroupChange() {
+    renderActivityEngineersList();
+    populateActivityActiveEjosDropdown();
+}
+window.handleActivityGroupChange = handleActivityGroupChange;
+
+async function populateActivityActiveEjosDropdown() {
+    const listContainer = document.getElementById("input-activity-ejo-list");
+    const countBadge = document.getElementById("input-activity-ejo-count");
     const groupSel = document.getElementById("input-activity-group");
-    const engSel = document.getElementById("input-activity-engineer");
-    const textInput = document.getElementById("input-activity-text");
-    const ejoTitleInput = document.getElementById("input-activity-ejotitle");
+    if (!listContainer) return;
 
-    const logDate = dateInput ? dateInput.value : '';
-    const groupType = groupSel ? groupSel.value : 'TIM_EJO';
-    const engineerName = engSel ? engSel.value : '';
-    const selectedOption = engSel && engSel.selectedOptions[0];
-    const role = selectedOption ? selectedOption.getAttribute("data-role") : '';
-    const activity = textInput ? textInput.value.trim() : '';
-    const ejoRaw = ejoTitleInput ? ejoTitleInput.value.trim() : '';
+    // Fetch freshest data if needed
+    try {
+        if (!state.ejos || state.ejos.length === 0) {
+            const r = await fetch('/api/ejos');
+            if (r.ok) state.ejos = await r.json();
+        }
+        if (!state.generalEjos || state.generalEjos.length === 0) {
+            const r = await fetch('/api/general-ejos');
+            if (r.ok) state.generalEjos = await r.json();
+        }
+        if (!state.drawings || state.drawings.length === 0) {
+            const r = await fetch('/api/drawings');
+            if (r.ok) state.drawings = await r.json();
+        }
+    } catch(e) {
+        console.warn("populateActivityActiveEjosDropdown fetch error:", e);
+    }
 
-    if (!logDate || !engineerName || !activity) {
-        showToast("Mohon lengkapi tanggal, nama engineer, dan uraian aktivitas.", "error");
+    const currentGroup = groupSel ? groupSel.value : 'ALL';
+    const isInactive = (item) => {
+        if (!item) return true;
+        const status = (item.status || '').trim().toLowerCase();
+        return status === 'completed' ||
+            status === 'cancelled' ||
+            status === 'archived' ||
+            status === 'rejected' ||
+            status === 'done' ||
+            item.is_archived === 1 ||
+            item.is_archived === '1';
+    };
+
+    // Get checked engineers to filter list strictly to selected engineers' tasks
+    const checkedBoxes = Array.from(document.querySelectorAll("#input-activity-engineers-list .activity-eng-check:checked"));
+    const selectedEngNames = checkedBoxes.map(cb => (cb.value || '').trim().toLowerCase());
+
+    const isAssignedToSelected = (engineerStr) => {
+        if (selectedEngNames.length === 0) return true; // if none checked yet, show all active
+        if (!engineerStr) return false;
+        const assigned = engineerStr.split(',').map(n => n.trim().toLowerCase());
+        return selectedEngNames.some(name => {
+            return assigned.some(a => a.includes(name) || name.includes(a));
+        });
+    };
+
+    const activeItems = [];
+
+    // Standard EJOs
+    if (currentGroup !== 'TIM_DRAFTER') {
+        (state.ejos || []).forEach(e => {
+            const eng = e.engineer || e.assigned_to || '';
+            if (!isInactive(e) && isAssignedToSelected(eng)) {
+                activeItems.push({
+                    type: 'EJO',
+                    id: e.id,
+                    title: e.job_name || e.title || e.description || 'Pekerjaan EJO',
+                    engineer: eng,
+                    status: e.status || 'In Progress',
+                    badgeClass: 'role-badge-mekanik'
+                });
+            }
+        });
+
+        // General EJOs
+        (state.generalEjos || []).forEach(g => {
+            const eng = g.engineer || '';
+            if (!isInactive(g) && isAssignedToSelected(eng)) {
+                activeItems.push({
+                    type: 'GEJO',
+                    id: g.id,
+                    title: g.title || g.description || 'Pekerjaan General EJO',
+                    engineer: eng,
+                    status: g.status || 'In Progress',
+                    badgeClass: 'role-badge-elektrik'
+                });
+            }
+        });
+    }
+
+    // Drawings
+    if (currentGroup !== 'TIM_EJO') {
+        (state.drawings || []).forEach(d => {
+            const eng = d.drafter || d.engineer || '';
+            if (!isInactive(d) && isAssignedToSelected(eng)) {
+                activeItems.push({
+                    type: 'DRAWING',
+                    id: d.id,
+                    title: d.title || d.drawing_title || 'Tugas Drawing',
+                    engineer: eng,
+                    status: d.status || 'In Progress',
+                    badgeClass: 'role-badge-drafter'
+                });
+            }
+        });
+    }
+
+    if (countBadge) {
+        countBadge.textContent = `${activeItems.length} tiket aktif`;
+    }
+
+    if (activeItems.length === 0) {
+        listContainer.innerHTML = `
+            <div style="text-align: center; padding: 12px; font-size: 0.75rem; color: var(--text-secondary); opacity: 0.7;">
+                Tidak ada tiket EJO on-progress aktif.
+            </div>
+        `;
         return;
     }
 
-    let ejoId = "";
-    let ejoTitle = "";
-    if (ejoRaw) {
-        const parts = ejoRaw.split(/-(.+)/);
-        if (parts.length > 1) {
-            ejoId = parts[0].trim();
-            ejoTitle = parts[1].trim();
-        } else {
-            ejoTitle = ejoRaw;
+    let html = '';
+    activeItems.forEach(item => {
+        const engText = item.engineer ? `PIC: ${item.engineer}` : 'Belum diassign';
+        html += `
+            <div class="activity-ejo-card card-glass" data-id="${item.id}" data-title="${item.title}" style="padding: 6px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--card-border); background: rgba(255,255,255,0.03); transition: all 0.15s ease; display: flex; align-items: center; justify-content: space-between; gap: 8px;" onclick="toggleSelectActivityEjoCard(this)">
+                <div style="flex: 1; min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+                        <span class="ejo-id-badge" style="font-size: 0.68rem; font-weight: 700; padding: 1px 5px;">${item.id}</span>
+                        <span class="eng-role-badge ${item.badgeClass}" style="font-size: 0.6rem; padding: 1px 4px;">${item.type}</span>
+                        <span style="font-size: 0.65rem; color: var(--color-cyan, #06b6d4); font-weight: 600;">${item.status}</span>
+                    </div>
+                    <div style="font-size: 0.78rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${item.title}
+                    </div>
+                    <div style="font-size: 0.68rem; color: var(--text-secondary); opacity: 0.8;">
+                        ${engText}
+                    </div>
+                </div>
+                <div class="custom-checkbox" style="margin-left: 4px;">
+                    <input type="checkbox" class="activity-ejo-check" value="${item.id}" data-id="${item.id}" data-title="${item.title}" onclick="event.stopPropagation(); syncActivityEjoCardSelection(this)">
+                    <span class="checkmark"></span>
+                </div>
+            </div>
+        `;
+    });
+
+    listContainer.innerHTML = html;
+}
+window.populateActivityActiveEjosDropdown = populateActivityActiveEjosDropdown;
+
+window.toggleSelectActivityEjoCard = function(cardEl) {
+    const cb = cardEl.querySelector('.activity-ejo-check');
+    if (!cb) return;
+
+    const newChecked = !cb.checked;
+
+    // Single selection behavior among EJO cards
+    document.querySelectorAll("#input-activity-ejo-list .activity-ejo-check").forEach(otherCb => {
+        otherCb.checked = false;
+        const otherCard = otherCb.closest('.activity-ejo-card');
+        if (otherCard) otherCard.classList.remove('selected');
+    });
+
+    cb.checked = newChecked;
+    cardEl.classList.toggle('selected', newChecked);
+
+    const textInput = document.getElementById("input-activity-text");
+    if (newChecked && textInput && !textInput.value.trim()) {
+        textInput.value = cb.getAttribute("data-title") || "";
+    }
+};
+
+window.syncActivityEjoCardSelection = function(checkbox) {
+    const isChecked = checkbox.checked;
+    const card = checkbox.closest('.activity-ejo-card');
+
+    document.querySelectorAll("#input-activity-ejo-list .activity-ejo-check").forEach(otherCb => {
+        if (otherCb !== checkbox) {
+            otherCb.checked = false;
+            const otherCard = otherCb.closest('.activity-ejo-card');
+            if (otherCard) otherCard.classList.remove('selected');
         }
+    });
+
+    if (card) {
+        card.classList.toggle('selected', isChecked);
     }
 
+    const textInput = document.getElementById("input-activity-text");
+    if (isChecked && textInput && !textInput.value.trim()) {
+        textInput.value = checkbox.getAttribute("data-title") || "";
+    }
+};
+
+window.submitManualDailyActivity = async function() {
+    const editIdInput = document.getElementById("input-activity-edit-id");
+    const editId = editIdInput ? editIdInput.value : '';
+
+    const dateInput = document.getElementById("input-activity-date");
+    const groupSel = document.getElementById("input-activity-group");
+    const textInput = document.getElementById("input-activity-text");
+
+    const checkedBoxes = Array.from(document.querySelectorAll("#input-activity-engineers-list .activity-eng-check:checked"));
+    const logDate = dateInput ? dateInput.value : '';
+    const groupType = groupSel ? groupSel.value : 'TIM_EJO';
+    const activity = textInput ? textInput.value.trim() : '';
+
+    const selectedEjoCb = document.querySelector("#input-activity-ejo-list .activity-ejo-check:checked");
+    const ejoId = selectedEjoCb ? (selectedEjoCb.getAttribute("data-id") || "") : "";
+    const ejoTitle = selectedEjoCb ? (selectedEjoCb.getAttribute("data-title") || "") : "";
+
+    if (!logDate || checkedBoxes.length === 0 || !activity) {
+        showToast("Mohon lengkapi tanggal, pilih minimal satu engineer, dan isi uraian aktivitas.", "error");
+        return;
+    }
+
+    const engineerNames = checkedBoxes.map(cb => cb.value);
+    const primaryRole = checkedBoxes[0].getAttribute("data-role") || '';
+
+    // Auto detect group type if set to ALL based on first selected engineer
+    let finalGroupType = groupType;
+    if (finalGroupType === 'ALL') {
+        finalGroupType = primaryRole.toLowerCase().includes('drafter') ? 'TIM_DRAFTER' : 'TIM_EJO';
+    }
+
+    if (editId) {
+        // UPDATE MODE (Single entry update)
+        const updatePayload = {
+            log_date: logDate,
+            group_type: finalGroupType,
+            engineer_name: engineerNames[0],
+            role: primaryRole,
+            activity: activity,
+            ejo_id: ejoId,
+            ejo_title: ejoTitle
+        };
+
+        try {
+            const res = await fetch(`/api/daily-activity-logs/${editId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatePayload)
+            });
+            if (!res.ok) throw new Error('Gagal memperbarui log');
+
+            showToast("Log aktivitas berhasil diperbarui!", "success");
+            closeAddDailyActivityModal();
+
+            state.selectedDailyActivityDate = logDate;
+            const mainDateInput = document.getElementById("eng-activity-date-input");
+            if (mainDateInput) mainDateInput.value = logDate;
+
+            await fetchDailyActivityLogs();
+        } catch (err) {
+            console.error(err);
+            showToast("Terjadi kesalahan saat memperbarui log aktivitas", "error");
+        }
+        return;
+    }
+
+    // CREATE MODE (Multiple engineers insert)
     const payload = {
         log_date: logDate,
-        group_type: groupType,
-        engineer_name: engineerName,
-        role: role,
+        group_type: finalGroupType,
+        engineer_name: engineerNames,
+        role: primaryRole,
         activity: activity,
         ejo_id: ejoId,
         ejo_title: ejoTitle,
@@ -7028,7 +7358,7 @@ window.submitManualDailyActivity = async function() {
         });
         if (!res.ok) throw new Error('Gagal menyimpan log');
         
-        showToast("Log aktivitas berhasil ditambahkan!", "success");
+        showToast(`Log aktivitas berhasil ditambahkan untuk ${engineerNames.length} engineer!`, "success");
         closeAddDailyActivityModal();
         
         state.selectedDailyActivityDate = logDate;
@@ -7112,6 +7442,47 @@ window.deleteDailyActivityLog = async function(id, event) {
     }
 };
 
+window.navigateToEjoFromActivity = function(ejoId, isDrawing, event) {
+    if (event) event.stopPropagation();
+    if (!ejoId) return;
+
+    // Close overview modal if open
+    const modalTable = document.getElementById("modal-daily-activity-table");
+    if (modalTable && modalTable.classList.contains("active")) {
+        closeDailyActivityTableModal();
+    }
+
+    if (isDrawing || ejoId.startsWith('DRW') || ejoId.startsWith('DWG')) {
+        switchTab('drawing');
+        const searchInput = document.getElementById("drawing-search-input");
+        if (searchInput) {
+            searchInput.value = ejoId;
+        }
+        if (typeof renderDrawings === 'function') {
+            renderDrawings();
+        }
+        // Smooth scroll to drawing control bar / table
+        const targetSection = document.getElementById("drawing-control-bar") || document.getElementById("drawing-view");
+        if (targetSection) {
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    } else {
+        switchTab('general-ejo');
+        const searchInput = document.getElementById("gejo-search-input");
+        if (searchInput) {
+            searchInput.value = ejoId;
+        }
+        if (typeof renderGeneralEJO === 'function') {
+            renderGeneralEJO();
+        }
+        // Smooth scroll to GEJO control bar / board
+        const targetSection = document.getElementById("gejo-control-bar") || document.getElementById("general-ejo-view");
+        if (targetSection) {
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+};
+
 // ponytail: extract, sort, and render live engineer activity stream in WhatsApp/Daily Recap style
 function renderOverviewActivityLog() {
     const container = document.getElementById("overview-eng-activity-list");
@@ -7192,11 +7563,23 @@ function renderOverviewActivityLog() {
     const renderSectionTable = (title, activities, iconName) => {
         if (activities.length === 0) return '';
         
-        const byEngineer = new Map();
+        // Group activities by task (activity + ejo_id) to match exact WhatsApp merged format
+        const byTask = [];
         activities.forEach(act => {
-            const eng = act.engineer || 'Teknisi';
-            if (!byEngineer.has(eng)) byEngineer.set(eng, []);
-            byEngineer.get(eng).push(act);
+            const taskKey = `${act.id || ''}:::${(act.message || '').trim()}:::${act.title || ''}`;
+            let group = byTask.find(g => g.key === taskKey);
+            if (!group) {
+                group = {
+                    key: taskKey,
+                    id: act.id,
+                    title: act.title,
+                    message: act.message,
+                    isDrawing: act.isDrawing,
+                    engineers: []
+                };
+                byTask.push(group);
+            }
+            group.engineers.push(act);
         });
 
         // Format day name in Indonesian (e.g. "Selasa", "Rabu", "Kamis")
@@ -7215,51 +7598,52 @@ function renderOverviewActivityLog() {
         }
 
         let rowsHtml = '';
-        byEngineer.forEach((actList, engName) => {
-            const firstAct = actList[0];
-            const rowSpan = actList.length;
-            const clickHandler = firstAct.id ? (firstAct.isDrawing ? `openDrawingDetails('${firstAct.id}')` : (firstAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${firstAct.id}')` : `openEJODetails('${firstAct.id}')`)) : '';
-            const deleteBtn = (firstAct.isManual && isCanManage) ? `<button class="btn-delete-log-entry" title="Hapus Entri" onclick="deleteDailyActivityLog(${firstAct.manualId}, event)"><i data-lucide="trash-2" style="width: 11px; height: 11px;"></i></button>` : '';
-
+        byTask.forEach(taskGroup => {
+            const engList = taskGroup.engineers;
+            const firstAct = engList[0];
+            const rowSpan = engList.length;
+            const firstNavHandler = firstAct.id ? `navigateToEjoFromActivity('${firstAct.id}', ${firstAct.isDrawing ? 'true' : 'false'}, event)` : '';
             const isOffStatus = /^(cuti|off|npl|izin|sakit)/i.test(firstAct.message.trim());
             const rowClass = isOffStatus ? 'recap-status-yellow' : '';
 
+            // Action buttons for all manual logs in this merged task cell
+            let actionBtnsHtml = '';
+            if (isCanManage) {
+                actionBtnsHtml = engList.filter(a => a.isManual).map(a => `
+                    <div style="display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.06); padding: 3px 6px; border-radius: 5px;">
+                        <button class="btn-edit-log-entry" title="Edit ${a.engineer}" onclick="openEditDailyActivityModal(${a.manualId}, event)"><i data-lucide="edit-3" style="width: 14px; height: 14px;"></i></button>
+                        <button class="btn-delete-log-entry" title="Hapus ${a.engineer}" onclick="deleteDailyActivityLog(${a.manualId}, event)"><i data-lucide="trash-2" style="width: 14px; height: 14px;"></i></button>
+                    </div>
+                `).join('');
+            }
+
             rowsHtml += `
                 <tr class="recap-table-row">
-                    <td class="recap-cell-name ${rowClass}" rowspan="${rowSpan}">
-                        <span class="recap-engineer-name">${engName}</span>
+                    <td class="recap-cell-name ${rowClass} ${firstNavHandler ? 'clickable-task' : ''}" ${firstNavHandler ? `onclick="${firstNavHandler}" title="Klik untuk membuka tiket EJO"` : ''}>
+                        <span class="recap-engineer-name" style="${firstNavHandler ? 'text-decoration: underline; text-decoration-color: var(--color-cyan, #06b6d4); text-underline-offset: 3px; cursor: pointer;' : ''}">${firstAct.engineer || 'Teknisi'}</span>
                     </td>
-                    <td class="recap-cell-task ${rowClass} ${clickHandler ? 'clickable-task' : ''}" ${clickHandler ? `onclick="${clickHandler}"` : ''}>
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <td class="recap-cell-task ${rowClass} ${firstNavHandler ? 'clickable-task' : ''}" rowspan="${rowSpan}" ${firstNavHandler ? `onclick="${firstNavHandler}" title="Klik untuk membuka tiket EJO"` : ''}>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
                             <div style="flex: 1;">
-                                ${firstAct.id ? `<span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${firstAct.id}</span>` : ''}
-                                <span class="recap-task-msg">${firstAct.message}</span>
-                                ${firstAct.title ? `<span style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${firstAct.title})</span>` : ''}
+                                ${firstAct.id ? `<span class="ejo-id-badge" style="font-size: 0.82rem; font-weight: 700; padding: 3px 8px; margin-right: 8px; white-space: nowrap; display: inline-block;">${firstAct.id}</span>` : ''}
+                                <span class="recap-task-msg" style="font-weight: 500;">${firstAct.message}</span>
+                                ${firstAct.title && firstAct.title !== firstAct.message ? `<span style="color: var(--text-secondary); font-size: 0.82rem; margin-left: 8px;">(${firstAct.title})</span>` : ''}
                             </div>
-                            ${deleteBtn}
+                            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                                ${actionBtnsHtml}
+                            </div>
                         </div>
                     </td>
                 </tr>
             `;
 
-            for (let i = 1; i < actList.length; i++) {
-                const subAct = actList[i];
-                const subClick = subAct.id ? (subAct.isDrawing ? `openDrawingDetails('${subAct.id}')` : (subAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${subAct.id}')` : `openEJODetails('${subAct.id}')`)) : '';
-                const subDeleteBtn = (subAct.isManual && isCanManage) ? `<button class="btn-delete-log-entry" title="Hapus Entri" onclick="deleteDailyActivityLog(${subAct.manualId}, event)"><i data-lucide="trash-2" style="width: 11px; height: 11px;"></i></button>` : '';
-                const subIsOff = /^(cuti|off|npl|izin|sakit)/i.test(subAct.message.trim());
-                const subRowClass = subIsOff ? 'recap-status-yellow' : '';
-
+            for (let i = 1; i < engList.length; i++) {
+                const subAct = engList[i];
+                const subNavHandler = subAct.id ? `navigateToEjoFromActivity('${subAct.id}', ${subAct.isDrawing ? 'true' : 'false'}, event)` : '';
                 rowsHtml += `
                     <tr class="recap-table-row">
-                        <td class="recap-cell-task ${subRowClass} ${subClick ? 'clickable-task' : ''}" ${subClick ? `onclick="${subClick}"` : ''}>
-                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                                <div style="flex: 1;">
-                                    ${subAct.id ? `<span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${subAct.id}</span>` : ''}
-                                    <span class="recap-task-msg">${subAct.message}</span>
-                                    ${subAct.title ? `<span style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${subAct.title})</span>` : ''}
-                                </div>
-                                ${subDeleteBtn}
-                            </div>
+                        <td class="recap-cell-name ${rowClass} ${subNavHandler ? 'clickable-task' : ''}" ${subNavHandler ? `onclick="${subNavHandler}" title="Klik untuk membuka tiket EJO"` : ''}>
+                            <span class="recap-engineer-name" style="${subNavHandler ? 'text-decoration: underline; text-decoration-color: var(--color-cyan, #06b6d4); text-underline-offset: 3px; cursor: pointer;' : ''}">${subAct.engineer || 'Teknisi'}</span>
                         </td>
                     </tr>
                 `;
@@ -14746,10 +15130,13 @@ function showCustomPrompt(message, defaultValue = "", title = "Input Data", show
 
 // ponytail: Helpers for custom checklist rows selection highlight
 window.toggleEngineerRowSelection = function (row) {
-    const cb = row.querySelector('.gejo-approve-eng-check');
+    const cb = row.querySelector('.gejo-approve-eng-check, .activity-eng-check');
     if (cb) {
         cb.checked = !cb.checked;
         row.classList.toggle('selected', cb.checked);
+        if (cb.classList.contains('activity-eng-check')) {
+            updateActivitySelectedCount();
+        }
         if (cb.onchange) cb.onchange();
     }
 };
@@ -14759,7 +15146,39 @@ window.syncEngineerRowSelection = function (checkbox) {
     if (row) {
         row.classList.toggle('selected', checkbox.checked);
     }
+    if (checkbox.classList.contains('activity-eng-check')) {
+        updateActivitySelectedCount();
+    }
 };
+
+function updateActivitySelectedCount() {
+    const countBadge = document.getElementById("input-activity-selected-count");
+    if (!countBadge) return;
+    const checked = document.querySelectorAll("#input-activity-engineers-list .activity-eng-check:checked").length;
+    countBadge.textContent = `${checked} dipilih`;
+    if (typeof populateActivityActiveEjosDropdown === 'function') {
+        populateActivityActiveEjosDropdown();
+    }
+}
+window.updateActivitySelectedCount = updateActivitySelectedCount;
+
+function setQuickActivityStatus(status) {
+    const textInput = document.getElementById("input-activity-text");
+    if (!textInput) return;
+    textInput.value = status;
+    textInput.focus();
+}
+window.setQuickActivityStatus = setQuickActivityStatus;
+
+function filterActivityEngineersList(query) {
+    const term = (query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll("#input-activity-engineers-list .engineer-select-row");
+    rows.forEach(row => {
+        const text = (row.textContent || '').toLowerCase();
+        row.style.display = (!term || text.includes(term)) ? "flex" : "none";
+    });
+}
+window.filterActivityEngineersList = filterActivityEngineersList;
 
 window.toggleDrawingAssigneeRowSelection = function (row) {
     const radio = row.querySelector('.drawing-assignee-radio');

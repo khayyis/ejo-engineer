@@ -17,7 +17,7 @@
     <!-- Chart.js -->
     <script src="chart.js"></script>
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="style.css?v=24.3">
+    <link rel="stylesheet" href="style.css?v=28.0">
 </head>
 
 <body>
@@ -728,28 +728,28 @@
                     <!-- Log Aktivitas Engineer (Di Bawah EJO URGENT) -->
                     <div class="overview-activity-standalone-row" id="overview-eng-activity-panel" style="margin-top: 1.5rem; width: 100%;">
                         <div class="list-card card-glass eng-activity-card">
-                            <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border);">
+                            <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border); position: relative; z-index: 2;">
                                 <div class="card-header-left" style="gap: 10px;">
-                                    <div class="card-icon-wrap card-icon-cyan" style="width: 34px; height: 34px; border-radius: 8px;">
-                                        <i data-lucide="clipboard-list" style="width: 18px; height: 18px;"></i>
+                                    <div class="card-icon-wrap card-icon-cyan" style="width: 38px; height: 38px; border-radius: 9px;">
+                                        <i data-lucide="clipboard-list" style="width: 20px; height: 20px;"></i>
                                     </div>
                                     <div>
-                                        <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); margin: 0;">
+                                        <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary); margin: 0;">
                                             Log Aktivitas Engineer
                                         </h3>
-                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap laporan tugas &amp; status personil per tanggal</p>
+                                        <p class="text-secondary text-xs" style="margin: 3px 0 0 0; font-size: 0.78rem;">Rekap laporan tugas &amp; status personil per tanggal</p>
                                     </div>
                                 </div>
-                                <div class="card-actions" style="display: flex; align-items: center; gap: 8px;">
+                                <div class="card-actions" style="display: flex; align-items: center; gap: 10px;">
                                     <!-- Date Selector for Daily Activity Log -->
                                     <div class="eng-log-date-filter-wrap" style="display: inline-flex; align-items: center; gap: 6px;">
-                                        <input type="date" id="eng-activity-date-input" class="chart-time-filter" style="padding: 4px 8px; font-size: 0.78rem; border-radius: 6px; cursor: pointer;" onchange="fetchDailyActivityLogs()">
+                                        <input type="date" id="eng-activity-date-input" class="chart-time-filter" style="padding: 5px 10px; font-size: 0.82rem; border-radius: 6px; cursor: pointer;" onchange="fetchDailyActivityLogs()">
                                     </div>
                                     <!-- Manual Add Button (Restricted to Admin & Foreman Eng) -->
-                                    <button class="btn btn-primary btn-xs" id="btn-add-daily-activity" style="display: none; padding: 5px 10px; font-size: 0.75rem; border-radius: 6px; gap: 4px;" onclick="openAddDailyActivityModal()">
-                                        <i data-lucide="plus" style="width: 12px; height: 12px;"></i> Tambah Log
+                                    <button type="button" class="btn btn-primary btn-xs" id="btn-add-daily-activity" style="display: none; padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; gap: 5px;" onclick="openAddDailyActivityModal()">
+                                        <i data-lucide="plus" style="width: 14px; height: 14px;"></i> Tambah Log
                                     </button>
-                                    <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Entri</span>
+                                    <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.76rem; font-weight: 600; padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Entri</span>
                                 </div>
                             </div>
                             <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list">
@@ -5334,19 +5334,20 @@
         </div>
     </div>
 
-    <!-- MODAL: ADD DAILY ACTIVITY LOG (MANUAL INPUT BY ADMIN & FOREMAN ENG) -->
+    <!-- MODAL: ADD / EDIT DAILY ACTIVITY LOG (MANUAL INPUT BY ADMIN & FOREMAN ENG) -->
     <div class="modal-backdrop" id="modal-daily-activity" style="display: none;">
         <div class="modal-card card-glass" style="max-width: 550px;">
             <div class="modal-header">
                 <div class="modal-title-group" style="display: flex; align-items: center; gap: 8px;">
                     <div class="card-icon-wrap card-icon-cyan" style="width: 32px; height: 32px; border-radius: 8px;">
-                        <i data-lucide="plus-circle" style="width: 18px; height: 18px;"></i>
+                        <i data-lucide="plus-circle" id="modal-activity-title-icon" style="width: 18px; height: 18px;"></i>
                     </div>
-                    <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary);">Tambah Log Aktivitas Manual</h3>
+                    <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary);" id="modal-activity-title-text">Tambah Log Aktivitas Manual</h3>
                 </div>
                 <button type="button" class="modal-close" onclick="closeAddDailyActivityModal()"><i data-lucide="x"></i></button>
             </div>
             <div class="modal-body" style="padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem;">
+                <input type="hidden" id="input-activity-edit-id" value="">
                 <div class="form-group">
                     <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Tanggal Aktivitas</label>
                     <input type="date" id="input-activity-date" class="form-control" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);">
@@ -5354,31 +5355,55 @@
                 <div class="form-group">
                     <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Kelompok Tim</label>
                     <select id="input-activity-group" class="form-control" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);" onchange="handleActivityGroupChange()">
+                        <option value="ALL">Semua Tim (EJO & Drafter)</option>
                         <option value="TIM_EJO">TIM EJO (Mekanik, Elektrik, Sipil, Repair Part, Program, Kalibrasi)</option>
                         <option value="TIM_DRAFTER">TIM DRAFTER</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Nama Engineer / Personel</label>
-                    <select id="input-activity-engineer" class="form-control" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);">
-                        <!-- Dynamically filled with ENG users -->
-                    </select>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0;">Pilih Engineer / Personel (Bisa pilih beberapa):</label>
+                        <span id="input-activity-selected-count" style="font-size: 0.72rem; color: var(--color-cyan, #06b6d4); font-weight: 600;">0 dipilih</span>
+                    </div>
+                    <div style="position: relative; margin-bottom: 6px;">
+                        <input type="text" id="input-activity-engineer-search" class="form-control" placeholder="Cari nama engineer / spesialisasi..." style="width: 100%; padding: 6px 10px 6px 30px; font-size: 0.78rem; border-radius: 6px; background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: var(--text-primary);" oninput="filterActivityEngineersList(this.value)">
+                        <i data-lucide="search" style="position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; color: var(--text-secondary); opacity: 0.6; pointer-events: none;"></i>
+                    </div>
+                    <div id="input-activity-engineers-list" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; width: 100%; box-sizing: border-box; padding-right: 4px; border: 1px solid var(--card-border); border-radius: 8px; background: rgba(255,255,255,0.02); padding: 6px;">
+                        <!-- Dynamically filled with ENG users checklist -->
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Uraian Pekerjaan / Aktivitas / Status</label>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0;">Uraian Pekerjaan / Aktivitas / Status</label>
+                        <div style="display: flex; gap: 4px;">
+                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('CUTI')">CUTI</button>
+                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('OFF')">OFF</button>
+                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('NPL')">NPL</button>
+                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('IZIN')">IZIN</button>
+                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('SAKIT')">SAKIT</button>
+                        </div>
+                    </div>
                     <textarea id="input-activity-text" rows="3" class="form-control" placeholder="Contoh: Penggantian bearing dan seal pompa selesai dikerjakan atau CUTI / OFF" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);"></textarea>
                 </div>
                 <div class="form-group">
-                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Kode EJO / Judul (Opsional)</label>
-                    <input type="text" id="input-activity-ejotitle" class="form-control" placeholder="Contoh: EJO4q18DyVl - Perbaikan Pompa Air Basah" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0;">Pilih Tiket EJO / Drawing On-Progress (Opsional):</label>
+                        <span id="input-activity-ejo-count" style="font-size: 0.72rem; color: var(--color-cyan, #06b6d4); font-weight: 600;">0 tiket aktif</span>
+                    </div>
+                    <div id="input-activity-ejo-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; width: 100%; box-sizing: border-box; padding-right: 4px; border: 1px solid var(--card-border); border-radius: 8px; background: rgba(255,255,255,0.02); padding: 6px; gap: 4px;">
+                        <!-- Dynamically filled with active on-progress EJO list cards -->
+                    </div>
                 </div>
             </div>
             <div class="modal-footer" style="padding: 1rem 1.25rem; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--card-border);">
                 <button type="button" class="btn btn-outline" onclick="closeAddDailyActivityModal()">Batal</button>
-                <button type="button" class="btn btn-primary glow-button" onclick="submitManualDailyActivity()"><i data-lucide="check" style="width: 14px; height: 14px;"></i> Simpan Log</button>
+                <button type="button" class="btn btn-primary glow-button" id="btn-submit-daily-activity" onclick="submitManualDailyActivity()"><i data-lucide="check" style="width: 14px; height: 14px;"></i> <span id="btn-submit-daily-activity-text">Simpan Log</span></button>
             </div>
         </div>
     </div>
+
+
 
     <!-- TOAST POPUP FOR ALERTS -->
     <div class="toast-container" id="toast-container"></div>
@@ -5388,7 +5413,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=41.0"></script>
+    <script src="app.js?v=60.0"></script>
 </body>
 
 </html>

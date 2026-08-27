@@ -66,6 +66,7 @@ Route::put('/settings', [EjoController::class, 'updateSettings']);
 // Daily Engineer Activity Logs (Manual Input by Admin/Foreman + Date Filter)
 Route::get('/daily-activity-logs', [EjoController::class, 'getDailyActivityLogs']);
 Route::post('/daily-activity-logs', [EjoController::class, 'createDailyActivityLog']);
+Route::put('/daily-activity-logs/{id}', [EjoController::class, 'updateDailyActivityLog']);
 Route::delete('/daily-activity-logs/{id}', [EjoController::class, 'deleteDailyActivityLog']);
 
 // Notifications

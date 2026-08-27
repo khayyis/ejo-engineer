@@ -1315,23 +1315,76 @@ class EjoController extends Controller
 
     public function createDailyActivityLog(Request $request): JsonResponse
     {
+        $engineerNameInput = $request->input('engineer_name');
+        if (is_array($engineerNameInput)) {
+            $engineerNames = array_filter(array_map('trim', $engineerNameInput));
+        } else {
+            $engineerNames = array_filter(array_map('trim', explode(',', (string)$engineerNameInput)));
+        }
+
+        if (empty($engineerNames)) {
+            return response()->json(['status' => 'error', 'message' => 'Pilih setidaknya satu engineer.'], 422);
+        }
+
+        $logDate = $request->input('log_date');
+        $groupType = $request->input('group_type');
+        $role = $request->input('role');
+        $activity = $request->input('activity');
+        $ejoId = $request->input('ejo_id');
+        $ejoTitle = $request->input('ejo_title');
+        $createdBy = $request->input('created_by');
+
+        if (empty($logDate) || empty($groupType) || empty($activity)) {
+            return response()->json(['status' => 'error', 'message' => 'Data input tidak lengkap.'], 422);
+        }
+
+        $insertedIds = [];
+        $now = now();
+        foreach ($engineerNames as $name) {
+            $id = \DB::table('daily_activity_logs')->insertGetId([
+                'log_date' => $logDate,
+                'group_type' => $groupType,
+                'engineer_name' => $name,
+                'role' => $role,
+                'activity' => $activity,
+                'ejo_id' => $ejoId,
+                'ejo_title' => $ejoTitle,
+                'created_by' => $createdBy,
+                'created_at' => $now,
+                'updated_at' => $now
+            ]);
+            $insertedIds[] = $id;
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'ids' => $insertedIds,
+            'count' => count($insertedIds),
+            'message' => 'Log aktivitas berhasil ditambahkan untuk ' . count($insertedIds) . ' engineer!'
+        ]);
+    }
+
+    public function updateDailyActivityLog(Request $request, $id): JsonResponse
+    {
         $data = $request->validate([
-            'log_date' => 'required|string',
-            'group_type' => 'required|string',
-            'engineer_name' => 'required|string',
+            'log_date' => 'sometimes|required|string',
+            'group_type' => 'sometimes|required|string',
+            'engineer_name' => 'sometimes|required|string',
             'role' => 'nullable|string',
-            'activity' => 'required|string',
+            'activity' => 'sometimes|required|string',
             'ejo_id' => 'nullable|string',
-            'ejo_title' => 'nullable|string',
-            'created_by' => 'nullable|string'
+            'ejo_title' => 'nullable|string'
         ]);
 
-        $id = \DB::table('daily_activity_logs')->insertGetId(array_merge($data, [
-            'created_at' => now(),
-            'updated_at' => now()
-        ]));
+        $updated = \DB::table('daily_activity_logs')
+            ->where('id', $id)
+            ->update(array_merge($data, ['updated_at' => now()]));
 
-        return response()->json(['status' => 'success', 'id' => $id, 'message' => 'Log aktivitas berhasil ditambahkan!']);
+        if (!$updated) {
+            return response()->json(['status' => 'error', 'message' => 'Log aktivitas tidak ditemukan atau tidak ada perubahan'], 404);
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'Log aktivitas berhasil diperbarui!']);
     }
 
     public function deleteDailyActivityLog(Request $request, $id): JsonResponse
