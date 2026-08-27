@@ -6885,14 +6885,13 @@ function isCurrentUserEngDept() {
 state.dailyActivityLogs = [];
 state.selectedDailyActivityDate = new Date().toISOString().slice(0, 10);
 
-// ponytail: check if user is Admin Eng or Foreman Eng
+// ponytail: check if user is Admin Eng, Foreman Eng, or Server
 function canManageDailyActivity() {
     if (!state.currentUser) return false;
     const role = (state.currentUser.role || '').toLowerCase();
-    const isForeman = role.includes('foreman');
-    const isAdmin = role.includes('admin') || role === 'server';
-    const isLead = role.includes('supervisor') || role.includes('manager');
-    return isForeman || isAdmin || isLead;
+    const isForeman = role === 'foreman eng' || role === 'foreman';
+    const isAdmin = role === 'admin eng' || role === 'server' || (state.currentUser.username || '').toLowerCase() === 'server';
+    return isForeman || isAdmin;
 }
 
 // Explicit global functions for Daily Activity Modal

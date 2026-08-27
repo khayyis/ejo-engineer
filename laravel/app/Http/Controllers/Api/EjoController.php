@@ -1313,8 +1313,24 @@ class EjoController extends Controller
         return response()->json(['status' => 'success', 'date' => $date, 'data' => $logs]);
     }
 
+    private function canManageDailyLogs(Request $request): bool
+    {
+        $requester = $request->header('X-Requester-Username') ?? $request->input('created_by') ?? $request->input('requester');
+        if ($requester) {
+            $user = User::where('username', $requester)->first();
+            if ($user) {
+                $role = strtolower(trim($user->role ?? ''));
+                return in_array($role, ['foreman eng', 'foreman', 'admin eng', 'server']) || strtolower($user->username) === 'server';
+            }
+        }
+        return true;
+    }
+
     public function createDailyActivityLog(Request $request): JsonResponse
     {
+        if (! $this->canManageDailyLogs($request)) {
+            return response()->json(['status' => 'error', 'message' => 'Hanya Foreman Eng dan Admin Eng yang dapat menambahkan log aktivitas.'], 403);
+        }
         $engineerNameInput = $request->input('engineer_name');
         if (is_array($engineerNameInput)) {
             $engineerNames = array_filter(array_map('trim', $engineerNameInput));
@@ -1366,6 +1382,9 @@ class EjoController extends Controller
 
     public function updateDailyActivityLog(Request $request, $id): JsonResponse
     {
+        if (! $this->canManageDailyLogs($request)) {
+            return response()->json(['status' => 'error', 'message' => 'Hanya Foreman Eng dan Admin Eng yang dapat mengubah log aktivitas.'], 403);
+        }
         $data = $request->validate([
             'log_date' => 'sometimes|required|string',
             'group_type' => 'sometimes|required|string',
@@ -1389,6 +1408,9 @@ class EjoController extends Controller
 
     public function deleteDailyActivityLog(Request $request, $id): JsonResponse
     {
+        if (! $this->canManageDailyLogs($request)) {
+            return response()->json(['status' => 'error', 'message' => 'Hanya Foreman Eng dan Admin Eng yang dapat menghapus log aktivitas.'], 403);
+        }
         \DB::table('daily_activity_logs')->where('id', $id)->delete();
         return response()->json(['status' => 'success', 'message' => 'Log aktivitas berhasil dihapus!']);
     }
