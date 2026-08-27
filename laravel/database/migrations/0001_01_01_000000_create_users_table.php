@@ -8,7 +8,6 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Custom users table for EJO Engineering
         Schema::create('users', function (Blueprint $table) {
             $table->string('username')->primary();
             $table->string('password');
@@ -18,6 +17,10 @@ return new class extends Migration
             $table->text('signature')->nullable();
             $table->boolean('show_status_prop')->default(true);
             $table->string('dept')->nullable();
+            $table->text('access_permissions')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->string('section')->nullable();
+            $table->string('totp_secret')->nullable();
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

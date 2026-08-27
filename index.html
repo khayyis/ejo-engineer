@@ -17,7 +17,7 @@
     <!-- Chart.js -->
     <script src="chart.js"></script>
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="style.css?v=9.2">
+    <link rel="stylesheet" href="style.css?v=24.3">
 </head>
 
 <body>
@@ -25,8 +25,7 @@
     <div class="login-wrapper" id="login-container">
         <!-- Background Video -->
         <video id="login-bg-video" autoplay loop muted="muted" playsinline webkit-playsinline defaultMuted
-            class="login-bg-video" src="202607301136_original.mp4">
-            <source src="202607301136_original.mp4" type="video/mp4">
+            class="login-bg-video" src="202607301136.mp4">
             <source src="202607301136.mp4" type="video/mp4">
         </video>
         <div class="login-bg-overlay"></div>
@@ -54,6 +53,11 @@
                             <i data-lucide="eye" id="pass-eye-icon" style="width: 16px; height: 16px;"></i>
                         </button>
                     </div>
+                </div>
+
+                <div class="form-field" id="login-totp-field" style="display: none;">
+                    <label for="login-totp-code" style="color: var(--color-cyan, #06b6d4); font-weight: 600;">Kode 2FA Authenticator (6-Digit) <span class="required">*</span></label>
+                    <input type="text" id="login-totp-code" placeholder="123456" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" style="letter-spacing: 4px; font-size: 1.1rem; text-align: center; font-weight: bold;">
                 </div>
 
                 <div id="login-error-msg" class="login-error-msg"
@@ -162,33 +166,6 @@
                         </div>
                     </div>
 
-                    <!-- Galeri Drawing Menu & Submenu -->
-                    <div class="nav-item-wrapper">
-                        <button class="nav-btn" data-tab="drawing-gallery" id="btn-nav-drawing-gallery">
-                            <i data-lucide="gallery-thumbnails"></i>
-                            <span>Galeri Drawing</span>
-                            <span class="drawing-gallery-chevron-toggle"
-                                style="margin-left: auto; display: flex; align-items: center; padding: 2px;">
-                                <i data-lucide="chevron-down" class="drawing-gallery-chevron"
-                                    style="width: 16px; height: 16px; transition: transform 0.2s;"></i>
-                            </span>
-                        </button>
-                        <div class="sidebar-submenu submenu" id="drawing-gallery-submenu">
-                            <button class="nav-btn sub-btn" data-tab="drawing-gallery" data-gallery-category="sipil" style="display: none !important;">
-                                <i data-lucide="building-2"></i>
-                                <span>Drawing Sipil</span>
-                            </button>
-                            <button class="nav-btn sub-btn" data-tab="drawing-gallery" data-gallery-category="mekanik" style="display: none !important;">
-                                <i data-lucide="wrench"></i>
-                                <span>Drawing Mekanik</span>
-                            </button>
-                            <button class="nav-btn sub-btn" data-tab="partlist-gallery" id="btn-nav-partlist-gallery">
-                                <i data-lucide="images"></i>
-                                <span>Galeri Spare Part</span>
-                            </button>
-                        </div>
-                    </div>
-
                     <!-- Project Menu & Submenu -->
                     <div class="nav-item-wrapper">
                         <button class="nav-btn" data-tab="projects" id="btn-nav-projects">
@@ -216,6 +193,28 @@
                             <button class="nav-btn sub-btn" data-tab="projects" data-phase="4">
                                 <i data-lucide="check-square"></i>
                                 <span>Fase 4: Commissioning & Serah Terima</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Galeri Drawing Menu -->
+                    <div class="nav-item-wrapper">
+                        <button class="nav-btn" data-tab="drawing-gallery" id="btn-nav-drawing-gallery">
+                            <i data-lucide="gallery-thumbnails"></i>
+                            <span>Galeri Drawing</span>
+                        </button>
+                        <div class="sidebar-submenu submenu" id="drawing-gallery-submenu" style="display: none !important;">
+                            <button class="nav-btn sub-btn" data-tab="drawing-gallery" data-gallery-category="sipil" style="display: none !important;">
+                                <i data-lucide="building-2"></i>
+                                <span>Drawing Sipil</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="drawing-gallery" data-gallery-category="mekanik" style="display: none !important;">
+                                <i data-lucide="wrench"></i>
+                                <span>Drawing Mekanik</span>
+                            </button>
+                            <button class="nav-btn sub-btn" data-tab="partlist-gallery" id="btn-nav-partlist-gallery" style="display: none !important;">
+                                <i data-lucide="images"></i>
+                                <span>Galeri Spare Part</span>
                             </button>
                         </div>
                     </div>
@@ -434,228 +433,259 @@
                         </div>
                     </div>
 
-                    <!-- Chart Area 1: Status & Trend (Moved above dashboard-summary-grid) -->
-                    <div class="chart-card card-glass" id="card-trend-chart" style="margin-bottom: 1.5rem;">
-                        <div class="card-header">
-                            <div class="card-header-left">
-                                <div class="card-icon-wrap card-icon-cyan">
-                                    <i data-lucide="bar-chart-3"></i>
+                    <!-- Overview Main Area Split (Left: Charts & KPI Cards, Right: Vertical Activity Log for ENG Dept) -->
+                    <div class="overview-split-layout" id="overview-split-layout">
+                        <div class="overview-main-col">
+                            <!-- Chart Area 1: Status & Trend (Moved above dashboard-summary-grid) -->
+                            <div class="chart-card card-glass" id="card-trend-chart" style="margin-bottom: 1.5rem;">
+                                <div class="card-header">
+                                    <div class="card-header-left">
+                                        <div class="card-icon-wrap card-icon-cyan">
+                                            <i data-lucide="bar-chart-3"></i>
+                                        </div>
+                                        <div>
+                                            <h3>Tren EJO <span id="tv-val-period" class="tv-period-inline">- Tahun Ini (Semua Kategori)</span></h3>
+                                        </div>
+                                    </div>
+                                    <div class="card-actions">
+                                        <!-- ponytail: Filter Kategori Kerja & Drawing trend chart -->
+                                        <select id="trend-category-filter" class="chart-time-filter" title="Filter Kategori">
+                                            <option value="all">Semua Kategori</option>
+                                            <option value="Sipil">Sipil</option>
+                                            <option value="Elektrik">Elektrik</option>
+                                            <option value="Kalibrasi">Kalibrasi</option>
+                                            <option value="Mekanik">Mekanik</option>
+                                            <option value="Program">Program</option>
+                                            <option value="Repair Part">Repair Part</option>
+                                            <option value="Drawing">Drawing</option>
+                                        </select>
+                                        <!-- ponytail: Filter rentang waktu trend chart -->
+                                        <select id="trend-time-filter" class="chart-time-filter">
+                                            <option value="week">Minggu Ini</option>
+                                            <option value="month" selected>Bulan Ini</option>
+                                            <option value="year">Tahun Ini</option>
+                                        </select>
+                                        <span class="badge badge-accent badge-live">Live Chart</span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3>Tren EJO <span id="tv-val-period" class="tv-period-inline">- Tahun Ini (Semua Kategori)</span></h3>
+                                <!-- ponytail: TradingView-style interactive real-time data tracker -->
+                                <div class="trend-tv-tracker" id="trend-tv-tracker">
+                                    <div class="tv-item tv-masuk">
+                                        <span class="tv-dot tv-dot-red"></span>
+                                        <span>Masuk:</span>
+                                        <strong id="tv-val-masuk">--</strong>
+                                    </div>
+                                    <div class="tv-item tv-selesai">
+                                        <span class="tv-dot tv-dot-green"></span>
+                                        <span>Selesai:</span>
+                                        <strong id="tv-val-selesai">--</strong>
+                                    </div>
+                                    <div class="tv-item tv-batal">
+                                        <span class="tv-dot tv-dot-darkgreen"></span>
+                                        <span>Dibatalkan:</span>
+                                        <strong id="tv-val-batal">--</strong>
+                                    </div>
+                                    <div class="tv-item tv-os">
+                                        <span class="tv-dot tv-dot-orange"></span>
+                                        <span>OS:</span>
+                                        <strong id="tv-val-os">--</strong>
+                                    </div>
+                                </div>
+                                <div class="card-body chart-container">
+                                    <canvas id="trendChart"></canvas>
                                 </div>
                             </div>
-                            <div class="card-actions">
-                                <!-- ponytail: Filter Kategori Kerja & Drawing trend chart -->
-                                <select id="trend-category-filter" class="chart-time-filter" title="Filter Kategori">
-                                    <option value="all">Semua Kategori</option>
-                                    <option value="Sipil">Sipil</option>
-                                    <option value="Elektrik">Elektrik</option>
-                                    <option value="Kalibrasi">Kalibrasi</option>
-                                    <option value="Mekanik">Mekanik</option>
-                                    <option value="Program">Program</option>
-                                    <option value="Repair Part">Repair Part</option>
-                                    <option value="Drawing">Drawing</option>
-                                </select>
-                                <!-- ponytail: Filter rentang waktu trend chart -->
-                                <select id="trend-time-filter" class="chart-time-filter">
-                                    <option value="week">Minggu Ini</option>
-                                    <option value="month">Bulan Ini</option>
-                                    <option value="year" selected>Tahun Ini</option>
-                                </select>
-                                <span class="badge badge-accent badge-live">Live Chart</span>
-                            </div>
-                        </div>
-                        <!-- ponytail: TradingView-style interactive real-time data tracker -->
-                        <div class="trend-tv-tracker" id="trend-tv-tracker">
-                            <div class="tv-item tv-masuk">
-                                <span class="tv-dot tv-dot-red"></span>
-                                <span>Masuk:</span>
-                                <strong id="tv-val-masuk">--</strong>
-                            </div>
-                            <div class="tv-item tv-selesai">
-                                <span class="tv-dot tv-dot-green"></span>
-                                <span>Selesai:</span>
-                                <strong id="tv-val-selesai">--</strong>
-                            </div>
-                            <div class="tv-item tv-batal">
-                                <span class="tv-dot tv-dot-darkgreen"></span>
-                                <span>Dibatalkan:</span>
-                                <strong id="tv-val-batal">--</strong>
-                            </div>
-                            <div class="tv-item tv-os">
-                                <span class="tv-dot tv-dot-orange"></span>
-                                <span>OS:</span>
-                                <strong id="tv-val-os">--</strong>
-                            </div>
-                        </div>
-                        <div class="card-body chart-container">
-                            <canvas id="trendChart"></canvas>
-                        </div>
-                    </div>
 
-                    <!-- Second row of KPI scorecards (General EJO & Drawing summaries) -->
-                    <div class="dashboard-summary-grid">
-                        <!-- General EJO Summary Card -->
-                        <div class="kpi-card card-glass glow-cyan dashboard-summary-card" id="overview-card-gejo"
-                            onclick="switchTab('general-ejo')">
-                            <div class="summary-card-header">
-                                <div style="display: flex; align-items: center; gap: 12px;">
-                                    <div class="kpi-icon icon-cyan">
-                                        <i data-lucide="layers"></i>
+                            <!-- Second row of KPI scorecards (General EJO & Drawing summaries) -->
+                            <div class="dashboard-summary-grid">
+                                <!-- General EJO Summary Card -->
+                                <div class="kpi-card card-glass glow-cyan dashboard-summary-card" id="overview-card-gejo"
+                                    onclick="switchTab('general-ejo')">
+                                    <div class="summary-card-header">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <div class="kpi-icon icon-cyan">
+                                                <i data-lucide="layers"></i>
+                                            </div>
+                                            <div>
+                                                <h4
+                                                    style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
+                                                    GENERAL EJO</h4>
+                                            </div>
+                                        </div>
+                                        <span class="kpi-trend text-cyan" id="overview-gejo-limit">
+                                            <i data-lucide="shield-alert"></i> Limit: -
+                                        </span>
                                     </div>
-                                    <div>
-                                        <h4
-                                            style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
-                                            GENERAL EJO</h4>
+                                    <div class="summary-card-body">
+                                        <div
+                                            style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                            <!-- Left Column: Total EJO -->
+                                            <div
+                                                style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                                <span class="total-label"
+                                                    style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
+                                                    EJO</span>
+                                                <span id="overview-gejo-active" class="kpi-value"
+                                                    style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
+                                            </div>
+                                            <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
+                                            <div id="overview-gejo-kpi-container"
+                                                style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                                <!-- KPI Target -->
+                                                <div
+                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                                    <span class="total-label"
+                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                        KPI Target
+                                                        <button class="btn" id="overview-gejo-kpi-edit-btn"
+                                                            style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                            onclick="event.stopPropagation(); openKpiEditModal('gejo', 'target');">
+                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                        </button>
+                                                    </span>
+                                                    <span id="overview-gejo-kpi-val" class="kpi-value"
+                                                        style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                                </div>
+                                                <!-- KPI Terealisasi -->
+                                                <div
+                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                                    <span class="total-label"
+                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                        KPI Terealisasi
+                                                        <button class="btn" id="overview-gejo-kpi-realisasi-edit-btn"
+                                                            style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                            onclick="event.stopPropagation(); openKpiEditModal('gejo', 'realisasi');">
+                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                        </button>
+                                                    </span>
+                                                    <span id="overview-gejo-kpi-realisasi-val" class="kpi-value"
+                                                        style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="summary-card-footer" id="overview-gejo-breakdown">
+                                        <!-- populated dynamically -->
                                     </div>
                                 </div>
-                                <span class="kpi-trend text-cyan" id="overview-gejo-limit">
-                                    <i data-lucide="shield-alert"></i> Limit: -
-                                </span>
-                            </div>
-                            <div class="summary-card-body">
-                                <div
-                                    style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
-                                    <!-- Left Column: Total EJO -->
-                                    <div
-                                        style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                                        <span class="total-label"
-                                            style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
-                                            EJO</span>
-                                        <span id="overview-gejo-active" class="kpi-value"
-                                            style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
+
+                                <!-- Drawing Summary Card -->
+                                <div class="kpi-card card-glass glow-blue dashboard-summary-card" id="overview-card-drawing"
+                                    onclick="switchTab('drawing')">
+                                    <div class="summary-card-header">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <div class="kpi-icon icon-blue">
+                                                <i data-lucide="image"></i>
+                                            </div>
+                                            <div>
+                                                <h4
+                                                    style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
+                                                    DRAWING EJO</h4>
+                                            </div>
+                                        </div>
+                                        <span class="kpi-trend text-blue" id="overview-drawing-limit">
+                                            <i data-lucide="shield-alert"></i> Limit: -
+                                        </span>
                                     </div>
-                                    <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
-                                    <div id="overview-gejo-kpi-container"
-                                        style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-                                        <!-- KPI Target -->
+                                    <div class="summary-card-body">
                                         <div
-                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label"
-                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                KPI Target
-                                                <button class="btn" id="overview-gejo-kpi-edit-btn"
-                                                    style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                    onclick="event.stopPropagation(); openKpiEditModal('gejo', 'target');">
-                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                </button>
-                                            </span>
-                                            <span id="overview-gejo-kpi-val" class="kpi-value"
-                                                style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                            style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                            <!-- Left Column: Total Drawing -->
+                                            <div
+                                                style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                                <span class="total-label"
+                                                    style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
+                                                    Drawing</span>
+                                                <span id="overview-drawing-active" class="kpi-value"
+                                                    style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
+                                            </div>
+                                            <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
+                                            <div id="overview-drawing-kpi-container"
+                                                style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                                <!-- KPI Target -->
+                                                <div
+                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                                    <span class="total-label"
+                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                        KPI Target
+                                                        <button class="btn" id="overview-drawing-kpi-edit-btn"
+                                                            style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                            onclick="event.stopPropagation(); openKpiEditModal('drawing', 'target');">
+                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                        </button>
+                                                    </span>
+                                                    <span id="overview-drawing-kpi-val" class="kpi-value"
+                                                        style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                                </div>
+                                                <!-- KPI Terealisasi -->
+                                                <div
+                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                                    <span class="total-label"
+                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                        KPI Terealisasi
+                                                        <button class="btn" id="overview-drawing-kpi-realisasi-edit-btn"
+                                                            style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                            onclick="event.stopPropagation(); openKpiEditModal('drawing', 'realisasi');">
+                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                        </button>
+                                                    </span>
+                                                    <span id="overview-drawing-kpi-realisasi-val" class="kpi-value"
+                                                        style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <!-- KPI Terealisasi -->
-                                        <div
-                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label"
-                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                KPI Terealisasi
-                                                <button class="btn" id="overview-gejo-kpi-realisasi-edit-btn"
-                                                    style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                    onclick="event.stopPropagation(); openKpiEditModal('gejo', 'realisasi');">
-                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                </button>
-                                            </span>
-                                            <span id="overview-gejo-kpi-realisasi-val" class="kpi-value"
-                                                style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
-                                        </div>
+                                    </div>
+                                    <div class="summary-card-footer" id="overview-drawing-breakdown">
+                                        <!-- populated dynamically -->
                                     </div>
                                 </div>
                             </div>
-                            <div class="summary-card-footer" id="overview-gejo-breakdown">
-                                <!-- populated dynamically -->
+
+                            <!-- Layout: Analytics & Alerts Grid (Status Proportion) -->
+                            <div class="analytics-layout-grid" id="overview-charts-grid" style="grid-template-columns: 1fr; margin-bottom: 0;">
+                                <!-- Chart Area 2: Status Distribution -->
+                                <div class="chart-card card-glass" id="card-status-prop">
+                                    <div class="card-header">
+                                        <div class="card-header-left">
+                                            <div class="card-icon-wrap card-icon-purple">
+                                                <i data-lucide="pie-chart"></i>
+                                            </div>
+                                            <div>
+                                                <h3>Proporsi Status EJO</h3>
+                                                <p class="text-secondary text-xs">Distribusi penanganan order saat ini.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card-body chart-container doughnut-wrap">
+                                        <canvas id="statusChart"></canvas>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Drawing Summary Card -->
-                        <div class="kpi-card card-glass glow-blue dashboard-summary-card" id="overview-card-drawing"
-                            onclick="switchTab('drawing')">
-                            <div class="summary-card-header">
-                                <div style="display: flex; align-items: center; gap: 12px;">
-                                    <div class="kpi-icon icon-blue">
-                                        <i data-lucide="image"></i>
-                                    </div>
-                                    <div>
-                                        <h4
-                                            style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
-                                            DRAWING EJO</h4>
-                                    </div>
-                                </div>
-                                <span class="kpi-trend text-blue" id="overview-drawing-limit">
-                                    <i data-lucide="shield-alert"></i> Limit: -
-                                </span>
-                            </div>
-                            <div class="summary-card-body">
-                                <div
-                                    style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
-                                    <!-- Left Column: Total Drawing -->
-                                    <div
-                                        style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                                        <span class="total-label"
-                                            style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
-                                            Drawing</span>
-                                        <span id="overview-drawing-active" class="kpi-value"
-                                            style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
-                                    </div>
-                                    <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
-                                    <div id="overview-drawing-kpi-container"
-                                        style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-                                        <!-- KPI Target -->
-                                        <div
-                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label"
-                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                KPI Target
-                                                <button class="btn" id="overview-drawing-kpi-edit-btn"
-                                                    style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                    onclick="event.stopPropagation(); openKpiEditModal('drawing', 'target');">
-                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                </button>
-                                            </span>
-                                            <span id="overview-drawing-kpi-val" class="kpi-value"
-                                                style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                        <!-- Right Column: Dedicated Vertical Activity Log for ENG Dept -->
+                        <div class="overview-activity-col" id="overview-eng-activity-panel">
+                            <div class="list-card card-glass eng-activity-card">
+                                <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border);">
+                                    <div class="card-header-left" style="gap: 10px;">
+                                        <div class="card-icon-wrap card-icon-cyan" style="width: 34px; height: 34px; border-radius: 8px;">
+                                            <i data-lucide="activity" style="width: 18px; height: 18px;"></i>
                                         </div>
-                                        <!-- KPI Terealisasi -->
-                                        <div
-                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                            <span class="total-label"
-                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                KPI Terealisasi
-                                                <button class="btn" id="overview-drawing-kpi-realisasi-edit-btn"
-                                                    style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                    onclick="event.stopPropagation(); openKpiEditModal('drawing', 'realisasi');">
-                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                </button>
-                                            </span>
-                                            <span id="overview-drawing-kpi-realisasi-val" class="kpi-value"
-                                                style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                        <div>
+                                            <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                                Log Aktivitas Engineer
+                                                <span class="badge badge-accent badge-live" style="font-size: 0.65rem; padding: 2px 6px;">Live</span>
+                                            </h3>
+                                            <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap interaksi & pembaruan teknisi realtime</p>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                            <div class="summary-card-footer" id="overview-drawing-breakdown">
-                                <!-- populated dynamically -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Layout: Analytics & Alerts Grid -->
-                    <div class="analytics-layout-grid" id="overview-charts-grid" style="grid-template-columns: 1fr;">
-                        <!-- Chart Area 2: Status Distribution -->
-                        <div class="chart-card card-glass" id="card-status-prop">
-                            <div class="card-header">
-                                <div class="card-header-left">
-                                    <div class="card-icon-wrap card-icon-purple">
-                                        <i data-lucide="pie-chart"></i>
-                                    </div>
-                                    <div>
-                                        <h3>Proporsi Status EJO</h3>
-                                        <p class="text-secondary text-xs">Distribusi penanganan order saat ini.</p>
+                                    <div class="card-actions">
+                                        <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Log</span>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="card-body chart-container doughnut-wrap">
-                                <canvas id="statusChart"></canvas>
+                                <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list">
+                                    <!-- Dynamic chat-like feed of engineer activities -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -740,7 +770,7 @@
                         </div>
 
                         <div class="filters-wrapper">
-                            <div class="filter-group">
+                            <div class="filter-group" style="display: none;">
                                 <label for="gejo-filter-status">Status</label>
                                 <select id="gejo-filter-status">
                                     <option value="all">Semua Status</option>
@@ -777,6 +807,7 @@
                                     <option value="QC">QC (Quality Control)</option>
                                     <option value="WRH">WRH (Warehouse)</option>
                                     <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                 </select>
                             </div>
 
@@ -872,7 +903,7 @@
                                 <div class="form-field">
                                     <label for="gejo-form-priority">Prioritas <span class="required">*</span></label>
                                     <select id="gejo-form-priority" required>
-                                        <option value="1">1 - High (Urgent / Line Stop / Bahaya HSE)</option>
+                                        <option value="1">1 - High (Urgent / Line Stop / Bahaya HSE / PEST)</option>
                                         <option value="2">2 - Medium (Normal Kerja)</option>
                                         <option value="3" selected>3 - Rutin (Rutin / Tidak Mendesak)</option>
                                     </select>
@@ -891,7 +922,7 @@
                                 </div>
                                 <div class="form-field">
                                     <label for="gejo-form-target-date">Target Selesai <span
-                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
+                                            style="font-size: 0.75rem; color: var(--color-amber, #f59e0b); font-weight: 500;">(Menyesuaikan Jadwal Engineer)</span></label>
                                     <input type="date" id="gejo-form-target-date">
                                 </div>
                                 <div class="form-field">
@@ -911,6 +942,7 @@
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
                                         <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                     </select>
                                 </div>
 
@@ -1003,7 +1035,7 @@
                             <div class="gejo-outstanding-columns">
                                 <!-- Column 1: Fase 1 (Schedule) -->
                                 <div class="project-column card-glass" id="gejo-col-fase1">
-                                    <div class="column-header ch-fase1">
+                                    <div class="column-header ch-fase1" onclick="navigateToGeneralEjoPhase(1)" title="Klik untuk Buka Submenu Schedule">
                                         <!-- ponytail: show only Schedule/On Progress/Done names in headers, removing Fase prefix and extra details -->
                                         <h4>Schedule</h4>
                                         <span class="col-count" id="gejo-count-fase1">0</span>
@@ -1015,7 +1047,7 @@
 
                                 <!-- Column 2: Fase 2 (On Progress) -->
                                 <div class="project-column card-glass" id="gejo-col-fase2">
-                                    <div class="column-header ch-fase2">
+                                    <div class="column-header ch-fase2" onclick="navigateToGeneralEjoPhase(2)" title="Klik untuk Buka Submenu On Progress">
                                         <!-- ponytail: show only Schedule/On Progress/Done names in headers, removing Fase prefix and extra details -->
                                         <h4>On Progress</h4>
                                         <span class="col-count" id="gejo-count-fase2">0</span>
@@ -1029,7 +1061,7 @@
 
                         <!-- Column 3: Fase 3 (Done) -->
                         <div class="project-column card-glass" id="gejo-col-fase3">
-                            <div class="column-header ch-fase3">
+                            <div class="column-header ch-fase3" onclick="navigateToGeneralEjoPhase(3)" title="Klik untuk Buka Submenu Done">
                                 <!-- ponytail: show only Schedule/On Progress/Done names in headers, removing Fase prefix and extra details -->
                                 <h4>Done</h4>
                                 <span class="col-count" id="gejo-count-fase3">0</span>
@@ -1041,7 +1073,7 @@
 
                         <!-- Column 4: Archive (Cancelled & Completed) -->
                         <div class="project-column card-glass" id="gejo-col-fase4" style="display: none;">
-                            <div class="column-header ch-archive">
+                            <div class="column-header ch-archive" onclick="navigateToGeneralEjoPhase(4)" title="Klik untuk Buka Submenu Archive">
                                 <h4>Archive</h4>
                                 <span class="col-count" id="gejo-count-fase4">0</span>
                             </div>
@@ -1148,6 +1180,7 @@
                                     <option value="QC">QC (Quality Control)</option>
                                     <option value="WRH">WRH (Warehouse)</option>
                                     <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                 </select>
                             </div>
 
@@ -1217,14 +1250,14 @@
                                 <div class="form-field">
                                     <label for="drawing-form-priority">Prioritas <span class="required">*</span></label>
                                     <select id="drawing-form-priority" required>
-                                        <option value="1">1 - High (Urgent / Line Stop / Bahaya HSE)</option>
+                                        <option value="1">1 - High (Urgent / Line Stop / Bahaya HSE / PEST)</option>
                                         <option value="2">2 - Medium (Normal Kerja)</option>
                                         <option value="3" selected>3 - Rutin (Rutin / Tidak Mendesak)</option>
                                     </select>
                                 </div>
                                 <div class="form-field">
                                     <label for="drawing-form-target-date">Target Selesai <span
-                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
+                                            style="font-size: 0.75rem; color: var(--color-amber, #f59e0b); font-weight: 500;">(Menyesuaikan Jadwal Engineer)</span></label>
                                     <input type="date" id="drawing-form-target-date">
                                 </div>
                                 <div class="form-field full-width" id="drawing-urgent-reason-display"
@@ -1256,6 +1289,7 @@
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
                                         <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                     </select>
                                 </div>
 
@@ -1314,7 +1348,7 @@
                             <div class="gejo-outstanding-columns">
                                 <!-- Column 1: Schedule -->
                                 <div class="project-column card-glass" id="drawing-col-phase1">
-                                    <div class="column-header ch-fase1">
+                                    <div class="column-header ch-fase1" onclick="navigateToDrawingPhase(1)" title="Klik untuk Buka Submenu Schedule">
                                         <h4>Schedule</h4>
                                         <span class="col-count" id="drawing-count-phase1">0</span>
                                     </div>
@@ -1325,7 +1359,7 @@
 
                                 <!-- Column 2: On Progress -->
                                 <div class="project-column card-glass" id="drawing-col-phase2">
-                                    <div class="column-header ch-fase2">
+                                    <div class="column-header ch-fase2" onclick="navigateToDrawingPhase(2)" title="Klik untuk Buka Submenu On Progress">
                                         <h4>On Progress</h4>
                                         <span class="col-count" id="drawing-count-phase2">0</span>
                                     </div>
@@ -1338,7 +1372,7 @@
 
                         <!-- Column 3: Done -->
                         <div class="project-column card-glass" id="drawing-col-phase3">
-                            <div class="column-header ch-fase3">
+                            <div class="column-header ch-fase3" onclick="navigateToDrawingPhase(3)" title="Klik untuk Buka Submenu Done">
                                 <h4>Done</h4>
                                 <span class="col-count" id="drawing-count-phase3">0</span>
                             </div>
@@ -1349,7 +1383,7 @@
 
                         <!-- Column 4: Archive (Cancelled, Completed, Archived, Rejected) -->
                         <div class="project-column card-glass" id="drawing-col-phase4" style="display: none;">
-                            <div class="column-header ch-archive">
+                            <div class="column-header ch-archive" onclick="navigateToDrawingPhase(4)" title="Klik untuk Buka Submenu Archive">
                                 <h4>Archive</h4>
                                 <span class="col-count" id="drawing-count-phase4">0</span>
                             </div>
@@ -1368,7 +1402,7 @@
                                     <th>ID Drawing</th>
                                     <th>Judul Drawing</th>
                                     <th>Kategori</th>
-                                    <th>Uploader</th>
+                                    <th>Pemohon</th>
                                     <th>Tanggal Upload</th>
                                     <th>Status</th>
                                     <th style="text-align: right;">Aksi</th>
@@ -1446,6 +1480,14 @@
                                     <input type="text" id="proj-title"
                                         placeholder="Contoh: Otomatisasi Sistem CIP (Clean In Place) Line 2" required>
                                 </div>
+                                <div class="form-field">
+                                    <label for="proj-no-io">No IO <span class="required">*</span></label>
+                                    <input type="text" id="proj-no-io" placeholder="Contoh: IO-2026-089" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="proj-no-moc">No MOC <span class="required">*</span></label>
+                                    <input type="text" id="proj-no-moc" placeholder="Contoh: MOC-2026-012" required>
+                                </div>
                                 <div class="form-field full-width">
                                     <label for="proj-dept">Departemen Pemilik <span class="required">*</span></label>
                                     <select id="proj-dept" required>
@@ -1456,17 +1498,19 @@
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
                                         <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                     </select>
                                 </div>
                                 <div class="form-field full-width">
-                                    <label for="proj-drawing-select">Ambil Dari Drawing EJO Selesai <span
-                                            class="text-secondary"
-                                            style="font-weight: normal; font-size: 0.75rem;">(Approved All s/d Factory
-                                            Manager)</span></label>
-                                    <select id="proj-drawing-select">
-                                        <option value="">-- Pilih Drawing EJO yang Selesai --</option>
-                                    </select>
+                                    <label for="proj-form-drawing-search">Autodetect Galeri Drawing <span
+                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Cari Drawing Sipil, Mekanik, atau Spare Part dari Galeri)</span></label>
+                                    <input type="text" id="proj-form-drawing-search" list="proj-drawing-datalist"
+                                        placeholder="Ketik Judul Drawing, ID Drawing, Kategori, atau Nama Part...">
+                                    <datalist id="proj-drawing-datalist"></datalist>
+                                    <span id="proj-drawing-status-info"
+                                        style="font-size: 0.75rem; color: var(--color-cyan); margin-top: 4px; display: none;"></span>
                                 </div>
+                                <input type="hidden" id="proj-drawing-select" value="">
                                 <div class="form-field" style="display: none;">
                                     <label for="proj-budget">Anggaran Rencana (CapEx - Rp) <span
                                             class="required">*</span></label>
@@ -1500,7 +1544,7 @@
 
                         <!-- Column 1: Fase 1 -->
                         <div class="project-column card-glass" id="col-fase1">
-                            <div class="column-header ch-fase1">
+                            <div class="column-header ch-fase1" onclick="navigateToProjectPhase(1)" title="Klik untuk Buka Submenu Fase 1: Inisialisasi">
                                 <span class="phase-number">Fase 1</span>
                                 <h4>Inisialisasi Ide</h4>
                                 <span class="col-count" id="count-fase1">0</span>
@@ -1512,7 +1556,7 @@
 
                         <!-- Column 2: Fase 2 -->
                         <div class="project-column card-glass" id="col-fase2">
-                            <div class="column-header ch-fase2">
+                            <div class="column-header ch-fase2" onclick="navigateToProjectPhase(2)" title="Klik untuk Buka Submenu Fase 2: Pengadaan">
                                 <span class="phase-number">Fase 2</span>
                                 <h4>Pengadaan Barang</h4>
                                 <span class="col-count" id="count-fase2">0</span>
@@ -1524,7 +1568,7 @@
 
                         <!-- Column 3: Fase 3 -->
                         <div class="project-column card-glass" id="col-fase3">
-                            <div class="column-header ch-fase3">
+                            <div class="column-header ch-fase3" onclick="navigateToProjectPhase(3)" title="Klik untuk Buka Submenu Fase 3: Eksekusi">
                                 <span class="phase-number">Fase 3</span>
                                 <h4>Eksekusi Project</h4>
                                 <span class="col-count" id="count-fase3">0</span>
@@ -1536,7 +1580,7 @@
 
                         <!-- Column 4: Fase 4 (Commissioning & Serah Terima) -->
                         <div class="project-column card-glass" id="col-fase4">
-                            <div class="column-header ch-fase4" style="border-top-color: #10b981;">
+                            <div class="column-header ch-fase4" style="border-top-color: #10b981;" onclick="navigateToProjectPhase(4)" title="Klik untuk Buka Submenu Fase 4: Commissioning & Serah Terima">
                                 <span class="phase-number"
                                     style="background: rgba(16, 185, 129, 0.15); color: #10b981;">Fase 4</span>
                                 <h4>Commissioning & Serah Terima</h4>
@@ -1549,7 +1593,7 @@
 
                         <!-- Column 5: Arsip Project -->
                         <div class="project-column card-glass" id="col-fase5" style="display: none;">
-                            <div class="column-header ch-fase5" style="border-top-color: var(--color-cyan);">
+                            <div class="column-header ch-fase5" style="border-top-color: var(--color-cyan);" onclick="navigateToProjectPhase('archive')" title="Klik untuk Buka Submenu Arsip Project">
                                 <span class="phase-number"
                                     style="background: rgba(6, 182, 212, 0.15); color: var(--color-cyan);">Arsip</span>
                                 <h4>Arsip Project</h4>
@@ -1602,6 +1646,7 @@
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
                                         <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                     </select>
                                 </div>
                                 <div class="form-field">
@@ -1611,7 +1656,7 @@
                                 <div class="form-field">
                                     <label for="part-ejo-priority">Prioritas <span class="required">*</span></label>
                                     <select id="part-ejo-priority" required>
-                                        <option value="1">1 - High (Urgent / Line Stop / Bahaya HSE)</option>
+                                        <option value="1">1 - High (Urgent / Line Stop / Bahaya HSE / PEST)</option>
                                         <option value="2">2 - Medium (Normal Kerja)</option>
                                         <option value="3" selected>3 - Rutin (Rutin / Tidak Mendesak)</option>
                                     </select>
@@ -1636,7 +1681,7 @@
                                 </div>
                                 <div class="form-field">
                                     <label for="part-ejo-repair-date">Target Selesai Perbaikan <span
-                                            style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span></label>
+                                            style="font-size: 0.75rem; color: var(--color-amber, #f59e0b); font-weight: 500;">(Menyesuaikan Jadwal Engineer)</span></label>
                                     <input type="date" id="part-ejo-repair-date">
                                 </div>
                                 <div class="form-field">
@@ -1901,6 +1946,7 @@
                                     <option value="QC">QC (Quality Control)</option>
                                     <option value="WRH">WRH (Warehouse)</option>
                                     <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                 </select>
                             </div>
                             <div class="search-wrapper" style="min-width: 260px;">
@@ -2042,9 +2088,14 @@
                             <p class="text-secondary text-xs" style="margin-top:2px;">Daftarkan, kelola, dan perbarui
                                 kredensial login teknisi serta admin pabrik PT. BAS.</p>
                         </div>
-                        <button class="btn btn-primary" id="btn-toggle-new-user">
-                            <i data-lucide="plus-circle"></i> Daftarkan User
-                        </button>
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <button class="btn btn-outline" id="btn-seed-based-accounts" style="display: none; gap: 8px; color: var(--color-cyan); border-color: rgba(6, 182, 212, 0.4);">
+                                <i data-lucide="user-check"></i> Auto-Generate Based Accounts
+                            </button>
+                            <button class="btn btn-primary" id="btn-toggle-new-user">
+                                <i data-lucide="plus-circle"></i> Daftarkan User
+                            </button>
+                        </div>
                     </div>
 
                     <!-- ponytail: Server Database Management (Modular Reset & Nuclear Option) -->
@@ -2231,6 +2282,25 @@
                             </div>
                         </div>
 
+                        <!-- Reset All Module Data (Keep User Accounts) -->
+                        <div
+                            style="margin-top: 0.25rem; padding: 1rem 1.25rem; background: rgba(245, 158, 11, 0.08); border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div
+                                    style="width: 38px; height: 38px; border-radius: 10px; background: #f59e0b; color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);">
+                                    <i data-lucide="layers" style="width: 20px; height: 20px;"></i>
+                                </div>
+                                <div>
+                                    <h4 style="font-size: 0.95rem; font-weight: 700; color: #f59e0b; margin: 0;">Hapus Seluruh Data Modul (Kecuali Akun Personel)</h4>
+                                    <p class="text-secondary text-xs" style="margin: 2px 0 0 0;">Hapus seluruh data tiket General EJO, Drawing, Project, Galeri, Dashboard Spare Part, &amp; History sekaligus tanpa menghapus akun pengguna.</p>
+                                </div>
+                            </div>
+                            <button class="btn" id="btn-reset-all-modules"
+                                style="gap: 8px; background: #f59e0b; color: white; display: flex; align-items: center; padding: 0.6rem 1.25rem; font-size: 0.85rem; font-weight: 600; border-radius: 10px; border: none; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);">
+                                <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> Hapus Semua Data (Keep Akun)
+                            </button>
+                        </div>
+
                         <!-- Danger Zone: Nuclear Option -->
                         <div
                             style="margin-top: 0.25rem; padding: 1rem 1.25rem; background: rgba(244, 63, 94, 0.08); border: 1px dashed rgba(244, 63, 94, 0.4); border-radius: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
@@ -2262,7 +2332,7 @@
                             <p class="text-secondary text-xs" style="margin-top:2px;">Ekspor seluruh riwayat Job Order
                                 ke file Excel atau impor dari file template Excel PT. BAS.</p>
                         </div>
-                        <div style="display: flex; gap: 10px; align-items: center;">
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                             <!-- ponytail: Temporarily hide Excel export button per user request -->
                             <button class="btn btn-outline" id="btn-excel-export" style="gap: 8px; display: none;">
                                 <i data-lucide="download" style="width: 16px; height: 16px;"></i> Export Excel
@@ -2271,7 +2341,13 @@
                                 <i data-lucide="upload" style="width: 16px; height: 16px;"></i> Import EJO Excel
                             </button>
                             <input type="file" id="excel-import-input" accept=".xlsx, .xls, .csv"
-                                style="display: none;">
+                                onchange="importFromExcel(event)" style="display: none;">
+                            <button class="btn btn-outline" id="btn-excel-import-drawing"
+                                style="gap: 8px; color: var(--color-purple); border-color: rgba(168, 85, 247, 0.4);">
+                                <i data-lucide="file-image" style="width: 16px; height: 16px;"></i> Import Drawing EJO
+                            </button>
+                            <input type="file" id="excel-import-drawing-input" accept=".xlsx, .xls, .csv"
+                                onchange="importDrawingFromExcel(event)" style="display: none;">
                             <button class="btn btn-outline" id="btn-wsp-admin-import"
                                 style="gap: 8px; color: var(--color-cyan); border-color: rgba(6, 182, 212, 0.4);">
                                 <i data-lucide="file-spreadsheet" style="width: 16px; height: 16px;"></i> Import WSP
@@ -2338,6 +2414,10 @@
                                     <input type="text" id="usr-fullname" placeholder="Contoh: Ahmad Dani" required>
                                 </div>
                                 <div class="form-field">
+                                    <label for="usr-section">Bagian / Sub-Divisi</label>
+                                    <input type="text" id="usr-section" placeholder="Contoh: PRD Proses, WWTP, Sipil 1, PM Retail">
+                                </div>
+                                <div class="form-field">
                                     <label for="usr-dept">Departemen Personel <span class="required">*</span></label>
                                     <select id="usr-dept" required>
                                         <option value="" disabled selected>Pilih Departemen</option>
@@ -2348,6 +2428,7 @@
                                         <option value="QC">QC (Quality Control)</option>
                                         <option value="WRH">WRH (Warehouse)</option>
                                         <option value="TMB">TMB (Timbangan)</option>
+                                    <option value="EUT">EUT (Engineer Utility)</option>
                                     </select>
                                 </div>
                                 <div class="form-field">
@@ -2381,6 +2462,7 @@
                                     <th>Avatar</th>
                                     <th>Username</th>
                                     <th>Nama Lengkap</th>
+                                    <th>Bagian / Sub-Divisi</th>
                                     <th>Departemen</th>
                                     <th>Role / Jabatan</th>
                                     <th>Kredensial</th>
@@ -2529,6 +2611,7 @@
                                     <option value="QC">QC</option>
                                     <option value="WRH">WRH</option>
                                     <option value="TMB">TMB</option>
+                                    <option value="EUT">EUT</option>
                                 </select>
                                 <select id="server-access-filter-status"
                                     style="padding: 8px 12px; border-radius: 8px; border: 1px solid var(--card-border); background: var(--bg-surface); color: var(--text-primary); font-size: 0.85rem; height: 36px;">
@@ -3045,6 +3128,8 @@
             <div class="modal-header">
                 <div class="ejo-header-badge" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span id="modal-project-id" class="badge-ejo-code">PRJ-XXX</span>
+                    <span id="modal-project-io-badge" style="display: none;"></span>
+                    <span id="modal-project-moc-badge" style="display: none;"></span>
                     <span id="modal-project-drawing-badge" style="display: none;"></span>
                 </div>
                 <button class="modal-close" id="modal-project-close-btn">&times;</button>
@@ -3696,7 +3781,7 @@
                     Alasan Urgent <span class="required">*</span>
                 </label>
                 <textarea id="urgent-reason-input"
-                    placeholder="Contoh: Line Stop pada Line 2, Bahaya K3/HSE, atau potensi kerusakan berat..."
+                    placeholder="Contoh: Line Stop pada Line 2, Bahaya K3/HSE/PEST, atau potensi kerusakan berat..."
                     style="width: 100%; padding: 0.65rem 0.75rem; font-size: 0.88rem; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); background: var(--bg-main); color: var(--text-primary); font-family: inherit; resize: vertical; box-sizing: border-box;"
                     rows="3"></textarea>
                 <span id="urgent-reason-error"
@@ -3827,12 +3912,96 @@
                 </div>
             </div>
 
+            <!-- ponytail: Live Automated Procurement Distribution Summary -->
+            <div id="procurement-progress-summary"
+                style="width: 100%; padding: 10px 12px; background: var(--bg-primary); border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); box-sizing: border-box;">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 0.8rem;">
+                    <span style="color: var(--text-secondary); display: flex; align-items: center; gap: 5px;">
+                        <i data-lucide="sparkles" style="width: 13px; height: 13px; color: var(--color-cyan);"></i> Total Distribusi:
+                    </span>
+                    <span id="procurement-total-badge"
+                        style="font-weight: 700; color: var(--color-green); font-size: 0.88rem;">100%</span>
+                </div>
+                <div
+                    style="width: 100%; height: 8px; background: rgba(255, 255, 255, 0.08); border-radius: 4px; overflow: hidden; display: flex;">
+                    <div id="procurement-bar-pr"
+                        style="height: 100%; background: var(--color-cyan); width: 0%; transition: width 0.25s ease;"
+                        title="PR"></div>
+                    <div id="procurement-bar-po"
+                        style="height: 100%; background: #f59e0b; width: 0%; transition: width 0.25s ease;"
+                        title="PO"></div>
+                    <div id="procurement-bar-gr"
+                        style="height: 100%; background: var(--color-green); width: 0%; transition: width 0.25s ease;"
+                        title="GR"></div>
+                </div>
+            </div>
+
             <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.5rem;">
                 <button class="btn btn-outline full-width" id="procurement-btn-cancel"
                     style="padding: 0.6rem;">Batal</button>
                 <button class="btn btn-primary full-width" id="procurement-btn-ok"
                     style="padding: 0.6rem; font-weight: 600; background: var(--color-green); border-color: var(--color-green);">Simpan
                     Progress</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ponytail: Custom PR Formula Info Modal -->
+    <div id="pr-calculator-modal" class="modal-backdrop"
+        style="display: none; justify-content: center; align-items: center; z-index: 11500; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px);">
+        <div class="card-glass animate-in"
+            style="width: 90%; max-width: 440px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; text-align: left; box-shadow: var(--shadow-lg);">
+            <div style="display: flex; gap: 0.75rem; align-items: center; width: 100%;">
+                <div
+                    style="background: rgba(0, 242, 254, 0.12); color: var(--color-cyan); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <i data-lucide="info" style="width: 20px; height: 20px;"></i>
+                </div>
+                <div>
+                    <h4 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-primary);"
+                        id="pr-calc-modal-title">Rumus Perhitungan Progress PR</h4>
+                    <p style="margin: 2px 0 0 0; font-size: 0.75rem; color: var(--text-muted);">
+                        Definisi & Formula Standar Pengadaan
+                    </p>
+                </div>
+            </div>
+
+            <!-- Formula display banner -->
+            <div
+                style="width: 100%; padding: 12px 14px; background: rgba(0, 242, 254, 0.08); border: 1px dashed rgba(0, 242, 254, 0.4); border-radius: var(--border-radius-sm); box-sizing: border-box;">
+                <div style="font-size: 0.8rem; font-weight: 700; color: var(--color-cyan); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                    <i data-lucide="calculator" style="width: 13px; height: 13px;"></i> Rumus Otomatis Progress PR:
+                </div>
+                <div style="font-size: 0.92rem; color: var(--text-primary); font-weight: 700; line-height: 1.4;">
+                    Progress PR (%) = <span style="color: var(--color-cyan);">(Total PR + Total Ready Stock WS/WSP)</span> ÷ <span style="color: #f59e0b;">Total All Material</span> × 100%
+                </div>
+            </div>
+
+            <!-- Component description breakdown -->
+            <div
+                style="width: 100%; display: flex; flex-direction: column; gap: 0.65rem; font-size: 0.82rem; color: var(--text-secondary); background: var(--bg-primary); padding: 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--card-border); box-sizing: border-box;">
+                <div style="display: flex; align-items: flex-start; gap: 6px;">
+                    <i data-lucide="check-circle-2"
+                        style="width: 14px; height: 14px; color: var(--color-cyan); flex-shrink: 0; margin-top: 2px;"></i>
+                    <span><strong style="color: var(--color-cyan);">Total PR</strong>: Jumlah item material yang telah diterbitkan nomor Purchase Requisition.</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 6px;">
+                    <i data-lucide="check-circle-2"
+                        style="width: 14px; height: 14px; color: #38bdf8; flex-shrink: 0; margin-top: 2px;"></i>
+                    <span><strong style="color: #38bdf8;">Total Ready Stock WS/WSP</strong>: Jumlah material yang sudah tersedia di Workshop / Gudang WS & WSP.</span>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 6px;">
+                    <i data-lucide="check-circle-2"
+                        style="width: 14px; height: 14px; color: #f59e0b; flex-shrink: 0; margin-top: 2px;"></i>
+                    <span><strong style="color: #f59e0b;">Total All Material</strong>: Keseluruhan total kebutuhan item material pada proyek.</span>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; width: 100%; margin-top: 0.25rem;">
+                <button class="btn btn-primary full-width" id="pr-calc-btn-cancel"
+                    style="padding: 0.65rem; font-weight: 600; background: var(--color-cyan); border-color: var(--color-cyan); color: #000;">
+                    Tutup Informasi
+                </button>
             </div>
         </div>
     </div>
@@ -4504,34 +4673,38 @@
 
     <!-- MODAL PILIH SHEET EXCEL -->
     <div class="modal-backdrop" id="excel-sheet-modal">
-        <div class="modal-card card-glass animate-in excel-sheet-modal-card">
+        <div class="modal-card card-glass animate-in excel-sheet-modal-card" style="max-width: 520px;">
             <div class="modal-header excel-sheet-modal-header">
                 <div>
                     <h3 class="excel-sheet-modal-title">Pilih Sheet Excel</h3>
-                    <p class="excel-sheet-modal-subtitle">File ini memiliki beberapa sheet. Pilih sheet EJO yang ingin
-                        diimpor.</p>
+                    <p class="excel-sheet-modal-subtitle">File ini memiliki banyak sheet. Pilih satu atau beberapa sheet EJO untuk diimpor sekaligus.</p>
                 </div>
                 <button class="modal-close" id="excel-sheet-close-btn" type="button"
                     aria-label="Tutup modal">&times;</button>
             </div>
             <div class="modal-body excel-sheet-modal-body">
                 <div class="excel-sheet-picker">
-                    <div class="excel-sheet-picker-head">
-                        <label for="excel-sheet-select">Daftar Sheet</label>
-                        <span>Pilih salah satu sheet yang tersedia</span>
+                    <div class="excel-sheet-toolbar">
+                        <input type="text" id="excel-sheet-search" placeholder="Cari nama sheet..." class="excel-sheet-search-input">
+                        <div class="excel-sheet-toolbar-btns">
+                            <button type="button" class="excel-sheet-toolbar-btn" id="excel-sheet-btn-select-all">Pilih Semua</button>
+                            <button type="button" class="excel-sheet-toolbar-btn" id="excel-sheet-btn-deselect-all">Batal Pilih</button>
+                        </div>
                     </div>
                     <div class="excel-sheet-list" id="excel-sheet-list" role="listbox" aria-label="Daftar sheet excel">
                     </div>
-                    <select id="excel-sheet-select" class="excel-sheet-select-native" aria-hidden="true" tabindex="-1">
+                    <select id="excel-sheet-select" class="excel-sheet-select-native" multiple aria-hidden="true" tabindex="-1">
                         <!-- Options will be added dynamically -->
                     </select>
-                    <div class="excel-sheet-selected" id="excel-sheet-selected">Sheet terpilih: -</div>
+                    <div class="excel-sheet-selected" id="excel-sheet-selected">
+                        <span id="excel-sheet-selected-text">0 sheet terpilih</span>
+                        <span id="excel-sheet-selected-badge" style="color: var(--color-cyan); font-weight: 700;"></span>
+                    </div>
                 </div>
             </div>
             <div class="excel-sheet-modal-actions">
                 <button class="btn btn-outline full-width" id="excel-sheet-btn-cancel" type="button">Batal</button>
-                <button class="btn btn-primary glow-button full-width" id="excel-sheet-btn-confirm" type="button">Mulai
-                    Impor</button>
+                <button class="btn btn-primary glow-button full-width" id="excel-sheet-btn-confirm" type="button">Mulai Impor</button>
             </div>
         </div>
     </div>
@@ -5138,7 +5311,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=21.1"></script>
+    <script src="app.js?v=36.7"></script>
 </body>
 
 </html>

@@ -1,0 +1,7 @@
+﻿tunnel: cbfe9047-dcb1-4acb-9811-3ea84fdd8c99
+credentials-file: C:\Users\user\.cloudflared\cbfe9047-dcb1-4acb-9811-3ea84fdd8c99.json
+
+ingress:
+  - hostname: ejo.nft.biz.id
+    service: http://localhost:8000
+  - service: http_status:404

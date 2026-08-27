@@ -16,10 +16,11 @@ return new class extends Migration
             $table->string('location')->nullable();
             $table->string('ejo_id')->nullable();
             $table->text('description')->nullable();
-            $table->string('image')->nullable();
-            $table->float('price')->default(0);
-            $table->float('cost_saving')->default(0);
-            $table->float('original_price')->default(0);
+            $table->text('image')->nullable();
+            $table->double('price')->default(0.0);
+            $table->double('cost_saving')->default(0.0);
+            $table->double('original_price')->default(0.0);
+            $table->string('uploader')->nullable();
         });
     }
 

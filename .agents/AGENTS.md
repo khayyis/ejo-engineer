@@ -54,6 +54,7 @@ This project automatically operates under the following combined execution modes
 - **Discipline-Specific Filtering & Fallbacks**: When filtering selection lists of engineers by specific disciplines (e.g., "Sipil", "Elektrik"), always filter strictly by that category first. If no engineers exist in that specific discipline, fallback first to a generic role (e.g. "Drafter") before falling back to all broader technical roles to avoid confusing mixtures (e.g. showing a Sipil engineer for an Elektrik EJO).
 - **Closing Overlapping Detail Modals**: When launching a secondary action modal (such as an approval, rejection, or completion modal) from a Kanban card or context where a detail modal (like `#ejo-modal`) is active, always close the details modal to prevent mismatched background data layout overlaps.
 - **Active EJO Workload Aggregation**: Workload counters for engineers and drafters (`getActiveEjoCountForUser(fullname)`) MUST aggregate active tickets across all three subsystems: standard EJOs (`state.ejos`), general EJOs (`state.generalEjos`), and drawing tickets (`state.drawings`). Inactive tickets (`Completed`, `Cancelled`, `Archived`, `Rejected`, `Done`, `is_archived: 1`) must be excluded, and ticket IDs must be deduplicated across arrays.
+- **General EJO Card Phase 1 Badge (Requester vs Engineer)**: On General EJO Kanban cards in Phase 1 (Schedule), the bottom user badge MUST display the requester / pemohon user (`e.requester` / `e.uploader` / creator log) with their profile avatar, rather than displaying "Unassigned". In subsequent phases (Phase 2 On Progress, Phase 3 Done, Phase 4 Archive), the badge prioritizes the assigned engineer (`e.engineer`).
 
 ## Browser Caching & Previews
 - **Cache Busting for Dynamic Previews**: When loading local assets (like uploaded PDFs or drawings) that are modified dynamically by the server (e.g. stamping signatures, drawing tags) but keep the same filename/URL, always append a timestamp-based query parameter (e.g. `?t=1719230600`) to the preview load URL in the frontend. Ensure that any file extension check or splitting logic strips the query parameter before checking extension suffixes.
@@ -137,6 +138,10 @@ When extending or updating EJO Repair Part (General EJO category 'Repair Part') 
   - **Row 1 (Header Bar)**: Reserved exclusively for Logo and User Profile Session Details (height ~52px).
   - **Row 2 (Navigation Bar)**: Reserved 100% for the horizontal scroll container `.sidebar-nav` and scroll indicator arrows `<` `>` (height ~48px).
 - **Visual Inspection & 1-Prompt Root Cause Diagnosis**: Before modifying JavaScript gesture handlers or touch event listeners for UI interaction bugs, perform an immediate visual layout inspection at narrow viewports (e.g. 390px) to verify whether element container collision or insufficient scrollable distance (`scrollWidth` vs `clientWidth`) is the true root cause.
+
+## Technical Drawing Lifecycle & History Archiving
+- **Drawing Done Phase vs History Separation**: Completed Technical Drawings (`status: 'Completed'`) belong strictly to Phase 3 (Done) on the Kanban board with the action button "Konfirmasi Selesai & Arsipkan" so users/foremen can review them before archiving.
+- **History Table Inclusion**: `renderHistory()` must NOT include drawings with `status: 'Completed'` until they are explicitly archived (`status === 'Archived'` or `is_archived === 1` or auto-archived after 3 days via `isDrawingAutoArchiveDue(d)`). This prevents unconfirmed completed drawings from prematurely appearing in History while still active in Phase 3 Done.
 
 ## Gallery Dropdown & Import Form Data Routing
 - **Submenu Category Sync**: When switching tabs using nested gallery submenus (`drawing-gallery`), automatically map `data-gallery-category` values (`sipil`, `mekanik`, `Repair Part`, `all`) to the corresponding select option in `#drawing-filter-category` and route the active tab pane to `#tab-drawing`.
@@ -243,9 +248,17 @@ When extending or updating EJO Repair Part (General EJO category 'Repair Part') 
 ## Overview KPI Scorecard Deduplication Invariants
 - **Single-Source Overview Aggregation**: The top KPI summary cards (`renderKPIs()`) must consume the unified dataset from `getVisibleOverviewEjos()` directly without adding `allDrawings` a second time. `getVisibleOverviewEjos()` already combines standard EJOs, general EJOs, and drawings; adding `allDrawings` results in double counting of technical drawings across `Total EJO` and `Pending` scorecards.
 
-## Drawing Kanban Cross-Phase Project Transfer Action Invariants
-- **Universal Project Transfer Button Availability**: The action button "Alihkan ke Project" (`openTransferDrawingToProjectModal(d.id)`) on Drawing Kanban cards (`getDrawingCardActions(d)`) MUST NOT be restricted solely to Phase 1 (`Schedule`). It must be available across all active Kanban columns (`Schedule`, `On Progress`, `Done`) for authorized Foreman and Admin Eng roles whenever a drawing ticket has not yet been linked to an active project.
-- **Linked State Precedence**: If a Drawing EJO is already linked to a project (`p.drawing_id === d.id`), the card action button dynamically renders "Di Project (PRJ-XXX)" linking to `flexToProjectTab(d.id)` across all phases.
+## Drawing Kanban Card Actions
+- **Card Detail Action**: Drawing Kanban cards (`getDrawingCardActions(d)`) render the `Detail` action button (`openDrawingDetails(d.id)`) across all phases. Cards do not render "Di Project" buttons in card actions, as project status and review access are displayed directly via the card project container banner and inside the detail modal.
+
+## Project Link Display & Review Guardrail for Requesters
+- **Requestor View Scoping**: When an EJO or Technical Drawing is linked/transferred to an Engineering Project (`PRJ-XXXX`), `canUserReviewProject(state.currentUser)` strictly grants review capabilities only to Engineering personnel (Admin Eng, Foreman Eng, Drafters, Engineers, Server, or users with ENG department):
+  - **For Requestors (Non-ENG Users, Staff, Supervisors, and Managers from PRD, QC, LOG, TMB, etc.)**:
+    - Cards display non-clickable plain informative text `Terhubung ke Project: PRJ-XXXX` with `cursor: default` and no `onclick` navigation. The `Review Only` badge and `flexToProjectTab` click interaction MUST NOT be rendered to avoid confusion.
+    - Inside detail modals (`#modal-drawing-project-banner`), the banner displays plain informative text `Drawing ini dihubungkan ke dalam Project Engineering (PRJ-XXXX)` without `Review Only` or `Buka Project ->` action buttons.
+    - In `flexToProjectTab()`, a role guardrail prevents unauthorized routing and displays an informative notification toast (`Project ini dikelola secara internal oleh Tim Engineering.`).
+  - **For Internal Engineering (Admin Eng, Foreman Eng, Drafters, Engineers, Server, ENG Dept)**:
+    - Retain full review capabilities: interactive clickable container (`flexToProjectTab`), `Review Only` badge, and `Buka Project ->` action button inside modals.
 
 ## Kanban Column 3-Card Preview Limit & YouTube-Style Inline Expand/Collapse
 - **Subsystem-Wide 3-Card Cap**: When displaying full Kanban boards across all three subsystems (General EJO where `state.activeGeneralEjoPhase === null`, Drawing EJO where `state.activeDrawingPhase === null`, and Project Monitoring where `state.activeProjectPhase === null`) and the Overview urgent list (`#critical-ejo-list`), each column/container displays a default preview of 3 cards (`previewLimit = 3`).
@@ -296,11 +309,94 @@ When extending or updating EJO Repair Part (General EJO category 'Repair Part') 
 - **Prohibition of SPV/Manager ENG on General EJO**: `Supervisor Eng` and `Manager Eng` approval stages (`Pending Supervisor Approval`, `Pending Manager Approval`, `Pending Factory Manager Approval`) are EXCLUSIVELY reserved for Technical Drawings (`drawings` table) and Project EJO proposals (`projects` table). They MUST NEVER be assigned, seeded in dummy datasets, or rendered in status banners for General EJO tickets.
 - **Frontend Fallback & Status Text Guardrails**: In `getFriendlyStatusText(status, ejo)` and `isApprovalPendingForCurrentUser(e)`, General EJO tickets in `Done` or legacy pending states MUST resolve to `'Waiting for User approval'` targeting the department requester, preventing any false display of Supervisor Eng approvals on General EJO modal views.
 
+## Dynamic Inline HTML Event Handler & PDF Preview Resilience
+- **Helper Function for Dynamic Image Errors**: When attaching dynamic error fallbacks to thumbnail or gallery images (`<img>`), never inject complex nested inline JavaScript string literals into the `onerror` attribute (e.g. `onerror="... innerHTML='<i data-lucide=\'image-off\'></i>' ..."`). Always call a centralized helper function (such as `onerror="handleGalleryImageError(this)"`) to eliminate quote-escaping conflicts and prevent runtime `SyntaxError: Invalid or unexpected token`.
+- **Graceful PDF 404 Previews**: In interactive PDF canvas rendering (`renderDrawingPreview()`), when an ArrayBuffer network fetch fails with HTTP 404, gracefully present the user-friendly fallback download box immediately without passing the failed 404 URL into PDF.js `getDocument()`, preventing redundant PDF parser crashes and unhandled `MissingPDFException` errors.
+- **One-Time Startup Self-Tests**: Test suites run in client scripts (e.g., `runExcelSelfTest()`) must be guarded by a one-time execution flag (`isExcelSelfTestExecuted`) to prevent duplicate console spam across repeated data polling and tab-switching cycles.
+
+## Project Creation Autodetect & Drawing Gallery Integration
+- **Drawing & Spare Part Autodetect on Project Form**: The project creation form (`#project-form`) must include an autodetect datalist search (`#proj-form-drawing-search` + `#proj-drawing-datalist`) sourcing technical drawings from `state.drawings` (Drawings Sipil, Mekanik, Elektrik, etc.) and spare parts from `state.repairParts`.
+- **Form Synchronization & Auto-fill**: Selecting or matching an item via autodetect must automatically synchronize `#proj-title`, normalize and select `#proj-dept`, format rich contextual `#proj-desc` (including drawing ID, category, department, drafter, and notes), dynamically append and select `#proj-drawing-select`, and render immediate confirmation in `#proj-drawing-status-info`.
+- **Form Reset Lifecycle**: Calling `resetProjectForm()` must clear the search input, hide status indicators, remove `dataset.autofilled` attributes, and re-populate the datalist and dropdown options.
+
+## Creation Form Silent Auto-Close & Inactivity Management
+- **Navigation Auto-Close**: When switching between tabs or submenus (`switchTab`, `toggleSubmenuSmooth`), all open creation form containers (`#gejo-form-container`, `#drawing-form-container`, `#part-form-container`, `#sparepart-form-container`, `#project-form-container`, `#user-form-container`) must automatically close (`display = 'none'`) and cancel pending inactivity timers.
+- **Form Auto-Reset on Auto-Close**: Whenever a form container is closed automatically (via inactivity timer, tab navigation, or submenu accordion switching) or manually toggled closed, the system MUST invoke `resetFormContainerContent(containerId)` to wipe clean form inputs, file preview thumbnails, custom datalists, and active editing states, preventing stale draft inputs from persisting across re-openings.
+- **Idle Inactivity Countdown**: Opening any form container initiates a 60-second inactivity countdown. User interaction (`input`, `focus`, `click`, `keydown`, `scroll`) resets the timer. When expired without active focus/modals, the form container smoothly auto-closes.
+- **Silent/Hidden Background Behavior**: The auto-close mechanism operates invisibly in the background without any visible description or label in the UI.
+
+## Project No IO & No MOC Schema & UI Integration
+- **Schema & Persistence**: The `projects` table in SQLite supports `no_io TEXT` and `no_moc TEXT`. Handlers in `server.py` (`create_project` and `update_project`) persist and update these columns.
+- **Form Inputs & Reset Lifecycle**: `#proj-no-io` and `#proj-no-moc` are embedded in the `#project-form` across all 3 view templates (`index.html`, `laravel/public/index.html`, `laravel/resources/views/welcome.blade.php`). `resetProjectForm()` explicitly resets both inputs.
+- **Card & Detail Modal Badges**:
+  - In the Project Card header (`.project-card-header`), `no_io` and `no_moc` are rendered directly alongside the project ID as styled badges (`IO: ...` in cyan, `MOC: ...` in purple).
+  - If unset, Foreman/Admin roles are presented with inline `+ IO` and `+ MOC` quick-edit buttons.
+  - In `#project-detail-modal`, `#modal-project-io-badge` and `#modal-project-moc-badge` dynamically reflect the project's IO and MOC values with inline edit capability for authorized roles.
+  - Search filtering in `renderProjects()` searches across `p.no_io` and `p.no_moc` in addition to ID, title, and description.
 
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+## PowerShell String Interpolation (Single-Quoted Here-Strings)
+- **Problem**: Saat Agent menulis kode menggunakan PowerShell dengan operator `@""@` (double-quote), setiap string literal JS/Python yang mengandung `$` (seperti `${variable}`) akan terhapus karena PowerShell menganggapnya sebagai pemanggilan variabel shell yang kosong. Ini menyebabkan `Uncaught SyntaxError`.
+- **Mandate**: Seluruh operasi penulisan file multiline (via PowerShell `Set-Content` dll) WAJIB menggunakan sintaks **single-quoted here-string** (`@' ... '@`) agar konten tetap utuh dan terhindar dari eksekusi *variable expansion*.
+
+## Python REST Handler Class Scope & Method Placement Invariants
+- **Problem**: Menambahkan fungsi API baru di akhir berkas `server.py` menempatkannya di luar definisi kelas `EJORestHandler` (setelah blok `if __name__ == '__main__':`), menyebabkan server gagal merespons request dan melempar `AttributeError: 'EJORestHandler' object has no attribute '...'` yang berakibat `Failed to fetch` di sisi browser.
+- **Mandate**: Seluruh method handler API (seperti `get_wsp_materials`, `import_wsp_materials`, dll.) WAJIB didefinisikan secara tegas dan terindentasi (4 spaces) di dalam kelas `EJORestHandler(http.server.BaseHTTPRequestHandler)` sebelum deklarasi fungsi top-level runner (`start_reloader()`, `init_db()`, `if __name__ == '__main__':`). Semua pemanggilan di `do_GET`, `do_POST`, `do_PUT`, `do_DELETE` harus terpetakan ke method aktif dalam kelas.
+
+## Drawing EJO Lifecycle Priority & Disambiguation Invariants
+- **Problem**: Format penomoran otomatis Drawing EJO menggunakan prefix `EJO...` (misal: `EJO01200826`), identik dengan General EJO. Pengecekan lifecycle `isItemDone(e)` yang memeriksa prefix `EJO...` terlebih dahulu memanggil `getGeneralEjoPhase(e)` yang menganggap status awal Drawing `Pending Foreman Approval` sebagai Fase 3 (Done), sehingga tiket Drawing baru keliru dianggap selesai dan hilang dari filter antrean aktif/Outstanding.
+- **Mandate**: Seluruh helper evaluasi siklus hidup tiket (`isItemDone`, `isItemOutstanding`, `renderKPIs`, `renderCategoryChart`, `renderCriticalList`) WAJIB memprioritaskan evaluasi `isDrawingItem(e)` dan `getDrawingPhase(e)` terlebih dahulu sebelum memeriksa prefix EJO umum atau memanggil `getGeneralEjoPhase(e)`.
+
+## Overview & Trend Chart Date Range Invariance (Active Inclusion)
+- **Problem**: Menggunakan batas atas `endDate = currentMonday - 1 day` (hari Minggu minggu lalu) dari helper rolling window pada filter aktif Dashboard Overview (`filterOverviewItemsByPeriod`) dan pembagian kolom grafik tren (`getPreviousCompletedWeekRange`, `getPreviousCompletedMonthRange`, `getPreviousCompletedYearRange`) menyebabkan seluruh tiket baru yang dibuat pada minggu berjalan (hari Senin s/d hari ini) terpotong dan dibuang dari kolom grafik dan kartu TradingView tracker, menghasilkan nilai `Masuk: 0, Selesai: 0, Dibatalkan: 0, OS: 0`.
+- **Mandate**: Seluruh fungsi rentang waktu aktif pada Dashboard Overview dan Trend Chart WAJIB mencakup tanggal hari ini dan minggu/bulan berjalan:
+  - **Minggu Ini (`week`)**: 7 hari penuh dari Senin s/d Minggu minggu berjalan (`startDate = currentMonday`, `endDate = currentSunday`).
+  - **Bulan Ini (`month`)**: 4 minggu berurutan yang berakhir pada hari Minggu minggu berjalan (`startDate = currentMonday - 21 days`, `endDate = currentSunday`).
+  - **Tahun Ini (`year`)**: 12 bulan rolling yang berakhir pada hari terakhir bulan berjalan (`endDate = end of current month`).
+## Drawing Approval Chain Action Guardrails (Edit & Delete Restrictions)
+- **Problem**: Setelah tiket Drawing disetujui oleh User/Requester dan berpindah ke status persetujuan atasan departemen (`Pending Dept Approval`) atau jenjang berikutnya, tombol `Batal / Hapus` dan `Edit` masih muncul pada kartu Kanban atau modal detail untuk pembuat tiket, serta tombol `Edit` masih dapat diakses oleh approver per departemen. Hal ini melanggar integritas alur persetujuan di mana data yang telah disetujui pembuat tiket tidak boleh diedit atau dihapus, melainkan hanya direview secara berjenjang.
+- **Mandate**:
+  - **Kanban Cards (`getDrawingCardActions`)**: Pada seluruh status fase persetujuan berjenjang / Done (`Pending Requester Approval`, `Pending Dept Approval`, `Pending Foreman Approval` (dengan file/Phase 3), `Pending Supervisor Approval`, `Pending Manager Approval`, `Pending Factory Manager Approval`, `Completed`), tombol `Batal / Hapus` dan `Edit` WAJIB disembunyikan untuk seluruh user departemen dan approver. Approver hanya diberikan tombol `Tolak` dan `Setujui &rarr;`.
+  - **Modal Detail (`openDrawingDetails`)**: Tombol `#modal-drawing-delete-btn` dan panel upload file WAJIB disembunyikan/dikunci pada fase persetujuan berjenjang dan hanya dapat diakses oleh akun superadmin `Server`.
+  - **Frontend Guards (`deleteDrawing`, `editDrawingByUser`)**: Panggilan fungsi langsung wajib memverifikasi `getDrawingPhase(drawing) === 1` dan status awal pre-work (`Pending Foreman Approval` tanpa file, `Checking`), menolak akses dengan notifikasi peringatan jika tiket berada dalam fase persetujuan/selesai.
+  - **Backend Guard (`delete_drawing` in `server.py` & `EjoController.php`)**: Endpoint `DELETE /api/drawings/{id}` wajib memverifikasi otorisasi requester dan fase tiket, menolak (HTTP 403) permintaan penghapusan tiket pada fase persetujuan berjenjang dari akun non-admin/non-server.
+
+## General EJO Category Quota & Multi-Account Test Seeding
+- **Deduplicated Requester Resolution**: When seeding or verifying active ticket quota limits per user category (e.g., maximum 2 active General EJOs per category for non-ENG staff), always resolve and deduplicate user identities by their unique `fullname` / `username` pairing. Accounts sharing identical `fullname` attributes (such as `epr` and `staff_epr` both mapped to `user_EPR`) must be treated as a single unified requester session to prevent exceeding or inflating the intended test quota (4/2 instead of 2/2).
+
+## General EJO In Progress Action Button Permissions (Assigned Engineer & Foreman ENG)
+- **Problem**: `isLeadRole(role)` mengevaluasi `getRoleLevel(role) >= 40`. Karena Supervisor departemen pemohon (misal: `Supervisor PRD` level 60) dan Manager departemen pemohon (misal: `Manager PRD` level 80) berlevel $\ge 40$, helper `getGeneralEjoCardActions(e)` pada status `In Progress` keliru menganggap SPV dan Manager per departemen sebagai Lead Engineering, sehingga tombol aksi muncul untuk pihak yang tidak berhak. Di sisi lain, Engineer yang ditunjuk (seperti Elektrik, Mekanik, Drafter, dll.) memerlukan tombol `Selesaikan →` untuk menyelesaikan pekerjaan mereka, namun TIDAK boleh membalikkan tiket (`← Balikkan`).
+- **Mandate**:
+  - **Kanban Cards (`getGeneralEjoCardActions`)**: Pada status `In Progress`:
+    - **Foreman ENG / Admin ENG / Server (`isForemanAdmin`)**: Menampilkan DUA tombol aksi: `← Balikkan` dan `Selesaikan →`.
+    - **Engineer yang Ditunjuk (`isAssigned`)**: Menampilkan HANYA SATU tombol aksi: `Selesaikan →` (tombol `← Balikkan` TIDAK ditampilkan).
+    - **Pengguna Lain (SPV/Manager per dept, Staff umum, Engineer yang tidak ditugaskan)**: HANYA menampilkan tombol `Detail` (`detailOnlyButton`).
+  - **Transition Handler (`moveGeneralEjoStatus`)**:
+    - Transisi `In Progress` &rarr; `Pending User Approval` (`Selesaikan`): Mengizinkan `isForeman || isAssigned`.
+    - Transisi `In Progress` &rarr; `Requested` / `Checking` (`Balikkan`): HANYA mengizinkan `isForeman` (`Foreman Eng`, `Admin Eng`, `Server`), dan menolak eksekusi dari role lain dengan pesan toast peringatan.
+
+## Repair Part EJO Completion Action Button Gating & Status Notices
+- **Completion Button Gating & Notice Display (`getGeneralEjoCardActions`)**: For General EJOs with category `Repair Part` in `In Progress` status:
+  - When `qty_work_confirmed !== 1`: display the `Detail` button and notice `🔒 Konfirmasi pekerjaan terlebih dahulu`.
+  - When `qty_work_confirmed === 1` but total input quantity < target quantity: display the `Detail` button and notice `⚠ Pengisian Qty Mesin/Stok wajib terisi`.
+  - When `qty_work_confirmed === 1` and all quantities are fully allocated: replace the notice and detail button with the action button `Selesaikan →`.
+- **Handler Protection (`moveGeneralEjoStatus`)**: The transition handler must enforce the same guard condition, blocking any completion request with clear warning toasts if work is unconfirmed or quantities are not completely fulfilled.
 
 
 

@@ -244,7 +244,7 @@ let state = {
     editingDrawingId: null,
     notifications: [], // ponytail: dari server, per-user
     charts: {}, // Store instances of ChartJS objects to destroy/update them
-    trendPeriod: 'year', // ponytail: time range filter for trend chart (week, month, year)
+    trendPeriod: 'month', // ponytail: time range filter for trend chart (week, month, year)
     trendCategoryFilter: 'all', // ponytail: category filter for trend chart (all, Sipil, Elektrik, Kalibrasi, Mekanik, Program, Repair Part, Drawing)
     deptPeriod: 'year', // ponytail: time range filter for dept chart (week, month, year)
     categoryPeriod: 'year', // ponytail: time range filter for category chart (week, month, year)
@@ -256,6 +256,7 @@ let state = {
     wspMaterials: [], // ponytail: loaded WSP Master Material items for autodetection
     wspMap: new Map() // ponytail: O(1) lookup map for fast WSP material search
 };
+window.state = state;
 
 // ponytail: helper to check if a user role has Lead/Admin/Manager/Supervisor/Server authority based on hierarchy
 const ROLE_LEVELS = {
@@ -283,6 +284,7 @@ const ROLE_LEVELS = {
     'user_QC': 10,
     'user_WRH': 10,
     'user_TMB': 10,
+    'user_EUT': 10,
     'Staff PRD': 10,
     'Staff ENG': 10,
     'Staff EPR': 10,
@@ -290,18 +292,21 @@ const ROLE_LEVELS = {
     'Staff QC': 10,
     'Staff WRH': 10,
     'Staff TMB': 10,
+    'Staff EUT': 10,
     'Supervisor PRD': 60,
     'Supervisor EPR': 60,
     'Supervisor GA': 60,
     'Supervisor QC': 60,
     'Supervisor WRH': 60,
     'Supervisor TMB': 60,
+    'Supervisor EUT': 60,
     'Manager PRD': 80,
     'Manager EPR': 80,
     'Manager GA': 80,
     'Manager QC': 80,
     'Manager WRH': 80,
-    'Manager TMB': 80
+    'Manager TMB': 80,
+    'Manager EUT': 80
 };
 
 const DRAFTER_ROLES = ['Drafter', 'Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part'];
@@ -313,7 +318,8 @@ const DEPARTMENT_OPTIONS = [
     { value: 'GA', label: 'GA (General Affair)' },
     { value: 'QC', label: 'QC (Quality Control)' },
     { value: 'WRH', label: 'WRH (Warehouse)' },
-    { value: 'TMB', label: 'TMB (Timbangan)' }
+    { value: 'TMB', label: 'TMB (Timbangan)' },
+    { value: 'EUT', label: 'EUT (Engineer Utility)' }
 ];
 
 function normalizeDepartmentCode(dept) {
@@ -327,7 +333,13 @@ function normalizeDepartmentCode(dept) {
         'ENG': 'ENG',
         'ENG (ENGINEERING)': 'ENG',
         'ENGINEERING': 'ENG',
-        'UTILITY': 'ENG',
+        'EUT': 'EUT',
+        'EUT (ENGINEER UTILITY)': 'EUT',
+        'EUT (ENGINEERING UTILITY)': 'EUT',
+        'ENGINEER UTILITY': 'EUT',
+        'ENGINEERING UTILITY': 'EUT',
+        'UTILITY': 'EUT',
+        'UTL': 'EUT',
         'EPR': 'EPR',
         'EPR (ENGINEERING PRODUKSI)': 'EPR',
         'EPR (ENGINEERING PRODUCTION)': 'EPR',
@@ -353,9 +365,10 @@ function normalizeDepartmentCode(dept) {
     if (mapping[upper]) return mapping[upper];
 
     // Substring / Role prefix detection (check EPR before PRD)
+    if (upper.includes('EUT') || upper.includes('UTILITY') || upper.includes('UTL')) return 'EUT';
     if (upper.includes('EPR')) return 'EPR';
     if (upper.includes('PRD') || upper.includes('PRODUCTION')) return 'PRD';
-    if (upper.includes('ENG') || upper.includes('ENGINEERING') || upper.includes('UTILITY')) return 'ENG';
+    if (upper.includes('ENG') || upper.includes('ENGINEERING')) return 'ENG';
     if (upper.includes('GA') || upper.includes('GENERAL AFFAIR')) return 'GA';
     if (upper.includes('QC') || upper.includes('QUALITY CONTROL')) return 'QC';
     if (upper.includes('WRH') || upper.includes('WAREHOUSE') || upper.includes('MAINTENANCE')) return 'WRH';
@@ -368,7 +381,7 @@ function normalizeDepartmentCode(dept) {
 function getUserDepartmentCode() {
     if (!state.currentUser) return '';
     let deptCode = normalizeDepartmentCode(state.currentUser.dept);
-    const validDepts = ['PRD', 'ENG', 'EPR', 'GA', 'QC', 'WRH', 'TMB', 'HSE'];
+    const validDepts = ['PRD', 'ENG', 'EPR', 'GA', 'QC', 'WRH', 'TMB', 'EUT', 'HSE'];
     if (!deptCode || !validDepts.includes(deptCode)) {
         const fromRole = normalizeDepartmentCode(state.currentUser.role);
         if (fromRole && validDepts.includes(fromRole)) {
@@ -409,6 +422,8 @@ window.getDocFilename = getDocFilename;
 // ponytail: helper to determine drawing phase (1=Schedule, 2=On Progress, 3=Done, 4=Archive)
 function getDrawingPhase(d) {
     if (!d) return 1;
+    const isArchived = d.is_archived === 1 || d.is_archived === '1' || d.status === 'Archived' || d.status === 'Rejected' || (typeof isDrawingAutoArchiveDue === 'function' && isDrawingAutoArchiveDue(d));
+    if (isArchived) return 4;
     const status = d.status || 'Pending Foreman Approval';
     const hasFile = !!d.file_path;
     if (status === 'Archived' || status === 'Cancelled' || status === 'Rejected') {
@@ -424,6 +439,47 @@ function getDrawingPhase(d) {
     }
     return 1;
 }
+window.getDrawingPhase = getDrawingPhase;
+
+// ponytail: helper to extract exact timestamp when Technical Drawing was completed
+function getDrawingCompletionDate(d) {
+    if (!d) return null;
+    if (d.completed_at) {
+        const dt = new Date(d.completed_at);
+        if (!isNaN(dt.getTime())) return dt;
+    }
+    const logs = parseLogs(d.logs || d);
+    if (Array.isArray(logs) && logs.length > 0) {
+        for (let i = logs.length - 1; i >= 0; i--) {
+            const msg = (logs[i].cleanMessage || logs[i].message || '').toLowerCase();
+            const dtStr = logs[i].date || '';
+            if (msg.includes('completed') || msg.includes('selesai') || msg.includes('disetujui') || msg.includes('approval') || msg.includes('diarsip')) {
+                if (dtStr) {
+                    const parsed = new Date(dtStr.replace(' ', 'T'));
+                    if (!isNaN(parsed.getTime())) return parsed;
+                    const parsedPlain = new Date(dtStr);
+                    if (!isNaN(parsedPlain.getTime())) return parsedPlain;
+                }
+            }
+        }
+        if (d.status === 'Completed' || d.status === 'Archived' || d.status === 'Done') {
+            const lastLog = logs[logs.length - 1];
+            if (lastLog && lastLog.date) {
+                const parsed = new Date(lastLog.date.replace(' ', 'T'));
+                if (!isNaN(parsed.getTime())) return parsed;
+                const parsedPlain = new Date(lastLog.date);
+                if (!isNaN(parsedPlain.getTime())) return parsedPlain;
+            }
+        }
+    }
+    const fallbackStr = d.uploaded_at || d.targetDate || d.created_at || '';
+    if (fallbackStr) {
+        const dt = new Date(fallbackStr);
+        if (!isNaN(dt.getTime())) return dt;
+    }
+    return null;
+}
+window.getDrawingCompletionDate = getDrawingCompletionDate;
 
 // ponytail: helper to extract exact timestamp when General EJO was completed
 function getGeneralEjoCompletionDate(ejo) {
@@ -468,6 +524,20 @@ function getGeneralEjoCompletionDate(ejo) {
     return null;
 }
 
+// ponytail: helper to reliably detect whether an item is a Drawing EJO across all contexts
+function isDrawingItem(item) {
+    if (!item) return false;
+    if (item.isDrawing === true) return true;
+    if (item.drawing_type || item.drafter || item.etiket_category || item.etiket_orientation || item.uploaded_at) return true;
+    const id = String(item.id || item.ejo_id || '');
+    if (id.startsWith('DRW') || id.startsWith('DEJO') || id.startsWith('DWG')) return true;
+    if (typeof state !== 'undefined' && Array.isArray(state.drawings) && state.drawings.some(d => d && d.id === item.id)) return true;
+    const cat = String(item.category || '').toLowerCase();
+    if (cat === 'drawing') return true;
+    return false;
+}
+window.isDrawingItem = isDrawingItem;
+
 // ponytail: helper to check if an EJO / item is cancelled
 function isItemCancelled(e) {
     if (!e) return false;
@@ -484,21 +554,19 @@ function isItemDone(e) {
     // Direct status matches
     if (st === 'completed' || st === 'done') return true;
 
-    // Check phase for General EJO
-    if (e.id && (e.id.startsWith('EJO') || e.id.startsWith('GEJO')) && typeof getGeneralEjoPhase === 'function') {
-        const ph = getGeneralEjoPhase(e);
-        return ph === 3 || ph === 4; // Phase 3 = Done, Phase 4 = Archive (non-cancelled)
-    }
-
-    // Check phase for Drawing EJO
-    if (e.id && (e.id.startsWith('DRW') || e.id.startsWith('DEJO') || e.id.startsWith('DWG')) && typeof getDrawingPhase === 'function') {
+    // Check phase for Drawing EJO FIRST (priority before general EJO to avoid prefix collision)
+    if (isDrawingItem(e) && typeof getDrawingPhase === 'function') {
         const ph = getDrawingPhase(e);
         return ph === 3 || ph === 4; // Phase 3 = Done, Phase 4 = Archive (non-cancelled)
     }
 
-    if (st === 'pending user approval' || st === 'pending requester approval' || st === 'pending approval' ||
-        st === 'pending foreman approval' || st === 'pending supervisor approval' || st === 'pending manager approval' ||
-        st === 'pending factory manager approval') {
+    // Check phase for General EJO
+    if (typeof getGeneralEjoPhase === 'function') {
+        const ph = getGeneralEjoPhase(e);
+        return ph === 3 || ph === 4; // Phase 3 = Done, Phase 4 = Archive (non-cancelled)
+    }
+
+    if (st === 'pending user approval' || st === 'pending requester approval' || st === 'pending approval') {
         return true;
     }
     if (st === 'waiting dept approval' && e.has_signed) {
@@ -522,10 +590,7 @@ function isItemOutstanding(e) {
     if (isItemDone(e) || isItemCancelled(e)) return false;
     if (e.is_archived === 1 || e.is_archived === '1' || (e.status || '').toLowerCase() === 'archived') return false;
 
-    const id = String(e.id || e.ejo_id || '');
-    const isDrawing = id.startsWith('DRW') || id.startsWith('DEJO') || id.startsWith('DWG') || (e.category || '').toLowerCase() === 'drawing' || Boolean(e.drawing_type || e.drafter);
-
-    if (isDrawing && typeof getDrawingPhase === 'function') {
+    if (isDrawingItem(e) && typeof getDrawingPhase === 'function') {
         const ph = getDrawingPhase(e);
         return ph === 1 || ph === 2;
     }
@@ -622,6 +687,7 @@ function getItemCompletionDateString(e) {
             const compLog = logs.find(l => {
                 if (!l) return false;
                 const msg = (l.cleanMessage || l.message || '').toLowerCase();
+                if (msg.includes('dibuat') || msg.includes('import excel') || msg.includes('created')) return false;
                 return msg.includes('selesai') ||
                     msg.includes('completed') ||
                     msg.includes('pending user approval') ||
@@ -629,16 +695,30 @@ function getItemCompletionDateString(e) {
                     msg.includes('waiting for user approval') ||
                     msg.includes('batal') ||
                     msg.includes('cancelled') ||
-                    msg.includes('reject');
-            }) || logs[logs.length - 1];
+                    msg.includes('reject') ||
+                    msg.includes('close');
+            });
             if (compLog && compLog.date) {
                 raw = compLog.date;
             }
         }
     }
-    if (!raw) raw = e.updated_at || e.targetDate || e.createdDate || e.created_at || '';
+    if (!raw) raw = e.targetDate || e.createdDate || e.updated_at || e.created_at || '';
     return parseDateToYYYYMMDD(raw);
 }
+
+// ponytail: check if Technical Drawing has been completed for >= 3 days without user confirmation
+function isDrawingAutoArchiveDue(drawing, maxDays = 3) {
+    if (!drawing || (drawing.is_archived === 1 || drawing.is_archived === '1' || drawing.status === 'Archived')) return false;
+    if (drawing.status !== 'Completed' && drawing.status !== 'Cancelled') return false;
+    const compDate = getDrawingCompletionDate(drawing);
+    if (!compDate) return false;
+    const now = new Date();
+    const diffMs = now.getTime() - compDate.getTime();
+    const threeDaysMs = maxDays * 24 * 60 * 60 * 1000;
+    return diffMs >= threeDaysMs;
+}
+window.isDrawingAutoArchiveDue = isDrawingAutoArchiveDue;
 
 // ponytail: check if General EJO has been completed for >= 3 days without user confirmation
 // Special rule for Repair Part: MUST have repair cost data filled (repair_cost_per_day > 0 and repair_duration > 0)
@@ -757,6 +837,8 @@ function canUserImportDrawing(userOrRole) {
     return isDrafterRole(role) || isForemanAdminRole(role);
 }
 
+
+
 // ponytail: helper to check if an engineer name string matches user's fullname or username case-insensitively
 function checkIsAssigned(engineerField, currentUser) {
     if (!currentUser || !engineerField) return false;
@@ -820,6 +902,50 @@ function canManageSparePartAllocation(role) {
     return role === 'Drafter' || isLeadRole(role);
 }
 
+// ponytail: helper to format engineer name with role / discipline (e.g., "Thorik (Elektrik)", "Rifan Nur Satriyo (Drafter - Mekanikal)")
+function formatEngineerDisplay(engineerName) {
+    if (!engineerName || typeof engineerName !== 'string') return '-';
+    const raw = engineerName.trim();
+    if (!raw || ['unassigned', 'belum ditentukan', 'belum ada', '-', 'n/a', 'none'].includes(raw.toLowerCase())) {
+        return 'Unassigned';
+    }
+
+    // Support comma-separated engineers
+    const names = raw.split(',').map(n => n.trim()).filter(Boolean);
+    const formatted = names.map(name => {
+        const engUser = (state.users || []).find(u =>
+            (u.fullname && u.fullname.toLowerCase() === name.toLowerCase()) ||
+            (u.username && u.username.toLowerCase() === name.toLowerCase())
+        );
+
+        if (!engUser) {
+            const listObj = engineersList.find(e => e.name && e.name.toLowerCase() === name.toLowerCase());
+            if (listObj && (listObj.role || listObj.section)) {
+                const sub = listObj.section || listObj.role;
+                return `${name} (${sub})`;
+            }
+            return name;
+        }
+
+        const role = engUser.role || '';
+        const sec = engUser.section || '';
+        
+        let label = '';
+        if (sec && role && role !== sec) {
+            label = `${sec}`;
+        } else if (sec) {
+            label = sec;
+        } else if (role) {
+            label = role;
+        }
+
+        return label ? `${engUser.fullname || name} (${label})` : (engUser.fullname || name);
+    });
+
+    return formatted.join(', ');
+}
+
+
 // ponytail: helper to check if a user is a non-Engineering Supervisor or Manager
 function isNonEngSpvOrManager(userOrRole, deptInput) {
     let user = null;
@@ -871,6 +997,29 @@ function isUserLimited(userOrRole, deptInput) {
 
     if (!role) return false;
     return isOrdinaryUser(role) || isNonEngSpvOrManager(user, dept);
+}
+
+// ponytail: helper to check if a user is authorized to review & manage Engineering Projects (only Admin Eng, Foreman Eng, Drafters, Engineer Eng, Server; strictly excluding all non-ENG users/staff/SPV/Managers)
+function canUserReviewProject(userOrRole) {
+    let user = null;
+    let role = '';
+    if (userOrRole && typeof userOrRole === 'object') {
+        user = userOrRole;
+        role = user.role || '';
+    } else {
+        user = state.currentUser;
+        role = userOrRole || (user ? user.role : '');
+    }
+    if (!role) return false;
+    const username = (user ? user.username : (state.currentUser ? state.currentUser.username : '') || '').toLowerCase().trim();
+    if (role === 'Server' || username === 'server' || username === 'admin') return true;
+    if (isForemanAdminRole(role)) return true;
+    if (isNonEngSpvOrManager(user)) return false;
+    if (isOrdinaryUser(role)) return false;
+
+    const dept = (user ? (user.dept || user.department || '') : (state.currentUser ? (state.currentUser.dept || state.currentUser.department || '') : '')).toUpperCase();
+    const isEngRole = DRAFTER_ROLES.includes(role) || role === 'Supervisor Eng' || role === 'Manager Eng' || role === 'Staff ENG' || role === 'User ENG' || dept === 'ENG' || (typeof getUserDepartmentCode === 'function' && getUserDepartmentCode() === 'ENG');
+    return isEngRole;
 }
 
 // ponytail: helper to check if a user is authorized to access/view Admin Panel (only Foreman Eng, Admin Eng & Server; strictly hiding from Supervisor Eng, Manager Eng, and all SPV/Manager/FM/PM roles)
@@ -964,7 +1113,7 @@ function applySidebarRoleRestrictions() {
     // ponytail: Hide/show partlist cost saving charts based on user roles
     const partlistChartsGrid = document.getElementById("partlist-charts-grid");
     if (partlistChartsGrid) {
-        const HIDDEN_ROLES = ['Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part', 'User', 'user_PRD', 'user_ENG', 'user_EPR', 'user_GA', 'user_QC', 'user_WRH', 'user_TMB', 'User PRD', 'User ENG', 'User EPR', 'User GA', 'User QC', 'User WRH', 'User TMB', 'Staff PRD', 'Staff ENG', 'Staff EPR', 'Staff GA', 'Staff QC', 'Staff WRH', 'Staff TMB'];
+        const HIDDEN_ROLES = ['Sipil', 'Mekanik', 'Elektrik', 'Program', 'Kalibrasi', 'Repair Part', 'User', 'user_PRD', 'user_ENG', 'user_EPR', 'user_GA', 'user_QC', 'user_WRH', 'user_TMB', 'user_EUT', 'User PRD', 'User ENG', 'User EPR', 'User GA', 'User QC', 'User WRH', 'User TMB', 'User EUT', 'Staff PRD', 'Staff ENG', 'Staff EPR', 'Staff GA', 'Staff QC', 'Staff WRH', 'Staff TMB', 'Staff EUT'];
         if (HIDDEN_ROLES.includes(role)) {
             partlistChartsGrid.style.display = 'none';
         } else {
@@ -1071,7 +1220,7 @@ function applySidebarRoleRestrictions() {
         setNavVisibility(btnNavDrawing, wrapperDrawing, true);
         setNavVisibility(btnNavProjects, wrapperProjects, showProjectsNav);
         if (repairPartsBtn) repairPartsBtn.style.display = 'flex';
-        if (galleryBtn) galleryBtn.style.display = 'flex';
+        if (galleryBtn) galleryBtn.style.display = 'none';
     }
 
     if (btnNavDrawingGallery && wrapperDrawingGallery) {
@@ -1957,6 +2106,10 @@ function checkAuth() {
         if (serverDbControl) {
             serverDbControl.style.display = isServerUser ? 'flex' : 'none';
         }
+        const btnSeedBased = document.getElementById("btn-seed-based-accounts");
+        if (btnSeedBased) {
+            btnSeedBased.style.display = isServerUser ? 'inline-flex' : 'none';
+        }
         const serverMaintenanceControl = document.getElementById("server-maintenance-control-bar");
         if (serverMaintenanceControl) {
             serverMaintenanceControl.style.display = isServerUser ? 'grid' : 'none';
@@ -2140,9 +2293,12 @@ async function initData() {
         engineersList = state.users.map(u => ({
             name: u.fullname,
             role: u.role,
+            section: u.section,
             avatar: u.avatar || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80'
         }));
         populateEngineerDropdowns();
+        if (typeof populateApprovedDrawingsSelect === 'function') populateApprovedDrawingsSelect();
+        if (typeof populateProjectDrawingDatalist === 'function') populateProjectDrawingDatalist("");
 
         // Safety check: if activeTab is unauthorized for role, redirect accordingly
         if (state.currentUser) {
@@ -2356,10 +2512,272 @@ function initEventListeners() {
         });
     }
 
-    // ponytail: helper function to toggle submenus smoothly with accordion behavior (closes all other submenus)
+    // ponytail: Hidden Form Auto-Close & Inactivity Management Engine
+    const AUTO_CLOSE_FORM_CONTAINER_IDS = [
+        'gejo-form-container',
+        'drawing-form-container',
+        'part-form-container',
+        'sparepart-form-container',
+        'project-form-container',
+        'user-form-container'
+    ];
+
+    let formInactivityTimers = {};
+    const FORM_INACTIVITY_TIMEOUT_MS = 60000; // 60 seconds of idle inactivity
+
+    function resetFormToggleButton(containerId) {
+        if (!containerId) return;
+        if (containerId === 'project-form-container') {
+            const btn = document.getElementById("btn-toggle-new-project");
+            if (btn) btn.innerHTML = '<i data-lucide="plus-circle"></i> Project Baru';
+        } else if (containerId === 'sparepart-form-container') {
+            const btn = document.getElementById("btn-toggle-new-sparepart");
+            if (btn) btn.innerHTML = '<i data-lucide="upload"></i> Upload Drawing';
+        } else if (containerId === 'part-form-container') {
+            const btn = document.getElementById("btn-toggle-new-part");
+            if (btn) btn.innerHTML = '<i data-lucide="plus-circle"></i> Tambah EJO Repair Part';
+        } else if (containerId === 'user-form-container') {
+            const btn = document.getElementById("btn-toggle-new-user");
+            if (btn) btn.innerHTML = '<i data-lucide="plus-circle"></i> Daftarkan User';
+        }
+        if (window.lucide) {
+            try { lucide.createIcons(); } catch (e) {}
+        }
+    }
+    window.resetFormToggleButton = resetFormToggleButton;
+
+    function resetGejoForm() {
+        state.editingGejoId = null;
+        const formEl = document.getElementById("gejo-form");
+        if (formEl) formEl.reset();
+        if (typeof resetGejoImagePreview === 'function') {
+            resetGejoImagePreview();
+        } else if (typeof window.resetGejoImagePreview === 'function') {
+            window.resetGejoImagePreview();
+        }
+        if (typeof toggleGejoRepairFields === 'function') {
+            toggleGejoRepairFields("");
+        } else if (typeof window.toggleGejoRepairFields === 'function') {
+            window.toggleGejoRepairFields("");
+        }
+        if (typeof updateGejoFormCategoryLimitNotice === 'function') {
+            updateGejoFormCategoryLimitNotice("");
+        } else if (typeof window.updateGejoFormCategoryLimitNotice === 'function') {
+            window.updateGejoFormCategoryLimitNotice("");
+        }
+        const wspInfo = document.getElementById("gejo-wsp-status-info");
+        if (wspInfo) {
+            wspInfo.style.display = "none";
+            wspInfo.textContent = "";
+        }
+        const urgentDisplay = document.getElementById("gejo-urgent-reason-display");
+        if (urgentDisplay) urgentDisplay.style.display = "none";
+        const urgentText = document.getElementById("gejo-urgent-reason-text");
+        if (urgentText) urgentText.value = "";
+        const submitBtn = document.querySelector('#gejo-form button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.innerHTML = `<i data-lucide="send" style="width: 16px; height: 16px;"></i><span>Kirim General EJO</span>`;
+        }
+        if (window.lucide) {
+            try { lucide.createIcons(); } catch (e) {}
+        }
+    }
+    window.resetGejoForm = resetGejoForm;
+
+    function resetDrawingForm() {
+        state.editingDrawingId = null;
+        const formEl = document.getElementById("drawing-form");
+        if (formEl) formEl.reset();
+        const drawingFilename = document.getElementById("drawing-file-filename");
+        const drawingPreview = document.getElementById("drawing-file-preview");
+        const drawingPreviewImg = document.getElementById("drawing-file-preview-img");
+        if (drawingFilename) drawingFilename.textContent = "Pilih file Lampiran (PDF/Gambar)";
+        if (drawingPreview) drawingPreview.style.display = "none";
+        if (drawingPreviewImg) drawingPreviewImg.src = "";
+        const fileInput = document.getElementById("drawing-file");
+        if (fileInput) fileInput.value = "";
+        const urgentDisplay = document.getElementById("drawing-urgent-reason-display");
+        if (urgentDisplay) urgentDisplay.style.display = "none";
+        const urgentText = document.getElementById("drawing-urgent-reason-text");
+        if (urgentText) urgentText.value = "";
+        const prioritySelect = document.getElementById("drawing-form-priority");
+        if (prioritySelect) {
+            prioritySelect.value = "3";
+            prioritySelect.dataset.prevVal = "3";
+            delete prioritySelect.dataset.urgentReason;
+        }
+        const customIdInput = document.getElementById("drawing-custom-id");
+        if (customIdInput) customIdInput.value = "";
+        const submitBtn = document.querySelector('#drawing-form button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.innerHTML = (state.drawingFormMode === 'import')
+                ? `<i data-lucide="upload" style="width: 16px; height: 16px;"></i><span>Import Drawing</span>`
+                : `<i data-lucide="send" style="width: 16px; height: 16px;"></i><span>Kirim Request Drawing</span>`;
+        }
+        if (window.lucide) {
+            try { lucide.createIcons(); } catch (e) {}
+        }
+    }
+    window.resetDrawingForm = resetDrawingForm;
+
+    function resetFormContainerContent(containerId) {
+        if (!containerId) return;
+        try {
+            if (containerId === 'gejo-form-container') {
+                if (typeof resetGejoForm === 'function') {
+                    resetGejoForm();
+                } else if (typeof window.resetGejoForm === 'function') {
+                    window.resetGejoForm();
+                }
+            } else if (containerId === 'drawing-form-container') {
+                if (typeof resetDrawingForm === 'function') {
+                    resetDrawingForm();
+                } else if (typeof window.resetDrawingForm === 'function') {
+                    window.resetDrawingForm();
+                }
+            } else if (containerId === 'part-form-container') {
+                if (typeof resetRepairPartEjoForm === 'function') {
+                    resetRepairPartEjoForm();
+                } else if (typeof window.resetRepairPartEjoForm === 'function') {
+                    window.resetRepairPartEjoForm();
+                }
+                if (typeof resetPartImagePreview === 'function') {
+                    resetPartImagePreview();
+                } else if (typeof window.resetPartImagePreview === 'function') {
+                    window.resetPartImagePreview();
+                }
+            } else if (containerId === 'sparepart-form-container') {
+                const spareForm = document.getElementById("sparepart-form");
+                if (spareForm) spareForm.reset();
+                if (typeof resetPartImagePreview === 'function') {
+                    resetPartImagePreview();
+                } else if (typeof window.resetPartImagePreview === 'function') {
+                    window.resetPartImagePreview();
+                }
+                const partWspInfo = document.getElementById("part-wsp-status-info");
+                if (partWspInfo) { partWspInfo.style.display = "none"; partWspInfo.textContent = ""; }
+            } else if (containerId === 'project-form-container') {
+                if (typeof resetProjectForm === 'function') {
+                    resetProjectForm();
+                } else if (typeof window.resetProjectForm === 'function') {
+                    window.resetProjectForm();
+                }
+            } else if (containerId === 'user-form-container') {
+                if (typeof resetUserForm === 'function') {
+                    resetUserForm();
+                } else if (typeof window.resetUserForm === 'function') {
+                    window.resetUserForm();
+                }
+            }
+            if (window.lucide) {
+                try { lucide.createIcons(); } catch (e) {}
+            }
+        } catch (e) {
+            console.error("Error resetting form container content:", containerId, e);
+        }
+    }
+    window.resetFormContainerContent = resetFormContainerContent;
+
+    function autoCloseOpenFormContainers(excludeId = null) {
+        AUTO_CLOSE_FORM_CONTAINER_IDS.forEach(id => {
+            if (id === excludeId) return;
+            const el = document.getElementById(id);
+            if (el && el.style.display !== 'none' && el.style.display !== '') {
+                el.style.display = 'none';
+                resetFormContainerContent(id);
+                resetFormToggleButton(id);
+            }
+            if (formInactivityTimers[id]) {
+                clearTimeout(formInactivityTimers[id]);
+                delete formInactivityTimers[id];
+            }
+        });
+    }
+    window.autoCloseOpenFormContainers = autoCloseOpenFormContainers;
+
+    function startFormInactivityTimer(formContainerId) {
+        if (!formContainerId) return;
+        const formContainer = document.getElementById(formContainerId);
+        if (!formContainer) return;
+
+        if (formInactivityTimers[formContainerId]) {
+            clearTimeout(formInactivityTimers[formContainerId]);
+        }
+
+        formInactivityTimers[formContainerId] = setTimeout(() => {
+            // Only close if element is still visible and no active modal is covering screen
+            const modalActive = document.querySelector('.modal.active, .modal[style*="display: flex"], .modal[style*="display: block"]');
+            if (modalActive) {
+                // Re-arm timer if modal is open
+                startFormInactivityTimer(formContainerId);
+                return;
+            }
+
+            if (formContainer && formContainer.style.display !== 'none' && formContainer.style.display !== '') {
+                const activeEl = document.activeElement;
+                const isFocusedInside = activeEl && formContainer.contains(activeEl);
+                if (isFocusedInside) {
+                    // If user is currently focused on a field, extend timer
+                    startFormInactivityTimer(formContainerId);
+                    return;
+                }
+                formContainer.style.display = 'none';
+                resetFormContainerContent(formContainerId);
+                resetFormToggleButton(formContainerId);
+                if (formInactivityTimers[formContainerId]) {
+                    delete formInactivityTimers[formContainerId];
+                }
+            }
+        }, FORM_INACTIVITY_TIMEOUT_MS);
+    }
+
+    function resetFormInactivityTimer(formContainerId) {
+        if (!formContainerId) return;
+        const formContainer = document.getElementById(formContainerId);
+        if (formContainer && formContainer.style.display !== 'none' && formContainer.style.display !== '') {
+            startFormInactivityTimer(formContainerId);
+        }
+    }
+
+    function setupFormInactivityListeners() {
+        AUTO_CLOSE_FORM_CONTAINER_IDS.forEach(id => {
+            const container = document.getElementById(id);
+            if (!container) return;
+
+            // Reset timer on any user interaction inside the form
+            const events = ['input', 'change', 'focusin', 'keydown', 'click', 'mousemove', 'touchstart'];
+            events.forEach(evt => {
+                container.addEventListener(evt, () => {
+                    resetFormInactivityTimer(id);
+                }, { passive: true });
+            });
+
+            // Use MutationObserver to detect when form container is opened / closed
+            try {
+                const observer = new MutationObserver(() => {
+                    if (container.style.display !== 'none' && container.style.display !== '') {
+                        startFormInactivityTimer(id);
+                    } else {
+                        resetFormToggleButton(id);
+                        if (formInactivityTimers[id]) {
+                            clearTimeout(formInactivityTimers[id]);
+                            delete formInactivityTimers[id];
+                        }
+                    }
+                });
+                observer.observe(container, { attributes: true, attributeFilter: ['style', 'class'] });
+            } catch (e) {}
+        });
+    }
+    window.setupFormInactivityListeners = setupFormInactivityListeners;
+
+    // ponytail: helper function to toggle submenus smoothly with accordion behavior (closes all other submenus and open form containers)
     function toggleSubmenuSmooth(targetSubmenu, targetChevron) {
         if (!targetSubmenu) return;
         const isCurrentlyOpen = targetSubmenu.classList.contains("open");
+
+        // Autoclose open creation form containers when switching submenus
+        autoCloseOpenFormContainers();
 
         const allSubmenuItems = [
             { id: "general-ejo-submenu", chevron: document.querySelector("#btn-nav-general-ejo .gejo-chevron") },
@@ -2491,22 +2909,12 @@ function initEventListeners() {
                 return;
             }
 
-            // ponytail: handle toggle for nested drawing-gallery button click
+            // ponytail: handle drawing-gallery button click
             if (btn.id === "btn-nav-drawing-gallery") {
-                const submenu = document.getElementById("drawing-gallery-submenu");
-                const chevron = btn.querySelector(".drawing-gallery-chevron");
-                toggleSubmenuSmooth(submenu, chevron);
-                const currentRole = state.currentUser ? state.currentUser.role : '';
-                const isDeptSpvMgr = isNonEngSpvOrManager(state.currentUser);
-                const userDept = (state.currentUser ? state.currentUser.department || '' : '').toUpperCase();
-                const isEng = DRAFTER_ROLES.includes(currentRole) || isForemanAdminRole(currentRole) || currentRole === 'Supervisor Eng' || currentRole === 'Manager Eng' || currentRole === 'Staff ENG' || currentRole === 'User ENG' || currentRole === 'Server' || userDept === 'ENG' || getUserDepartmentCode() === 'ENG';
-                const isInternalEng = isEng && !isDeptSpvMgr;
-                if (!isInternalEng) {
-                    switchTab("partlist-gallery");
-                } else {
-                    state.activeGalleryCategory = 'all';
-                    switchTab("drawing-gallery");
-                }
+                state.activeGalleryCategory = 'all';
+                document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+                switchTab("drawing-gallery");
                 e.preventDefault();
                 return;
             }
@@ -2522,7 +2930,12 @@ function initEventListeners() {
             // ponytail: capture phase attribute for projects submenus including archive
             const phaseAttr = btn.getAttribute("data-phase");
             if (phaseAttr) {
-                state.activeProjectPhase = (phaseAttr === 'archive') ? phaseAttr : parseInt(phaseAttr);
+                const targetP = (phaseAttr === 'archive') ? phaseAttr : parseInt(phaseAttr);
+                if (state.activeTab === 'projects' && state.activeProjectPhase === targetP) {
+                    state.activeProjectPhase = null;
+                } else {
+                    state.activeProjectPhase = targetP;
+                }
             } else if (btn.getAttribute("data-tab") === 'projects' || btn.id === "btn-nav-projects") {
                 state.activeProjectPhase = null;
             }
@@ -2530,7 +2943,12 @@ function initEventListeners() {
             // ponytail: capture phase attribute for general-ejo submenus
             const gejoPhaseAttr = btn.getAttribute("data-gejo-phase");
             if (gejoPhaseAttr) {
-                state.activeGeneralEjoPhase = parseInt(gejoPhaseAttr);
+                const targetGejoP = parseInt(gejoPhaseAttr);
+                if (state.activeTab === 'general-ejo' && state.activeGeneralEjoPhase === targetGejoP) {
+                    state.activeGeneralEjoPhase = null;
+                } else {
+                    state.activeGeneralEjoPhase = targetGejoP;
+                }
             } else if (btn.getAttribute("data-tab") === 'general-ejo' || btn.id === "btn-nav-general-ejo") {
                 state.activeGeneralEjoPhase = null;
             }
@@ -2538,7 +2956,12 @@ function initEventListeners() {
             // ponytail: capture phase attribute for drawing submenus
             const drawingPhaseAttr = btn.getAttribute("data-drawing-phase");
             if (drawingPhaseAttr) {
-                state.activeDrawingPhase = parseInt(drawingPhaseAttr);
+                const targetDrawingP = parseInt(drawingPhaseAttr);
+                if (state.activeTab === 'drawing' && state.activeDrawingPhase === targetDrawingP) {
+                    state.activeDrawingPhase = null;
+                } else {
+                    state.activeDrawingPhase = targetDrawingP;
+                }
             } else if (btn.id === "btn-nav-drawing-all") {
                 state.activeDrawingPhase = 'history';
             } else if (btn.getAttribute("data-tab") === 'drawing' || btn.id === "btn-nav-drawing") {
@@ -2787,28 +3210,23 @@ function initEventListeners() {
         // ponytail: toggle form General EJO (DB terpisah), bukan switchTab
         const form = document.getElementById("gejo-form-container");
         if (form) {
-            const isOpening = form.style.display === 'none';
+            const isOpening = form.style.display === 'none' || form.style.display === '';
             if (isOpening) {
-                const formEl = document.getElementById("gejo-form");
-                if (formEl) formEl.reset();
-                resetGejoImagePreview();
-                toggleGejoRepairFields("");
+                resetFormContainerContent("gejo-form-container");
                 applyUserDepartmentToFormSelect("gejo-form-dept");
                 updateGejoCategoryOptionsLimit();
                 updateGejoFormCategoryLimitNotice("");
+                form.style.display = 'block';
+            } else {
+                form.style.display = 'none';
+                resetFormContainerContent("gejo-form-container");
             }
-            form.style.display = isOpening ? 'block' : 'none';
         }
     });
 
     // ponytail: cancel button General EJO form
     document.getElementById("gejo-btn-cancel-form").addEventListener("click", () => {
-        state.editingGejoId = null;
-        const formEl = document.getElementById("gejo-form");
-        if (formEl) formEl.reset();
-        resetGejoImagePreview();
-        toggleGejoRepairFields("");
-        updateGejoFormCategoryLimitNotice("");
+        resetFormContainerContent("gejo-form-container");
         document.getElementById("gejo-form-container").style.display = 'none';
     });
 
@@ -2927,6 +3345,7 @@ function initEventListeners() {
 
         if (isOpen && isCurrentMode && !state.editingDrawingId) {
             formContainer.style.display = 'none';
+            resetFormContainerContent('drawing-form-container');
         } else {
             state.drawingFormMode = mode;
             state.editingDrawingId = null;
@@ -3072,17 +3491,8 @@ function initEventListeners() {
         });
     }
     document.getElementById("btn-cancel-drawing-form").addEventListener("click", () => {
-        const formEl = document.getElementById("drawing-form");
-        if (formEl) formEl.reset();
+        resetFormContainerContent("drawing-form-container");
         document.getElementById("drawing-form-container").style.display = 'none';
-
-        // ponytail: reset filename and preview
-        const drawingFilename = document.getElementById("drawing-file-filename");
-        const drawingPreview = document.getElementById("drawing-file-preview");
-        const drawingPreviewImg = document.getElementById("drawing-file-preview-img");
-        if (drawingFilename) drawingFilename.textContent = "Pilih file Lampiran (PDF/Gambar)";
-        if (drawingPreview) drawingPreview.style.display = "none";
-        if (drawingPreviewImg) drawingPreviewImg.src = "";
     });
 
     // ponytail: reset helper for gejo photo before preview
@@ -3417,21 +3827,238 @@ function initEventListeners() {
     }
 
     // Project Form Toggles
+    // Project Form Toggles
     const btnToggleProj = document.getElementById("btn-toggle-new-project");
     const projFormContainer = document.getElementById("project-form-container");
     if (btnToggleProj) {
         btnToggleProj.addEventListener("click", () => {
-            const isHidden = projFormContainer.style.display === 'none';
+            const isHidden = projFormContainer.style.display === 'none' || projFormContainer.style.display === '';
             projFormContainer.style.display = isHidden ? 'block' : 'none';
             if (isHidden) {
+                resetFormContainerContent('project-form-container');
                 populateApprovedDrawingsSelect();
+                populateProjectDrawingDatalist("");
+            } else {
+                resetFormContainerContent('project-form-container');
             }
             btnToggleProj.innerHTML = isHidden ? '<i data-lucide="minus-circle"></i> Sembunyikan Form' : '<i data-lucide="plus-circle"></i> Project Baru';
             lucide.createIcons();
         });
     }
 
+    // ponytail: Populate dynamic datalist options for Project Form Drawing Autodetect
+    function populateProjectDrawingDatalist(filterQuery = "") {
+        const datalist = document.getElementById("proj-drawing-datalist");
+        if (!datalist) return;
 
+        const q = (filterQuery || "").toLowerCase().trim();
+        const options = [];
+
+        // 1. Technical Drawings from state.drawings (Galeri Drawing)
+        const drawings = (state.drawings || []).filter(d => !d.is_archived);
+        let matchedDrawings = drawings;
+        if (q.length >= 1) {
+            matchedDrawings = drawings.filter(d =>
+                (d.id || '').toLowerCase().includes(q) ||
+                (d.title || '').toLowerCase().includes(q) ||
+                (d.category || '').toLowerCase().includes(q) ||
+                (d.dept || '').toLowerCase().includes(q) ||
+                (d.ejo_id || '').toLowerCase().includes(q) ||
+                (d.drafter || '').toLowerCase().includes(q) ||
+                (d.engineer || '').toLowerCase().includes(q)
+            );
+        }
+        matchedDrawings.slice(0, 40).forEach(d => {
+            const cat = d.category || 'General';
+            const dept = d.dept || 'ENG';
+            const val = `${d.id} - ${d.title || 'Drawing EJO'} (${cat} • ${dept})`;
+            options.push(`<option value="${escapeHtml(val)}" data-type="drawing" data-id="${escapeHtml(d.id)}">`);
+        });
+
+        // 2. Galeri Spare Parts from state.repairParts
+        const parts = state.repairParts || [];
+        let matchedParts = parts;
+        if (q.length >= 1) {
+            matchedParts = parts.filter(p =>
+                (p.name || '').toLowerCase().includes(q) ||
+                (p.code || '').toLowerCase().includes(q) ||
+                (p.category || '').toLowerCase().includes(q) ||
+                (p.description || '').toLowerCase().includes(q)
+            );
+        }
+        matchedParts.slice(0, 20).forEach(p => {
+            const cat = p.category || 'Spare Part';
+            const codePrefix = p.code ? `${p.code} - ` : '';
+            const val = `[PART] ${codePrefix}${p.name || 'Spare Part'} (${cat})`;
+            options.push(`<option value="${escapeHtml(val)}" data-type="part" data-id="${escapeHtml(p.id)}">`);
+        });
+
+        datalist.innerHTML = options.slice(0, 60).join("");
+    }
+    window.populateProjectDrawingDatalist = populateProjectDrawingDatalist;
+
+    // ponytail: Setup Autodetect events for Galeri Drawing on Project Form
+    function setupProjectDrawingAutodetect() {
+        const searchInput = document.getElementById("proj-form-drawing-search");
+        if (!searchInput) return;
+
+        let debounceTimer = null;
+        const handleDrawingMatch = (e) => {
+            const val = searchInput.value.trim();
+            const infoEl = document.getElementById("proj-drawing-status-info");
+            const titleInput = document.getElementById("proj-title");
+            const deptSelect = document.getElementById("proj-dept");
+            const descInput = document.getElementById("proj-desc");
+            const projDrawingSelect = document.getElementById("proj-drawing-select");
+
+            if (!val) {
+                if (infoEl) {
+                    infoEl.style.display = "none";
+                    infoEl.innerHTML = "";
+                }
+                return;
+            }
+
+            // Dynamically update datalist on input with debounce
+            if (e && e.type === "input") {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => populateProjectDrawingDatalist(val), 100);
+            }
+
+            const valLower = val.toLowerCase();
+
+            // 1. Check if user typed or selected a Drawing EJO
+            const allDrawings = (state.drawings || []).filter(d => !d.is_archived);
+            let matchedDrawing = allDrawings.find(d => {
+                const cat = d.category || 'General';
+                const dept = d.dept || 'ENG';
+                const formatted = `${d.id} - ${d.title || 'Drawing EJO'} (${cat} • ${dept})`.toLowerCase();
+                return d.id.toLowerCase() === valLower ||
+                    formatted === valLower ||
+                    `${d.id} - ${d.title}`.toLowerCase() === valLower;
+            });
+
+            // Fallback drawing match: startsWith ID or includes
+            if (!matchedDrawing && valLower.length >= 3) {
+                matchedDrawing = allDrawings.find(d =>
+                    d.id.toLowerCase() === valLower ||
+                    (d.id && valLower.startsWith(d.id.toLowerCase()))
+                );
+            }
+
+            // 2. Check if user typed or selected a Spare Part
+            let matchedPart = null;
+            if (!matchedDrawing && state.repairParts) {
+                matchedPart = state.repairParts.find(p => {
+                    const cat = p.category || 'Spare Part';
+                    const codePrefix = p.code ? `${p.code} - ` : '';
+                    const formatted = `[PART] ${codePrefix}${p.name || 'Spare Part'} (${cat})`.toLowerCase();
+                    return formatted === valLower ||
+                        (p.code && p.code.toLowerCase() === valLower) ||
+                        (p.name && p.name.toLowerCase() === valLower);
+                });
+                if (!matchedPart && valLower.length >= 4) {
+                    matchedPart = state.repairParts.find(p =>
+                        (p.code && valLower.includes(p.code.toLowerCase())) ||
+                        (p.name && valLower.includes(p.name.toLowerCase()))
+                    );
+                }
+            }
+
+            if (matchedDrawing) {
+                searchInput.dataset.selectedDrawingId = matchedDrawing.id;
+                // Auto-fill Title
+                if (titleInput && (!titleInput.value || titleInput.value.trim() === '' || titleInput.dataset.autofilled === 'true')) {
+                    titleInput.value = matchedDrawing.title || `Project Drawing ${matchedDrawing.id}`;
+                    titleInput.dataset.autofilled = 'true';
+                }
+
+                // Auto-fill Dept
+                if (deptSelect) {
+                    let targetDept = normalizeDepartmentCode(matchedDrawing.dept);
+                    if (!targetDept && matchedDrawing.uploader) {
+                        const u = (state.users || []).find(user =>
+                            (user.username && user.username.toLowerCase() === matchedDrawing.uploader.toLowerCase()) ||
+                            (user.fullname && user.fullname.toLowerCase() === matchedDrawing.uploader.toLowerCase())
+                        );
+                        if (u) targetDept = normalizeDepartmentCode(u.dept);
+                    }
+                    if (!targetDept) targetDept = 'ENG';
+
+                    const hasOption = Array.from(deptSelect.options).some(opt => opt.value === targetDept);
+                    if (hasOption) {
+                        deptSelect.value = targetDept;
+                        deptSelect.dataset.autofilled = 'true';
+                    }
+                }
+
+                // Auto-fill Description
+                if (descInput && (!descInput.value || descInput.value.trim() === '' || descInput.dataset.autofilled === 'true')) {
+                    descInput.value = `Gagasan project berbasis Galeri Drawing:\nID Drawing: ${matchedDrawing.id}\nJudul: ${matchedDrawing.title || '-'}\nKategori: ${matchedDrawing.category || '-'}\nDepartemen: ${matchedDrawing.dept || '-'}\n${matchedDrawing.drafter ? 'Drafter: ' + matchedDrawing.drafter + '\n' : ''}${matchedDrawing.ejo_id ? 'Ref EJO: ' + matchedDrawing.ejo_id + '\n' : ''}\nCatatan / Deskripsi Drawing:\n${matchedDrawing.description || '-'}`;
+                    descInput.dataset.autofilled = 'true';
+                }
+
+                // Sync with proj-drawing-select dropdown
+                if (projDrawingSelect) {
+                    let foundOption = Array.from(projDrawingSelect.options || []).find(opt => opt.value === matchedDrawing.id);
+                    if (!foundOption && projDrawingSelect.tagName === "SELECT") {
+                        const newOpt = document.createElement("option");
+                        newOpt.value = matchedDrawing.id;
+                        newOpt.textContent = `${matchedDrawing.id} - ${matchedDrawing.title || 'Drawing EJO'} (${matchedDrawing.category || 'Galeri'})`;
+                        projDrawingSelect.appendChild(newOpt);
+                    }
+                    projDrawingSelect.value = matchedDrawing.id;
+                }
+
+                // Status info indicator
+                if (infoEl) {
+                    infoEl.style.display = "block";
+                    infoEl.style.color = "var(--color-cyan)";
+                    infoEl.innerHTML = `<i data-lucide="check-circle-2" style="width:14px;height:14px;vertical-align:middle;display:inline-block;margin-right:4px;"></i> <strong>Drawing Terpilih:</strong> ${escapeHtml(matchedDrawing.id)} - ${escapeHtml(matchedDrawing.title || '')} <span class="badge badge-outline" style="font-size:0.7rem;margin-left:4px;color:var(--color-cyan);border-color:var(--color-cyan);">${escapeHtml(matchedDrawing.category || 'Drawing')} • ${escapeHtml(matchedDrawing.dept || 'ENG')}</span>`;
+                    lucide.createIcons();
+                }
+
+                showToast(`✓ Drawing ${matchedDrawing.id} berhasil di-autodetect ke Form Project!`, "info");
+            } else if (matchedPart) {
+                searchInput.dataset.selectedDrawingId = matchedPart.id;
+                if (projDrawingSelect) projDrawingSelect.value = matchedPart.id;
+                // Auto-fill Title for Part
+                if (titleInput && (!titleInput.value || titleInput.value.trim() === '' || titleInput.dataset.autofilled === 'true')) {
+                    titleInput.value = `Pengadaan / Fabrikasi ${matchedPart.name || 'Spare Part'}`;
+                    titleInput.dataset.autofilled = 'true';
+                }
+
+                // Auto-fill Dept
+                if (deptSelect) {
+                    deptSelect.value = "ENG";
+                    deptSelect.dataset.autofilled = 'true';
+                }
+
+                // Auto-fill Description
+                if (descInput && (!descInput.value || descInput.value.trim() === '' || descInput.dataset.autofilled === 'true')) {
+                    descInput.value = `Gagasan project berbasis Galeri Spare Part:\nKode Part: ${matchedPart.code || '-'}\nNama Part: ${matchedPart.name || '-'}\nKategori: ${matchedPart.category || 'Mekanik'}\nLokasi / Mesin: ${matchedPart.location || matchedPart.unit || '-'}\n\nDeskripsi / Spesifikasi:\n${matchedPart.description || '-'}`;
+                    descInput.dataset.autofilled = 'true';
+                }
+
+                // Status info indicator
+                if (infoEl) {
+                    infoEl.style.display = "block";
+                    infoEl.style.color = "var(--color-green)";
+                    infoEl.innerHTML = `<i data-lucide="check-circle-2" style="width:14px;height:14px;vertical-align:middle;display:inline-block;margin-right:4px;"></i> <strong>Spare Part Terpilih:</strong> ${escapeHtml(matchedPart.code ? matchedPart.code + ' - ' : '')}${escapeHtml(matchedPart.name || '')} <span class="badge badge-outline" style="font-size:0.7rem;margin-left:4px;color:var(--color-green);border-color:var(--color-green);">Galeri Part</span>`;
+                    lucide.createIcons();
+                }
+
+                showToast(`✓ Spare Part ${matchedPart.name} berhasil di-autodetect ke Form Project!`, "info");
+            } else {
+                delete searchInput.dataset.selectedDrawingId;
+                if (projDrawingSelect) projDrawingSelect.value = "";
+            }
+        };
+
+        searchInput.addEventListener("input", handleDrawingMatch);
+        searchInput.addEventListener("change", handleDrawingMatch);
+    }
+    window.setupProjectDrawingAutodetect = setupProjectDrawingAutodetect;
 
     const projDrawingSelect = document.getElementById("proj-drawing-select");
     if (projDrawingSelect) {
@@ -3443,13 +4070,25 @@ function initEventListeners() {
 
             const titleInput = document.getElementById("proj-title");
             const descInput = document.getElementById("proj-desc");
+            const searchInput = document.getElementById("proj-form-drawing-search");
+            const infoEl = document.getElementById("proj-drawing-status-info");
+
             if (titleInput && (!titleInput.value || titleInput.value.trim() === '' || titleInput.dataset.autofilled === 'true')) {
                 titleInput.value = drawing.title || `Project ${drawing.id}`;
                 titleInput.dataset.autofilled = 'true';
             }
             if (descInput && (!descInput.value || descInput.value.trim() === '' || descInput.dataset.autofilled === 'true')) {
-                descInput.value = `Gagasan project berbasis Drawing EJO: ${drawing.id} - ${drawing.title || ''}\nRef EJO: ${drawing.ejo_id || '-'}\n\nCatatan Drawing:\n${drawing.description || ''}`;
+                descInput.value = `Gagasan project berbasis Drawing EJO:\nID Drawing: ${drawing.id}\nJudul: ${drawing.title || ''}\nRef EJO: ${drawing.ejo_id || '-'}\n\nCatatan Drawing:\n${drawing.description || ''}`;
                 descInput.dataset.autofilled = 'true';
+            }
+            if (searchInput) {
+                searchInput.value = `${drawing.id} - ${drawing.title || 'Drawing EJO'} (${drawing.category || 'General'} • ${drawing.dept || 'ENG'})`;
+            }
+            if (infoEl) {
+                infoEl.style.display = "block";
+                infoEl.style.color = "var(--color-cyan)";
+                infoEl.innerHTML = `<i data-lucide="check-circle-2" style="width:14px;height:14px;vertical-align:middle;display:inline-block;margin-right:4px;"></i> <strong>Drawing Terpilih:</strong> ${escapeHtml(drawing.id)} - ${escapeHtml(drawing.title || '')} <span class="badge badge-outline" style="font-size:0.7rem;margin-left:4px;color:var(--color-cyan);border-color:var(--color-cyan);">${escapeHtml(drawing.category || 'Drawing')} • ${escapeHtml(drawing.dept || 'ENG')}</span>`;
+                lucide.createIcons();
             }
             showToast(`Drawing EJO ${drawing.id} dipilih untuk project ini`, "info");
         });
@@ -3458,7 +4097,7 @@ function initEventListeners() {
     const btnCancelProj = document.getElementById("btn-cancel-project");
     if (btnCancelProj) {
         btnCancelProj.addEventListener("click", () => {
-            resetProjectForm();
+            resetFormContainerContent('project-form-container');
             projFormContainer.style.display = 'none';
             btnToggleProj.innerHTML = '<i data-lucide="plus-circle"></i> Project Baru';
             lucide.createIcons();
@@ -3477,13 +4116,38 @@ function initEventListeners() {
         const form = document.getElementById("project-form");
         if (form) form.reset();
 
+        const noIoInput = document.getElementById("proj-no-io");
+        if (noIoInput) noIoInput.value = "";
+
+        const noMocInput = document.getElementById("proj-no-moc");
+        if (noMocInput) noMocInput.value = "";
+
         const titleInput = document.getElementById("proj-title");
         if (titleInput) delete titleInput.dataset.autofilled;
+
+        const deptSelect = document.getElementById("proj-dept");
+        if (deptSelect) delete deptSelect.dataset.autofilled;
 
         const descInput = document.getElementById("proj-desc");
         if (descInput) delete descInput.dataset.autofilled;
 
+        const searchInput = document.getElementById("proj-form-drawing-search");
+        if (searchInput) {
+            searchInput.value = "";
+            delete searchInput.dataset.selectedDrawingId;
+        }
+
+        const projDrawingSelect = document.getElementById("proj-drawing-select");
+        if (projDrawingSelect) projDrawingSelect.value = "";
+
+        const infoEl = document.getElementById("proj-drawing-status-info");
+        if (infoEl) {
+            infoEl.style.display = "none";
+            infoEl.innerHTML = "";
+        }
+
         populateApprovedDrawingsSelect();
+        populateProjectDrawingDatalist("");
     }
     window.resetProjectForm = resetProjectForm;
 
@@ -3595,18 +4259,20 @@ function initEventListeners() {
     const spareFormContainer = document.getElementById("sparepart-form-container");
     if (btnToggleSpare && spareFormContainer) {
         btnToggleSpare.addEventListener("click", () => {
-            const isHidden = spareFormContainer.style.display === 'none';
+            const isHidden = spareFormContainer.style.display === 'none' || spareFormContainer.style.display === '';
             spareFormContainer.style.display = isHidden ? 'block' : 'none';
             btnToggleSpare.innerHTML = isHidden ? '<i data-lucide="minus-circle"></i> Sembunyikan Form' : '<i data-lucide="upload"></i> Upload Drawing';
             if (isHidden) {
-                document.getElementById("sparepart-form").reset();
-                resetPartImagePreview();
+                resetFormContainerContent('sparepart-form-container');
                 // Close the EJO form if open
                 const partFormContainer = document.getElementById("part-form-container");
                 if (partFormContainer && btnTogglePart) {
                     partFormContainer.style.display = 'none';
+                    resetFormContainerContent('part-form-container');
                     btnTogglePart.innerHTML = '<i data-lucide="plus-circle"></i> Tambah EJO Repair Part';
                 }
+            } else {
+                resetFormContainerContent('sparepart-form-container');
             }
             lucide.createIcons();
         });
@@ -3615,11 +4281,7 @@ function initEventListeners() {
     const btnCancelSpare = document.getElementById("btn-cancel-sparepart");
     if (btnCancelSpare) {
         btnCancelSpare.addEventListener("click", () => {
-            document.getElementById("sparepart-form").reset();
-            resetPartImagePreview();
-            // ponytail: reset WSP status info di form spare part
-            const partWspInfo = document.getElementById("part-wsp-status-info");
-            if (partWspInfo) { partWspInfo.style.display = "none"; partWspInfo.textContent = ""; }
+            resetFormContainerContent('sparepart-form-container');
             if (spareFormContainer) spareFormContainer.style.display = 'none';
             if (btnToggleSpare) {
                 btnToggleSpare.innerHTML = '<i data-lucide="upload"></i> Upload Drawing';
@@ -3699,6 +4361,8 @@ function initEventListeners() {
         const loginForm = document.getElementById("login-form");
         const usernameInput = (document.getElementById("login-username")?.value || "").trim().toLowerCase();
         const passwordInput = document.getElementById("login-password")?.value || "";
+        const totpField = document.getElementById("login-totp-field");
+        const totpInput = (document.getElementById("login-totp-code")?.value || "").trim();
         const errorMsg = document.getElementById("login-error-msg");
         const submitBtn = document.getElementById("btn-login-submit") || loginForm?.querySelector("button[type='submit']");
         const originalBtnHTML = submitBtn ? submitBtn.innerHTML : null;
@@ -3725,11 +4389,40 @@ function initEventListeners() {
             const res = await fetch("/api/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username: usernameInput, password: passwordInput, device_id: activeDeviceId })
+                body: JSON.stringify({ 
+                    username: usernameInput, 
+                    password: passwordInput, 
+                    device_id: activeDeviceId,
+                    totp_code: totpInput
+                })
             });
 
+            const resData = await res.json().catch(() => ({}));
+
+            if (res.status === 200 && resData.requires_totp) {
+                if (submitBtn && originalBtnHTML) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnHTML;
+                }
+                if (totpField) {
+                    totpField.style.display = 'block';
+                    const codeEl = document.getElementById("login-totp-code");
+                    if (codeEl) {
+                        codeEl.focus();
+                        codeEl.setAttribute('required', 'required');
+                    }
+                }
+                if (errorMsg) {
+                    const span = errorMsg.querySelector("span");
+                    if (span) span.textContent = resData.message || "Masukkan 6-digit kode Authenticator!";
+                    errorMsg.style.color = "var(--color-cyan)";
+                    errorMsg.style.display = 'flex';
+                }
+                return false;
+            }
+
             if (res.status === 200) {
-                const userData = await res.json();
+                const userData = resData;
                 safeSessionStorage.setItem("PTBAS_USER", JSON.stringify(userData));
                 safeSessionStorage.removeItem("EJO_GREETING_DISMISSED");
 
@@ -3740,6 +4433,7 @@ function initEventListeners() {
 
                 setTimeout(() => {
                     if (loginForm) loginForm.reset();
+                    if (totpField) totpField.style.display = 'none';
                     if (submitBtn && originalBtnHTML) {
                         submitBtn.disabled = false;
                         submitBtn.innerHTML = originalBtnHTML;
@@ -3760,8 +4454,12 @@ function initEventListeners() {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = originalBtnHTML;
                 }
-                const errData = await res.json().catch(() => ({}));
-                const errMsgText = errData.message || (res.status === 401 ? "Username atau password salah!" : "Gagal melakukan login.");
+                if (resData.requires_totp && totpField) {
+                    totpField.style.display = 'block';
+                    const codeEl = document.getElementById("login-totp-code");
+                    if (codeEl) codeEl.focus();
+                }
+                const errMsgText = resData.message || (res.status === 401 ? "Username atau password salah!" : "Gagal melakukan login.");
                 if (errorMsg) {
                     const span = errorMsg.querySelector("span");
                     if (span) span.textContent = errMsgText;
@@ -4025,7 +4723,7 @@ function initEventListeners() {
                     }
                     canvas.width = w;
                     canvas.height = h;
-                    const ctx = canvas.getContext("2d");
+                    const ctx = canvas.getContext("2d", { willReadFrequently: true });
                     ctx.drawImage(img, 0, 0, w, h);
                     const compressedBase64 = canvas.toDataURL("image/png");
 
@@ -4059,7 +4757,7 @@ function initEventListeners() {
 
         if (!padModal || !canvas || !wrapper) return;
 
-        let ctx = canvas.getContext("2d");
+        let ctx = canvas.getContext("2d", { willReadFrequently: true });
         let isDrawing = false;
         let hasDrawn = false;
         let strokePoints = [];
@@ -4073,7 +4771,7 @@ function initEventListeners() {
             dpr = window.devicePixelRatio || 1;
             canvas.width = Math.floor(rect.width * dpr);
             canvas.height = Math.floor(rect.height * dpr);
-            ctx = canvas.getContext("2d");
+            ctx = canvas.getContext("2d", { willReadFrequently: true });
             ctx.scale(dpr, dpr);
             ctx.lineCap = "round";
             ctx.lineJoin = "round";
@@ -4301,7 +4999,7 @@ function initEventListeners() {
             const cropCanvas = document.createElement("canvas");
             cropCanvas.width = cropW;
             cropCanvas.height = cropH;
-            const cropCtx = cropCanvas.getContext("2d");
+            const cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
 
             cropCtx.drawImage(canvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
             return cropCanvas.toDataURL("image/png");
@@ -4463,11 +5161,13 @@ function initEventListeners() {
     const userFormContainer = document.getElementById("user-form-container");
     if (btnToggleUser && userFormContainer) {
         btnToggleUser.addEventListener("click", () => {
-            const isHidden = userFormContainer.style.display === 'none';
+            const isHidden = userFormContainer.style.display === 'none' || userFormContainer.style.display === '';
             userFormContainer.style.display = isHidden ? 'block' : 'none';
             if (isHidden) {
-                resetUserForm();
+                resetFormContainerContent('user-form-container');
                 filterUserRoleOptions();
+            } else {
+                resetFormContainerContent('user-form-container');
             }
             btnToggleUser.innerHTML = isHidden ? '<i data-lucide="minus-circle"></i> Sembunyikan Form' : '<i data-lucide="plus-circle"></i> Daftarkan User';
             lucide.createIcons();
@@ -4477,7 +5177,7 @@ function initEventListeners() {
     const btnCancelUser = document.getElementById("btn-cancel-user-form");
     if (btnCancelUser && userFormContainer) {
         btnCancelUser.addEventListener("click", () => {
-            resetUserForm();
+            resetFormContainerContent('user-form-container');
             userFormContainer.style.display = 'none';
             if (btnToggleUser) {
                 btnToggleUser.innerHTML = '<i data-lucide="plus-circle"></i> Daftarkan User';
@@ -4556,27 +5256,45 @@ function initEventListeners() {
     document.getElementById("btn-excel-export").addEventListener("click", exportToExcel);
 
     // ponytail: bind Excel import buttons
-    document.getElementById("btn-excel-import").addEventListener("click", () => {
-        document.getElementById("excel-import-input").click();
-    });
-    // ponytail: Helper function for modular database reset (Per Navbar Menu)
+    const btnExcelImport = document.getElementById("btn-excel-import");
+    const excelImportInput = document.getElementById("excel-import-input");
+    if (btnExcelImport && excelImportInput) {
+        btnExcelImport.addEventListener("click", () => {
+            excelImportInput.click();
+        });
+        excelImportInput.addEventListener("change", importFromExcel);
+    }
+
+    const btnExcelImportDrawing = document.getElementById("btn-excel-import-drawing");
+    const excelImportDrawingInput = document.getElementById("excel-import-drawing-input");
+    if (btnExcelImportDrawing && excelImportDrawingInput) {
+        btnExcelImportDrawing.addEventListener("click", () => {
+            excelImportDrawingInput.click();
+        });
+        excelImportDrawingInput.addEventListener("change", importDrawingFromExcel);
+    }
+    // ponytail: Helper function for modular database reset (Per Navbar Menu & Bulk Modules)
     async function handleModuleDatabaseReset(moduleKey, moduleTitle) {
         if (!state.currentUser || (state.currentUser.role !== 'Server' && state.currentUser.username !== 'server')) {
             showToast("Hanya akun role Server yang berwenang melakukan tindakan ini.", "error");
             return;
         }
 
-        const confirmed = await showCustomConfirm(
-            `PERINGATAN: Anda akan MENGHAPUS seluruh database modul "${moduleTitle}". Data yang dihapus tidak dapat dikembalikan! Apakah Anda yakin ingin melanjutkan?`,
-            `HAPUS DATABASE ${moduleTitle.toUpperCase()}`
-        );
+        const isAllModules = moduleKey === 'all-modules' || moduleKey === 'all-data';
+        const confirmMsg = isAllModules
+            ? `PERINGATAN KRITIS: Anda akan MENGHAPUS SELURUH DATA dari General EJO, Drawing, Project, Galeri, Dashboard Spare Part, dan History. Seluruh akun pengguna akan TETAP AMAN. Data yang dihapus tidak dapat dikembalikan! Apakah Anda yakin?`
+            : `PERINGATAN: Anda akan MENGHAPUS seluruh database modul "${moduleTitle}". Data yang dihapus tidak dapat dikembalikan! Apakah Anda yakin ingin melanjutkan?`;
+        const confirmTitle = isAllModules ? "HAPUS SEMUA DATA MODUL (KEEP AKUN)" : `HAPUS DATABASE ${moduleTitle.toUpperCase()}`;
+
+        const confirmed = await showCustomConfirm(confirmMsg, confirmTitle);
         if (!confirmed) return;
 
+        const promptKeyword = isAllModules ? "DELETE ALL" : "DELETE";
         const reconfirm = await showCustomPrompt(
-            `Ketik 'DELETE' (semua huruf besar) untuk mengonfirmasi penghapusan database ${moduleTitle}:`,
+            `Ketik '${promptKeyword}' (semua huruf besar) untuk mengonfirmasi penghapusan ${moduleTitle}:`,
             ""
         );
-        if (reconfirm !== "DELETE") {
+        if (reconfirm !== promptKeyword) {
             showToast("Tindakan dibatalkan. Konfirmasi tidak cocok.", "warning");
             return;
         }
@@ -4635,6 +5353,39 @@ function initEventListeners() {
     const btnResetUsers = document.getElementById("btn-reset-users");
     if (btnResetUsers) {
         btnResetUsers.addEventListener("click", () => handleModuleDatabaseReset("users", "Akun Personel"));
+    }
+    const btnResetAllModules = document.getElementById("btn-reset-all-modules");
+    if (btnResetAllModules) {
+        btnResetAllModules.addEventListener("click", () => handleModuleDatabaseReset("all-modules", "Seluruh Data Modul"));
+    }
+
+    // ponytail: Auto-Generate Based Accounts event listener (Server Exclusive)
+    const btnSeedBased = document.getElementById("btn-seed-based-accounts");
+    if (btnSeedBased) {
+        btnSeedBased.addEventListener("click", async () => {
+            const confirmed = await showCustomConfirm(
+                "Generate semua akun basis default (Teknisi ENG, Staff per Departemen, dan SPV per Departemen)?",
+                "AUTO-GENERATE AKUN BASIS"
+            );
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch("/api/users/seed-based-accounts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username: state.currentUser ? state.currentUser.username : "" })
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showToast(data.message || "Akun basis berhasil di-generate!", "success");
+                    await renderUsers();
+                } else {
+                    throw new Error(data.message || "Gagal meng-generate akun basis");
+                }
+            } catch (err) {
+                showToast(err.message || "Terjadi kesalahan sistem", "error");
+            }
+        });
     }
 
     // ponytail: Server Database Nuclear event listener
@@ -4824,6 +5575,10 @@ function closeKpiEditModal() {
 }
 
 function switchTab(tabId) {
+    // ponytail: auto-close any open creation form containers when switching tabs
+    if (typeof autoCloseOpenFormContainers === 'function') {
+        autoCloseOpenFormContainers();
+    }
     // ponytail: redirect overview, admin, and general-ejo tabs to drawing if user is a Drafter (since Drawing is their only visible menu)
     if (state.currentUser) {
         const userRole = state.currentUser.role;
@@ -5100,6 +5855,7 @@ function renderAll() {
     if (state.activeTab === 'overview') {
         renderOverviewCharts();
         renderCriticalList();
+        renderOverviewActivityLog();
     } else if (state.activeTab === 'general-ejo') {
         renderGeneralEJO();
     } else if (state.activeTab === 'drawing') {
@@ -5191,12 +5947,12 @@ function renderKPIs() {
 
     const total = allEjos.length;
     const pending = allEjos.filter(e => {
-        const isDrawing = (e.id || '').startsWith('DRW') || (e.id || '').startsWith('DEJO') || (e.category || '').toLowerCase() === 'drawing' || Boolean(e.drawing_type || e.drafter);
+        const isDrawing = isDrawingItem(e);
         return isDrawing ? isDrawingApprovalPendingForCurrentUser(e) : isApprovalPendingForCurrentUser(e);
     }).length;
 
     const progress = allEjos.filter(e => {
-        const isDrawing = (e.id || '').startsWith('DRW') || (e.id || '').startsWith('DEJO') || (e.category || '').toLowerCase() === 'drawing' || Boolean(e.drawing_type || e.drafter);
+        const isDrawing = isDrawingItem(e);
         return isDrawing ? (getDrawingPhase(e) === 2) : (getGeneralEjoPhase(e) === 2);
     }).length;
 
@@ -5678,6 +6434,8 @@ async function refreshDataBackground() {
                     state.drawings = newDrawings;
                     if (state.activeTab === 'drawing') {
                         renderDrawings();
+                    } else if (state.activeTab === 'overview') {
+                        renderAll();
                     }
                 }
 
@@ -5915,14 +6673,31 @@ async function markNotificationsRead() {
     }
 }
 
-// Critical Priority List
+// ponytail: Universal Phase Navigation Routers for Kanban column headers & submenu buttons (with toggle back on second click)
 function openGeneralEjoPhaseFromOverview(phase) {
-    const normalizedPhase = parseInt(phase, 10);
-    if (![1, 2, 3].includes(normalizedPhase)) return;
+    const normalizedPhase = (phase === 'archive' || parseInt(phase, 10) === 4) ? 4 : parseInt(phase, 10);
+    if (![1, 2, 3, 4].includes(normalizedPhase)) return;
+
+    // Toggle back to all if clicked again on active phase
+    if (state.activeTab === 'general-ejo' && state.activeGeneralEjoPhase === normalizedPhase) {
+        state.activeGeneralEjoPhase = null;
+        const mainBtn = document.getElementById("btn-nav-general-ejo");
+        if (mainBtn) {
+            document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+            mainBtn.classList.add("active");
+        }
+        switchTab('general-ejo');
+        renderGeneralEJO();
+        return;
+    }
 
     const phaseBtn = document.querySelector(`#general-ejo-submenu [data-tab="general-ejo"][data-gejo-phase="${normalizedPhase}"]`);
     if (phaseBtn) {
-        phaseBtn.click();
+        state.activeGeneralEjoPhase = normalizedPhase;
+        document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+        phaseBtn.classList.add("active");
+        switchTab('general-ejo');
+        renderGeneralEJO();
         return;
     }
 
@@ -5930,18 +6705,38 @@ function openGeneralEjoPhaseFromOverview(phase) {
     switchTab('general-ejo');
     renderGeneralEJO();
 }
+window.openGeneralEjoPhaseFromOverview = openGeneralEjoPhaseFromOverview;
+window.navigateToGeneralEjoPhase = openGeneralEjoPhaseFromOverview;
 
 function openGeneralEjoScheduleFromOverview() {
     openGeneralEjoPhaseFromOverview(1);
 }
+window.openGeneralEjoScheduleFromOverview = openGeneralEjoScheduleFromOverview;
 
 function openDrawingPhaseFromOverview(phase) {
-    const normalizedPhase = parseInt(phase, 10);
-    if (![1, 2, 3].includes(normalizedPhase)) return;
+    const normalizedPhase = (phase === 'archive' || parseInt(phase, 10) === 4) ? 4 : parseInt(phase, 10);
+    if (![1, 2, 3, 4].includes(normalizedPhase)) return;
+
+    // Toggle back to all if clicked again on active phase
+    if (state.activeTab === 'drawing' && state.activeDrawingPhase === normalizedPhase) {
+        state.activeDrawingPhase = null;
+        const mainBtn = document.getElementById("btn-nav-drawing");
+        if (mainBtn) {
+            document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+            mainBtn.classList.add("active");
+        }
+        switchTab('drawing');
+        renderDrawings();
+        return;
+    }
 
     const phaseBtn = document.querySelector(`#drawing-submenu [data-tab="drawing"][data-drawing-phase="${normalizedPhase}"]`);
     if (phaseBtn) {
-        phaseBtn.click();
+        state.activeDrawingPhase = normalizedPhase;
+        document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+        phaseBtn.classList.add("active");
+        switchTab('drawing');
+        renderDrawings();
         return;
     }
 
@@ -5950,6 +6745,7 @@ function openDrawingPhaseFromOverview(phase) {
     renderDrawings();
 }
 window.openDrawingPhaseFromOverview = openDrawingPhaseFromOverview;
+window.navigateToDrawingPhase = openDrawingPhaseFromOverview;
 
 function openDrawingScheduleFromOverview() {
     openDrawingPhaseFromOverview(1);
@@ -5957,12 +6753,29 @@ function openDrawingScheduleFromOverview() {
 window.openDrawingScheduleFromOverview = openDrawingScheduleFromOverview;
 
 function openProjectPhaseFromOverview(phase) {
-    const normalizedPhase = parseInt(phase, 10);
-    if (![1, 2, 3, 4].includes(normalizedPhase)) return;
+    const normalizedPhase = (phase === 'archive' || parseInt(phase, 10) === 5) ? 'archive' : parseInt(phase, 10);
+    if (![1, 2, 3, 4, 'archive'].includes(normalizedPhase)) return;
+
+    // Toggle back to all if clicked again on active phase
+    if (state.activeTab === 'projects' && state.activeProjectPhase === normalizedPhase) {
+        state.activeProjectPhase = null;
+        const mainBtn = document.getElementById("btn-nav-projects");
+        if (mainBtn) {
+            document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+            mainBtn.classList.add("active");
+        }
+        switchTab('projects');
+        renderProjects();
+        return;
+    }
 
     const phaseBtn = document.querySelector(`#projects-submenu [data-tab="projects"][data-phase="${normalizedPhase}"]`);
     if (phaseBtn) {
-        phaseBtn.click();
+        state.activeProjectPhase = normalizedPhase;
+        document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+        phaseBtn.classList.add("active");
+        switchTab('projects');
+        renderProjects();
         return;
     }
 
@@ -5971,6 +6784,7 @@ function openProjectPhaseFromOverview(phase) {
     renderProjects();
 }
 window.openProjectPhaseFromOverview = openProjectPhaseFromOverview;
+window.navigateToProjectPhase = openProjectPhaseFromOverview;
 
 // ponytail: toggle Kanban column expansion in-place (YouTube comment replies style)
 function toggleKanbanExpand(type, phase, count) {
@@ -6061,7 +6875,7 @@ function renderCriticalList() {
     }
 
     const renderItemHtml = (e) => `
-        <div class="recent-item cursor-pointer" onclick="openEJODetails('${e.id}')">
+        <div class="recent-item cursor-pointer" onclick="${isDrawingItem(e) ? `openDrawingDetails('${e.id}')` : (e.id.startsWith('PRJ') ? `openProjectDetails(null, '${e.id}')` : `openEJODetails('${e.id}')`)}">
             <div class="recent-item-left">
                 <div class="priority-bar ${getPriorityInfo(e.priority).barClass}"></div>
                 <div class="item-info">
@@ -6098,6 +6912,152 @@ function renderCriticalList() {
 
     lucide.createIcons();
 }
+
+// ponytail: check if logged-in user is member of Engineering Department
+function isCurrentUserEngDept() {
+    if (!state.currentUser) return false;
+    const user = state.currentUser;
+    const role = user.role || '';
+    const dept = user.dept || user.department || '';
+    const normalizedDept = typeof normalizeDepartmentCode === 'function' ? normalizeDepartmentCode(dept) : String(dept || '').toUpperCase();
+    const isEngRole = DRAFTER_ROLES.includes(role) || isForemanAdminRole(role) || ['Supervisor Eng', 'Manager Eng', 'Plant Manager', 'Factory Manager', 'Foreman Eng', 'Admin Eng', 'Server', 'Staff ENG', 'User ENG', 'user_ENG'].includes(role) || (user.username === 'server') || (user.username === 'admin');
+    return normalizedDept === 'ENG' || / eng$/i.test(role) || / eng /i.test(role) || /_eng$/i.test(role) || isEngRole;
+}
+
+// ponytail: extract, sort, and render live engineer activity stream on dashboard
+function renderOverviewActivityLog() {
+    const container = document.getElementById("overview-eng-activity-list");
+    const panel = document.getElementById("overview-eng-activity-panel");
+    const totalBadge = document.getElementById("eng-activity-total-badge");
+    const splitLayout = document.getElementById("overview-split-layout");
+    
+    const isEng = isCurrentUserEngDept();
+    if (panel) {
+        if (!isEng) {
+            panel.style.display = "none";
+            if (splitLayout) splitLayout.style.gridTemplateColumns = "1fr";
+            return;
+        } else {
+            panel.style.display = "";
+            if (splitLayout) splitLayout.style.gridTemplateColumns = "";
+        }
+    }
+
+    if (!container) return;
+
+    // Gather all items with logs across all types (General EJO, Drawings, Standard EJO)
+    const allItems = [...(state.generalEjos || []), ...(state.drawings || []), ...(state.ejos || [])];
+    const rawActivities = [];
+    const seenLogKeys = new Set();
+
+    allItems.forEach(item => {
+        const logs = parseLogs(item.logs || item);
+        if (Array.isArray(logs) && logs.length > 0) {
+            logs.forEach((log) => {
+                const rawMsg = log.cleanMessage || log.message || log.text || "";
+                if (!rawMsg) return;
+
+                // Clean message
+                let cleanMsg = rawMsg.replace(/\s*Laporan Penyelesaian:\s*.*$/, "")
+                                     .replace(/\s*Laporan Revisi:\s*.*$/, "")
+                                     .replace(/\s*Instruksi revisi:\s*.*$/, "")
+                                     .replace(/\s*Alasan revisi:\s*.*$/, "")
+                                     .replace(/\s*Alasan Penolakan:\s*.*$/, "");
+
+                // Parse date timestamp
+                let rawDate = log.date || item.updated_at || item.createdDate || "";
+                let sortTime = 0;
+
+                if (rawDate) {
+                    const dt = new Date(rawDate.replace(/-/g, '/'));
+                    if (!isNaN(dt.getTime())) {
+                        sortTime = dt.getTime();
+                    } else {
+                        const fallbackDate = parseDateToYYYYMMDD(rawDate);
+                        const fbDt = new Date(fallbackDate);
+                        sortTime = !isNaN(fbDt.getTime()) ? fbDt.getTime() : 0;
+                    }
+                }
+
+                // Detect category badge per message if available (e.g. Mekanik, Elektrik, Sipil, Repair Part, Drafter)
+                let itemCategory = item.category || (item.isDrawing ? 'Drawing' : 'General');
+                const matchedDiscipline = cleanMsg.match(/\((Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter)\)/i);
+                if (matchedDiscipline && matchedDiscipline[1]) {
+                    itemCategory = matchedDiscipline[1];
+                }
+
+                // Extract engineer name from log message (e.g. "oleh Yuli (Mekanik)" -> "Yuli", "oleh Thorik" -> "Thorik")
+                let engineerName = item.engineer || item.drafter || item.pic || "";
+                const matchedEng = cleanMsg.match(/oleh\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
+                if (matchedEng && matchedEng[1]) {
+                    engineerName = matchedEng[1].trim();
+                }
+
+                rawActivities.push({
+                    id: item.id,
+                    title: item.title || "Pekerjaan EJO",
+                    category: itemCategory,
+                    engineer: engineerName,
+                    dept: item.dept || "ENG",
+                    message: cleanMsg,
+                    date: rawDate,
+                    sortTime: sortTime,
+                    item: item,
+                    isDrawing: !!item.isDrawing
+                });
+            });
+        }
+    });
+
+    // Sort newest activity first
+    rawActivities.sort((a, b) => b.sortTime - a.sortTime || String(b.date).localeCompare(String(a.date)));
+
+    if (totalBadge) {
+        totalBadge.textContent = `${rawActivities.length} Aktivitas`;
+    }
+
+    if (rawActivities.length === 0) {
+        container.innerHTML = `
+            <div class="eng-activity-empty">
+                <i data-lucide="inbox" style="width: 32px; height: 32px; color: var(--text-secondary); opacity: 0.6;"></i>
+                <span style="font-size: 0.8rem;">Belum ada interaksi aktivitas teknisi.</span>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    // Render feed items (limited to 50 latest activities)
+    const displayFeed = rawActivities.slice(0, 50);
+    container.innerHTML = displayFeed.map(act => {
+        const catClass = 'role-badge-' + (act.category || 'general').toLowerCase().replace(/\s+/g, '-');
+        const clickHandler = act.isDrawing ? `openDrawingDetails('${act.id}')` : (act.id.startsWith('PRJ') ? `openProjectDetails(null, '${act.id}')` : `openEJODetails('${act.id}')`);
+        const engineerBadge = act.engineer ? `<span class="eng-activity-engineer-badge"><i data-lucide="user" style="width: 10px; height: 10px;"></i>${act.engineer}</span>` : '';
+
+        return `
+            <div class="eng-activity-item cursor-pointer" onclick="${clickHandler}">
+                <div class="eng-activity-item-header">
+                    <div class="eng-activity-badge-grp">
+                        <span class="ejo-id-badge" style="font-size: 0.72rem; padding: 2px 6px;">${act.id}</span>
+                        <span class="eng-role-badge ${catClass}" style="font-size: 0.68rem; padding: 2px 6px;">${act.category}</span>
+                        ${engineerBadge}
+                    </div>
+                    <span class="eng-activity-time">${act.date}</span>
+                </div>
+                <div class="eng-activity-msg">${act.message}</div>
+                <div class="eng-activity-footer">
+                    <span style="font-weight: 600; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">
+                        ${act.title}
+                    </span>
+                    <span class="text-xs text-secondary" style="font-size: 0.7rem;">${act.dept}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    lucide.createIcons();
+}
+window.renderOverviewActivityLog = renderOverviewActivityLog;
 
 
 
@@ -6278,7 +7238,8 @@ function getVisibleGeneralEjos() {
             // in Outstanding phase (Requested, Approved, Checking, Pending Revision, Waiting Dept Approval),
             // only reveal if they are the requester. Unassigned or non-onprogress items are NOT revealed.
             // Reveal happens ONLY when assigned AND moved to On Progress (or Done/Archived).
-            const isOutstandingPhase = e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Pending Revision' || (e.status.startsWith('In Progress') && e.status.includes('(Revisi')) || e.status === 'Waiting Dept Approval';
+            const st = String(e.status || '');
+            const isOutstandingPhase = st === 'Requested' || st === 'Approved' || st.startsWith('Checking') || st === 'Pending Revision' || (st.startsWith('In Progress') && st.includes('(Revisi')) || st === 'Waiting Dept Approval';
             if (isOutstandingPhase) {
                 return isRequester;
             }
@@ -6328,7 +7289,8 @@ function getVisibleStandardEjos() {
         const isDeptApprover = isDepartmentApprover(state.currentUser, e.dept);
 
         if (isTechNonDrafter) {
-            const isOutstandingPhase = e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Pending Revision' || (e.status.startsWith('In Progress') && e.status.includes('(Revisi')) || e.status === 'Waiting Dept Approval';
+            const st = String(e.status || '');
+            const isOutstandingPhase = st === 'Requested' || st === 'Approved' || st.startsWith('Checking') || st === 'Pending Revision' || (st.startsWith('In Progress') && st.includes('(Revisi')) || st === 'Waiting Dept Approval';
             if (isOutstandingPhase) {
                 return isRequester;
             }
@@ -6382,12 +7344,17 @@ function getVisibleOverviewEjos() {
                 combined[idx] = {
                     ...genItem,
                     ...d,
+                    isDrawing: true,
                     drawing_type: d.drawing_type || genItem.drawing_type || 'request',
                     drafter: d.drafter || d.engineer || genItem.drafter || genItem.engineer,
                     engineer: d.engineer || genItem.engineer
                 };
             } else {
-                combined.push(d);
+                combined.push({
+                    ...d,
+                    isDrawing: true,
+                    drawing_type: d.drawing_type || 'request'
+                });
                 existingIds.set(d.id, combined.length - 1);
             }
         }
@@ -6504,12 +7471,13 @@ function renderGeneralEJO() {
             matchesPhase = getGeneralEjoPhase(e) === state.activeGeneralEjoPhase;
         }
 
+        const st = String(e.status || '');
         const matchesStatus = statusVal === 'all' ||
             (statusVal === 'Pending My Approval' && isApprovalPendingForCurrentUser(e)) ||
-            e.status === statusVal ||
+            st === statusVal ||
             (statusVal === 'In Progress' && getGeneralEjoPhase(e) === 2) ||
-            (statusVal === 'Checking' && (e.status === 'Approved' || e.status.startsWith('Checking'))) ||
-            (statusVal === 'Pending Approval' && (e.status.startsWith('Pending') && e.status !== 'Pending Revision'));
+            (statusVal === 'Checking' && (st === 'Approved' || st.startsWith('Checking'))) ||
+            (statusVal === 'Pending Approval' && (st.startsWith('Pending') && st !== 'Pending Revision'));
         const matchesPriority = priorityVal === 'all' || getPriorityInfo(e.priority).code === priorityVal || e.priority === priorityVal;
         const matchesDept = departmentMatchesFilter(e.dept, deptVal);
         const matchesCategory = categoryVal === 'all' || e.category === categoryVal; // ponytail: filter kategori
@@ -6646,7 +7614,7 @@ function renderGeneralEJO() {
             const isPhase2OnProgress = getGeneralEjoPhase(e) === 2;
             // ponytail: Confirm overlay should ONLY appear when EJO is actively being worked on (In Progress)
             // Any other status (Pending approval, Completed, Done, Cancelled) = work phase is over
-            const isActivelyWorking = e.status.startsWith('In Progress') || e.status === 'On Progress';
+            const isActivelyWorking = (e.status && typeof e.status.startsWith === 'function' && e.status.startsWith('In Progress')) || e.status === 'On Progress';
 
             let qtySectionHtml = '';
             if (isRepairPartCategory && isPhase2OnProgress) {
@@ -6754,6 +7722,72 @@ function renderGeneralEJO() {
                 `;
             }
 
+            const linkedProject = state.projects ? state.projects.find(p => p.drawing_id === e.id || p.ejo_id === e.id) : null;
+            const canReviewProject = canUserReviewProject(state.currentUser);
+
+            let gejoProjectInfoHtml = '';
+            if (linkedProject) {
+                if (canReviewProject) {
+                    gejoProjectInfoHtml = `
+                        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.25); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; color: var(--color-cyan); margin-top: 4px; cursor: pointer;" onclick="event.stopPropagation(); flexToProjectTab('${e.id}')" title="Klik untuk membuka Project Monitoring (${linkedProject.id})">
+                            <span style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                                <i data-lucide="folder-check" style="width: 15px; height: 15px;"></i> Terhubung ke Project: ${linkedProject.id}
+                            </span>
+                            <span style="font-size: 0.75rem; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 7px; border-radius: 4px; font-weight: 600;">Review Only</span>
+                        </div>
+                    `;
+                } else {
+                    gejoProjectInfoHtml = `
+                        <div style="display: flex; align-items: center; gap: 6px; background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.2); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; color: var(--color-cyan); margin-top: 4px; cursor: default;" onclick="event.stopPropagation();" title="EJO ini telah dihubungkan ke Project (${linkedProject.id})">
+                            <i data-lucide="folder-check" style="width: 15px; height: 15px;"></i>
+                            <span style="font-weight: 600;">Terhubung ke Project: ${linkedProject.id}</span>
+                        </div>
+                    `;
+                }
+            }
+
+            // ponytail: resolve requester user details for Phase 1 Schedule badge display
+            let reqRaw = (e.requester || e.uploader || e.pic || '').trim();
+            if (!reqRaw && e.logs && Array.isArray(e.logs) && e.logs.length > 0) {
+                const creationLog = e.logs.find(l => l.action && (l.action.toLowerCase().includes('buat') || l.action.toLowerCase().includes('create'))) || e.logs[0];
+                if (creationLog && creationLog.user) {
+                    reqRaw = String(creationLog.user).trim();
+                }
+            }
+            const reqUser = (state.users || []).find(u =>
+                (u.username && u.username.toLowerCase() === reqRaw.toLowerCase()) ||
+                (u.fullname && u.fullname.toLowerCase() === reqRaw.toLowerCase())
+            );
+            const reqDisplayName = reqUser ? (reqUser.fullname || reqUser.username) : (reqRaw || 'Unassigned');
+            const reqSectionText = (reqUser && reqUser.section) ? ` (${reqUser.section})` : '';
+            const reqFullDisplay = reqDisplayName !== 'Unassigned' ? `${reqDisplayName}${reqSectionText}` : 'Unassigned';
+            const reqAvatar = (reqUser && reqUser.avatar) ? reqUser.avatar : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+
+            const phase = getGeneralEjoPhase(e);
+
+            let badgeName = '';
+            let badgeAvatar = '';
+            let badgeTitle = '';
+
+            if (phase === 1) {
+                // ponytail: Di saat schedule atau fase 1, badge diisi oleh user yang request (Pemohon)
+                badgeName = reqFullDisplay;
+                badgeAvatar = reqAvatar;
+                badgeTitle = `Pemohon: ${reqFullDisplay}`;
+            } else {
+                // ponytail: Di fase berikutnya (On Progress, Done, Archive), tampilkan Engineer yang ditugaskan
+                const isAssigned = e.engineer && !['unassigned', 'belum ditentukan', 'belum ada', '-', 'n/a', 'none'].includes(e.engineer.toLowerCase().trim());
+                if (isAssigned) {
+                    badgeName = formatEngineerDisplay(e.engineer);
+                    badgeAvatar = engObj.avatar || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80';
+                    badgeTitle = `Engineer: ${badgeName}`;
+                } else {
+                    badgeName = reqFullDisplay !== 'Unassigned' ? reqFullDisplay : formatEngineerDisplay(e.engineer || 'Unassigned');
+                    badgeAvatar = reqFullDisplay !== 'Unassigned' ? reqAvatar : (engObj.avatar || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=80');
+                    badgeTitle = reqFullDisplay !== 'Unassigned' ? `Pemohon: ${reqFullDisplay}` : 'Unassigned';
+                }
+            }
+
             const cardHtml = `
                 <div class="job-card card-glass glow-${prioInfo.glow}" style="margin: 0; width: 100%; box-sizing: border-box;">
                     <div>
@@ -6768,23 +7802,25 @@ function renderGeneralEJO() {
                             </div>
                         </div>
                         <h4 class="job-card-title" onclick="openEJODetails('${e.id}')">${e.title}</h4>
-                        <p class="text-muted text-xs" style="margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><i data-lucide="map-pin" style="width:10px;height:10px;display:inline;"></i> ${e.location}</p>
+                        <p class="text-muted text-xs" style="margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><i data-lucide="map-pin" style="width:10px;height:10px;display:inline;"></i> ${escapeHtml(e.location || '-')}</p>
                     </div>
 
                     <div class="job-card-mid">
                         <div class="job-card-meta" style="grid-template-columns: 1fr; gap: 4px;">
-                            <div><i data-lucide="building"></i> <span>Departemen: ${e.dept}</span></div>
+                            ${(phase === 2 || phase === 3) ? `<div><i data-lucide="user"></i> <span>Pemohon: <strong>${escapeHtml(reqFullDisplay || '-')}</strong></span></div>` : ''}
+                            <div><i data-lucide="building"></i> <span>Departemen: ${escapeHtml(e.dept || '-')}</span></div>
                             <div><i data-lucide="calendar"></i> <span>Tgl Pembuatan: ${formatDisplayDate(eCreatedDateVal)}</span></div>
                             <div><i data-lucide="calendar"></i> <span>Target Selesai: ${formatDisplayDate(e.targetDate)}</span></div>
                             ${e.estDate ? `<div><i data-lucide="calendar-check" style="color: var(--color-green);"></i> <span style="color: var(--color-green); font-weight: 500;">Est. Selesai: ${formatDisplayDate(e.estDate)}</span></div>` : ''}
                         </div>
                         ${qtySectionHtml}
+                        ${gejoProjectInfoHtml}
                     </div>
 
                     <div class="job-card-bottom" style="display: flex; flex-direction: column; align-items: stretch; gap: 8px;">
-                        <div class="engineer-badge">
-                            <img src="${engObj.avatar}" alt="${e.engineer}">
-                            <span>${e.engineer}</span>
+                        <div class="engineer-badge" title="${badgeTitle}">
+                            <img src="${badgeAvatar}" alt="${badgeName}">
+                            <span>${badgeName}</span>
                         </div>
                         <div style="display: flex; justify-content: flex-end; width: 100%;">
                             <span class="badge-status status-${getStatusClass(e.status)}" style="text-align: right;">${getFriendlyStatusText(e.status, e)}</span>
@@ -6796,8 +7832,6 @@ function renderGeneralEJO() {
                     </div>
                 </div>
             `;
-
-            const phase = getGeneralEjoPhase(e);
             if (phase === 4) {
                 if (container4) container4.insertAdjacentHTML('beforeend', cardHtml);
                 count4++;
@@ -7268,21 +8302,32 @@ function renderDrawings() {
     // ponytail: render Table layout rows
     const tableBody = document.getElementById("drawing-table-body");
     if (tableBody) {
-        tableBody.innerHTML = drawings.map(d => `
-            <tr>
-                <td data-label="ID Drawing"><span class="ejo-id-badge" onclick="openDrawingDetails('${d.id}')">${d.id}</span></td>
-                <td data-label="Judul Drawing" style="font-weight: 600; color: var(--text-primary); cursor: pointer;" onclick="openDrawingDetails('${d.id}')">${d.title}</td>
-                <td data-label="Kategori"><span class="badge" style="background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;">${d.category || '-'}</span></td>
-                <td data-label="Uploader">${d.uploader || '-'} (${d.dept || '-'})</td>
-                <td data-label="Tanggal Upload">${d.uploaded_at || '-'}</td>
-                <td data-label="Status"><span class="badge-status status-${getStatusClass(d.status)}">${getDrawingStatusDisplay(d.status, d.dept)}</span></td>
-                <td data-label="Aksi" style="text-align: right;">
-                    <button class="btn btn-outline btn-xs" onclick="openDrawingDetails('${d.id}')" style="padding: 4px 8px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;">
-                        <i data-lucide="eye" style="width: 12px; height: 12px;"></i> Detail
-                    </button>
-                </td>
-            </tr>
-        `).join('');
+        tableBody.innerHTML = drawings.map(d => {
+            const uploaderRaw = d.uploader || d.requester || '';
+            const uploaderUser = (state.users || []).find(u =>
+                (u.username && u.username.toLowerCase() === uploaderRaw.toLowerCase()) ||
+                (u.fullname && u.fullname.toLowerCase() === uploaderRaw.toLowerCase())
+            );
+            const uploaderDisplayName = uploaderUser ? (uploaderUser.fullname || uploaderUser.username) : (uploaderRaw || '-');
+            const uploaderSectionText = (uploaderUser && uploaderUser.section) ? ` (${uploaderUser.section})` : '';
+            const uploaderFullDisplay = uploaderDisplayName !== '-' ? `${uploaderDisplayName}${uploaderSectionText}` : '-';
+
+            return `
+                <tr>
+                    <td data-label="ID Drawing"><span class="ejo-id-badge" onclick="openDrawingDetails('${d.id}')">${d.id}</span></td>
+                    <td data-label="Judul Drawing" style="font-weight: 600; color: var(--text-primary); cursor: pointer;" onclick="openDrawingDetails('${d.id}')">${d.title}</td>
+                    <td data-label="Kategori"><span class="badge" style="background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.3); font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 4px;">${d.category || '-'}</span></td>
+                    <td data-label="Pemohon"><strong>${escapeHtml(uploaderFullDisplay)}</strong> (${d.dept || '-'})</td>
+                    <td data-label="Tanggal Upload">${d.uploaded_at || '-'}</td>
+                    <td data-label="Status"><span class="badge-status status-${getStatusClass(d.status)}">${getDrawingStatusDisplay(d.status, d.dept)}</span></td>
+                    <td data-label="Aksi" style="text-align: right;">
+                        <button class="btn btn-outline btn-xs" onclick="openDrawingDetails('${d.id}')" style="padding: 4px 8px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;">
+                            <i data-lucide="eye" style="width: 12px; height: 12px;"></i> Detail
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
 
     const container1 = document.getElementById("drawing-container-phase1");
@@ -7343,15 +8388,37 @@ function renderDrawings() {
         const topStatusText = (phase === 1) ? 'Pending' : getDrawingStatusDisplay(d.status, d.dept);
         const midStatusText = (phase === 1) ? 'Pending' : getFriendlyStatusText(d.status, d);
         const linkedProject = state.projects ? state.projects.find(p => p.drawing_id === d.id) : null;
-        const projectInfoHtml = linkedProject ? `
-            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.25); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; color: var(--color-cyan); margin-top: 4px; cursor: pointer;" onclick="event.stopPropagation(); flexToProjectTab('${d.id}')" title="Klik untuk membuka Project Monitoring (${linkedProject.id})">
-                <span style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
-                    <i data-lucide="folder-check" style="width: 15px; height: 15px;"></i> Terhubung ke Project: ${linkedProject.id}
-                </span>
-                <span style="font-size: 0.75rem; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 7px; border-radius: 4px; font-weight: 600;">Review Only</span>
-            </div>
-        ` : '';
+        const canReviewProject = canUserReviewProject(state.currentUser);
+
+        let projectInfoHtml = '';
+        if (linkedProject) {
+            if (canReviewProject) {
+                projectInfoHtml = `
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.25); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; color: var(--color-cyan); margin-top: 4px; cursor: pointer;" onclick="event.stopPropagation(); flexToProjectTab('${d.id}')" title="Klik untuk membuka Project Monitoring (${linkedProject.id})">
+                        <span style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                            <i data-lucide="folder-check" style="width: 15px; height: 15px;"></i> Terhubung ke Project: ${linkedProject.id}
+                        </span>
+                        <span style="font-size: 0.75rem; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 7px; border-radius: 4px; font-weight: 600;">Review Only</span>
+                    </div>
+                `;
+            } else {
+                projectInfoHtml = `
+                    <div style="display: flex; align-items: center; gap: 6px; background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.2); padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; color: var(--color-cyan); margin-top: 4px; cursor: default;" onclick="event.stopPropagation();" title="Drawing ini telah dihubungkan ke Project (${linkedProject.id})">
+                        <i data-lucide="folder-check" style="width: 15px; height: 15px;"></i>
+                        <span style="font-weight: 600;">Terhubung ke Project: ${linkedProject.id}</span>
+                    </div>
+                `;
+            }
+        }
         const prioInfo = getPriorityInfo(d.priority);
+        const reqRaw = d.uploader || d.requester || '';
+        const reqUser = (state.users || []).find(u =>
+            (u.username && u.username.toLowerCase() === reqRaw.toLowerCase()) ||
+            (u.fullname && u.fullname.toLowerCase() === reqRaw.toLowerCase())
+        );
+        const reqDisplayName = reqUser ? (reqUser.fullname || reqUser.username) : (reqRaw || '-');
+        const reqSectionText = (reqUser && reqUser.section) ? ` (${reqUser.section})` : '';
+        const reqFullDisplay = reqDisplayName !== '-' ? `${reqDisplayName}${reqSectionText}` : '-';
 
         const cardHtml = `
             <div class="job-card card-glass glow-${prioInfo.glow}" onclick="openDrawingDetails('${d.id}')" style="margin: 0; width: 100%; box-sizing: border-box; cursor: pointer;">
@@ -7374,12 +8441,12 @@ function renderDrawings() {
                     ` : ''}
                     <div style="display: flex; align-items: center; gap: 6px; color: var(--text-secondary);">
                         <i data-lucide="user" style="width: 15px; height: 15px;"></i>
-                        <span>Uploader: ${d.uploader || '-'} (${d.dept || '-'})</span>
+                        <span>Pemohon: <strong style="color: var(--text-primary);">${escapeHtml(reqFullDisplay)}</strong> (${escapeHtml(d.dept || '-')})</span>
                     </div>
                     ${d.engineer && d.engineer !== 'Unassigned' ? `
                     <div style="display: flex; align-items: center; gap: 6px; color: var(--text-secondary);">
                         <i data-lucide="user-check" style="width: 15px; height: 15px; color: var(--color-cyan);"></i>
-                        <span>Drafter: <strong>${d.engineer}</strong></span>
+                        <span>Drafter: <strong>${formatEngineerDisplay(d.engineer)}</strong></span>
                     </div>
                     ` : ''}
                     ${d.location ? `
@@ -7618,7 +8685,8 @@ function renderHistory() {
     let historyEjos = getVisibleStandardEjos().filter(e => e.status === 'Completed' || e.status === 'Cancelled')
         // ponytail: include ONLY archived general EJOs in history — Completed/Cancelled yg belum di-"Konfirmasi Selesai & Arsipkan" (is_archived belum 1) harus tetap di board Done, bukan History
         .concat(getVisibleGeneralEjos().filter(e => e.is_archived === 1 || e.is_archived === '1' || e.status === 'Archived' || isGeneralEjoAutoArchiveDue(e)))
-        .concat(getVisibleDrawings().filter(d => d.status === 'Archived' || d.status === 'Cancelled' || d.status === 'Rejected' || d.status === 'Completed' || d.status === 'Done'))
+        // ponytail: include ONLY archived drawings in history — Completed/Cancelled yg belum di-"Konfirmasi Selesai & Arsipkan" (status belum 'Archived' / is_archived belum 1) harus tetap di board Done, bukan History
+        .concat(getVisibleDrawings().filter(d => d.is_archived === 1 || d.is_archived === '1' || d.status === 'Archived' || d.status === 'Rejected' || (typeof isDrawingAutoArchiveDue === 'function' && isDrawingAutoArchiveDue(d))))
         .concat(getVisibleProjects().filter(p => p.phase === 4 || p.phase === 5 || p.phase === '4' || p.phase === '5' || p.phase === 'archive' || p.status === 'Archived' || p.status === 'Completed' || p.status === 'Selesai'));
 
     // ponytail: Filter by state.activeHistoryType ('all', 'general-ejo', 'drawing', 'project', 'repair-part')
@@ -7633,7 +8701,6 @@ function renderHistory() {
     }
     const cardTitleEl = document.getElementById('history-card-title');
     const cardSubEl = document.getElementById('history-card-subtitle');
-    const isDrawingItem = (item) => Boolean(item && (item.drawing_type || item.drafter || Boolean(item.etiket_category) || (item.id && (item.id.startsWith('DRW') || item.id.startsWith('DEJO') || item.id.startsWith('DWG')))));
 
     if (typeFilter === 'drawing') {
         historyEjos = historyEjos.filter(item => isDrawingItem(item));
@@ -7701,21 +8768,21 @@ function renderHistory() {
     const showDeleteAction = isAuthorized;
     const actionHeader = document.getElementById('history-header-action');
     if (actionHeader) {
-        actionHeader.style.display = 'table-cell';
+        actionHeader.style.display = showDeleteAction ? 'table-cell' : 'none';
     }
 
     if (historyEjos.length === 0) {
         const filterName = typeFilter === 'drawing' ? 'Drawing EJO' : (typeFilter === 'general-ejo' ? 'General EJO' : (typeFilter === 'repair-part' ? 'Repair Part' : (typeFilter === 'project' ? 'Project' : 'EJO / Project')));
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--color-text-muted); padding: 24px;">Tidak ada riwayat ${filterName} yang selesai atau sesuai filter.</td></tr>`;
+        const colSpan = showDeleteAction ? 7 : 6;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align: center; color: var(--color-text-muted); padding: 24px;">Tidak ada riwayat ${filterName} yang selesai atau sesuai filter.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = historyEjos.map(e => {
         const logs = parseLogs(e.logs);
         const lastLog = logs.length > 0 ? logs[logs.length - 1].date : (e.targetDate || '-');
-        const restoreBtn = `<button class="btn btn-warning-outline btn-xs" style="margin-right: 4px; border-color: rgba(245, 158, 11, 0.4); color: var(--color-yellow);" onclick="event.stopPropagation(); restoreHistoryEJO('${e.id}')" title="Kembalikan ke Daftar Aktif / Revisi"><i data-lucide="rotate-ccw" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i> Kembalikan</button>`;
         const deleteBtn = showDeleteAction ? `<button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); deleteHistoryEJO('${e.id}')"><i data-lucide="trash-2" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:2px;"></i> Hapus</button>` : '';
-        const actionCell = `<td data-label="Aksi" style="text-align: right; white-space: nowrap;">${restoreBtn}${deleteBtn}</td>`;
+        const actionCell = showDeleteAction ? `<td data-label="Aksi" style="text-align: right; white-space: nowrap;">${deleteBtn}</td>` : '';
         const clickAction = isDrawingItem(e) ? `openDrawingDetails('${e.id}')` : (e.id.startsWith('PRJ') ? `openProjectDetails(null, '${e.id}')` : `openEJODetails('${e.id}')`);
         const statusText = e.status || (e.phase === 5 || e.phase === '5' ? 'Completed' : (e.phase === 4 ? 'Commissioning & Serah Terima' : 'Completed'));
         return `
@@ -7792,10 +8859,7 @@ function filterOverviewItemsByCategory(items, catFilter) {
     const targetCat = catFilter.trim().toLowerCase();
 
     if (targetCat === 'drawing') {
-        return items.filter(item => {
-            const isDrawing = (item.ejo_id || item.id || '').startsWith('DRW') || (item.ejo_id || item.id || '').startsWith('DEJO') || (item.ejo_id || item.id || '').startsWith('DWG') || (item.category || '').toLowerCase() === 'drawing' || Boolean(item.drawing_type || item.drafter);
-            return isDrawing;
-        });
+        return items.filter(item => isDrawingItem(item));
     }
 
     const engRoleMap = {};
@@ -7810,13 +8874,13 @@ function filterOverviewItemsByCategory(items, catFilter) {
 
     return items.filter(item => {
         let rawCat = (item.category || '').trim().toLowerCase();
-        let isDrawing = (item.ejo_id || item.id || '').startsWith('DRW') || (item.ejo_id || item.id || '').startsWith('DEJO') || (item.ejo_id || item.id || '').startsWith('DWG') || rawCat === 'drawing' || Boolean(item.drawing_type || item.drafter);
+        let isDrawing = isDrawingItem(item);
 
         if (isDrawing) {
             if (rawCat === targetCat) return true;
 
             if (specialDisciplineCats.includes(targetCat)) {
-                const engField = (isDrawing ? (item.drafter || item.engineer || item.uploader) : (item.engineer || item.drafter || item.uploader) || '').trim();
+                const engField = (item.drafter || item.engineer || item.uploader || '').trim();
                 if (engField) {
                     const engs = engField.split(',').map(n => n.trim().toLowerCase());
                     for (const eng of engs) {
@@ -7834,22 +8898,25 @@ function filterOverviewItemsByCategory(items, catFilter) {
     });
 }
 
-// ponytail: helper to get the previous completed week date range (Senin - Minggu minggu lalu)
+// ponytail: helper to get the current week date range (Senin - Minggu minggu berjalan)
 function getPreviousCompletedWeekRange(referenceDate = new Date()) {
     const ref = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
     const dayOfWeek = ref.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     const currentMondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
     const currentMonday = new Date(ref);
     currentMonday.setDate(ref.getDate() - currentMondayOffset);
+    currentMonday.setHours(0, 0, 0, 0);
 
-    // Target week is the previous completed week (Senin s/d Minggu minggu lalu)
-    const monday = new Date(currentMonday);
-    monday.setDate(currentMonday.getDate() - 7);
-    monday.setHours(0, 0, 0, 0);
-
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
+    const sunday = new Date(currentMonday);
+    sunday.setDate(currentMonday.getDate() + 6);
     sunday.setHours(23, 59, 59, 999);
+
+    const formatYMD = (d) => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    };
 
     const weekDates = [];
     const weekLabels = [];
@@ -7857,12 +8924,10 @@ function getPreviousCompletedWeekRange(referenceDate = new Date()) {
     const monthNamesIndo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
     for (let i = 0; i < 7; i++) {
-        const d = new Date(monday);
-        d.setDate(monday.getDate() + i);
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        weekDates.push(`${yyyy}-${mm}-${dd}`);
+        const d = new Date(currentMonday);
+        d.setDate(currentMonday.getDate() + i);
+        const ymd = formatYMD(d);
+        weekDates.push(ymd);
 
         const dayName = dayNames[i];
         const dateNum = String(d.getDate()).padStart(2, '0');
@@ -7871,7 +8936,7 @@ function getPreviousCompletedWeekRange(referenceDate = new Date()) {
     }
 
     return {
-        startDate: monday,
+        startDate: currentMonday,
         endDate: sunday,
         startStr: weekDates[0],
         endStr: weekDates[6],
@@ -7880,7 +8945,7 @@ function getPreviousCompletedWeekRange(referenceDate = new Date()) {
     };
 }
 
-// ponytail: helper to get the previous completed 28 days (4 full weeks) before current Monday
+// ponytail: helper to get the 4 consecutive weeks ending on current Sunday (including current week)
 function getPreviousCompletedMonthRange(referenceDate = new Date()) {
     const ref = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
     const dayOfWeek = ref.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
@@ -7888,18 +8953,18 @@ function getPreviousCompletedMonthRange(referenceDate = new Date()) {
     const currentMonday = new Date(ref);
     currentMonday.setDate(ref.getDate() - currentMondayOffset);
 
-    // 28 days before current Monday (4 full weeks = 28 consecutive days)
+    // 4 consecutive weeks ending on current Sunday (3 weeks before current Monday to current Sunday)
     const startDate = new Date(currentMonday);
-    startDate.setDate(currentMonday.getDate() - 28);
+    startDate.setDate(currentMonday.getDate() - 21);
     startDate.setHours(0, 0, 0, 0);
 
     const endDate = new Date(currentMonday);
-    endDate.setDate(currentMonday.getDate() - 1);
+    endDate.setDate(currentMonday.getDate() + 6);
     endDate.setHours(23, 59, 59, 999);
 
     const weeks = [];
-    const sliceLabels = ['Minggu 1', 'Minggu 2', 'Minggu 3', 'Minggu 4'];
-    const monthNamesIndo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const sliceLabels = [];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     const formatYMD = (d) => {
         const yyyy = d.getFullYear();
@@ -7919,16 +8984,19 @@ function getPreviousCompletedMonthRange(referenceDate = new Date()) {
 
         const startStr = formatYMD(wStart);
         const endStr = formatYMD(wEnd);
-        const labelDesc = `${String(wStart.getDate()).padStart(2, '0')} ${monthNamesIndo[wStart.getMonth()]} - ${String(wEnd.getDate()).padStart(2, '0')} ${monthNamesIndo[wEnd.getMonth()]}`;
+        const weekLabel = `${wStart.getDate()} ${monthNames[wStart.getMonth()]}-${wEnd.getDate()} ${monthNames[wEnd.getMonth()]}`;
+        sliceLabels.push(weekLabel);
 
         weeks.push({
             index: w,
-            label: sliceLabels[w],
-            labelDesc,
+            label: weekLabel,
+            labelDesc: weekLabel,
             startDate: wStart,
             endDate: wEnd,
             startStr,
-            endStr
+            endStr,
+            startFormatted: `${wStart.getDate()} ${monthNames[wStart.getMonth()]}`,
+            endFormatted: `${wEnd.getDate()} ${monthNames[wEnd.getMonth()]}`
         });
     }
 
@@ -7951,22 +9019,14 @@ function getPreviousCompletedMonthRange(referenceDate = new Date()) {
     };
 }
 
-// ponytail: helper to get the previous completed 365 days (12 rolling months) before current Monday
+// ponytail: helper to get 12 rolling months ending on the last day of the current month
 function getPreviousCompletedYearRange(referenceDate = new Date()) {
     const ref = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-    const dayOfWeek = ref.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    const currentMondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const currentMonday = new Date(ref);
-    currentMonday.setDate(ref.getDate() - currentMondayOffset);
+    const endYear = ref.getFullYear();
+    const endMonth = ref.getMonth(); // 0-11
 
-    // 365 days before current Monday
-    const startDate = new Date(currentMonday);
-    startDate.setDate(currentMonday.getDate() - 365);
-    startDate.setHours(0, 0, 0, 0);
-
-    const endDate = new Date(currentMonday);
-    endDate.setDate(currentMonday.getDate() - 1);
-    endDate.setHours(23, 59, 59, 999);
+    const endDate = new Date(endYear, endMonth + 1, 0, 23, 59, 59, 999); // last day of current month
+    const startDate = new Date(endYear, endMonth - 11, 1, 0, 0, 0, 0); // 1st day of 12 months ago
 
     const formatYMD = (d) => {
         const yyyy = d.getFullYear();
@@ -7982,9 +9042,6 @@ function getPreviousCompletedYearRange(referenceDate = new Date()) {
     const months = [];
     const sliceLabels = [];
 
-    const endYear = endDate.getFullYear();
-    const endMonth = endDate.getMonth(); // 0-11
-
     for (let i = 11; i >= 0; i--) {
         const mDate = new Date(endYear, endMonth - i, 1);
         const y = mDate.getFullYear();
@@ -7994,20 +9051,18 @@ function getPreviousCompletedYearRange(referenceDate = new Date()) {
         const label = `${monthNamesIndo[m]} '${String(y).slice(-2)}`;
         const shortLabel = monthNamesIndo[m];
 
-        const effStart = mStart < startDate ? startDate : mStart;
-        const effEnd = mEnd > endDate ? endDate : mEnd;
-
         months.push({
             index: 11 - i,
             year: y,
             month: m,
+            monthName: monthNamesIndo[m],
             label,
             shortLabel,
             yearMonth: `${y}-${String(m + 1).padStart(2, '0')}`,
-            startDate: effStart,
-            endDate: effEnd,
-            startStr: formatYMD(effStart),
-            endStr: formatYMD(effEnd)
+            startDate: mStart,
+            endDate: mEnd,
+            startStr: formatYMD(mStart),
+            endStr: formatYMD(mEnd)
         });
         sliceLabels.push(label);
     }
@@ -8021,7 +9076,6 @@ function getPreviousCompletedYearRange(referenceDate = new Date()) {
         sliceLabels,
         getMonthIdx: (dateStr) => {
             if (!dateStr) return -1;
-            if (dateStr < startStr || dateStr > endStr) return -1;
             const parts = dateStr.split('-');
             if (parts.length < 2) return -1;
             const ym = `${parts[0]}-${parts[1].padStart(2, '0')}`;
@@ -8029,9 +9083,6 @@ function getPreviousCompletedYearRange(referenceDate = new Date()) {
                 if (months[i].yearMonth === ym) {
                     return i;
                 }
-            }
-            if (dateStr >= startStr && dateStr <= months[0].endStr) {
-                return 0;
             }
             return -1;
         }
@@ -8041,20 +9092,18 @@ function getPreviousCompletedYearRange(referenceDate = new Date()) {
 function filterOverviewItemsByPeriod(items, period) {
     if (!period || period === 'all') return items;
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
 
     if (period === 'week') {
         const weekInfo = getPreviousCompletedWeekRange(now);
         return items.filter(e => {
             const cDate = getOverviewCreatedDate(e);
-            if (!cDate) return false;
+            if (!cDate) return true;
             const parts = cDate.split('-');
-            if (parts.length < 2) return false;
+            if (parts.length < 2) return true;
             const y = parseInt(parts[0], 10);
             const m = parseInt(parts[1], 10) - 1;
             const d = parts.length >= 3 ? parseInt(parts[2], 10) : 1;
-            if (isNaN(y) || isNaN(m) || isNaN(d)) return false;
+            if (isNaN(y) || isNaN(m) || isNaN(d)) return true;
             const itemDate = new Date(y, m, d);
             return itemDate >= weekInfo.startDate && itemDate <= weekInfo.endDate;
         });
@@ -8062,13 +9111,13 @@ function filterOverviewItemsByPeriod(items, period) {
         const monthInfo = getPreviousCompletedMonthRange(now);
         return items.filter(e => {
             const cDate = getOverviewCreatedDate(e);
-            if (!cDate) return false;
+            if (!cDate) return true;
             const parts = cDate.split('-');
-            if (parts.length < 2) return false;
+            if (parts.length < 2) return true;
             const y = parseInt(parts[0], 10);
             const m = parseInt(parts[1], 10) - 1;
             const d = parts.length >= 3 ? parseInt(parts[2], 10) : 1;
-            if (isNaN(y) || isNaN(m) || isNaN(d)) return false;
+            if (isNaN(y) || isNaN(m) || isNaN(d)) return true;
             const itemDate = new Date(y, m, d);
             return itemDate >= monthInfo.startDate && itemDate <= monthInfo.endDate;
         });
@@ -8076,13 +9125,13 @@ function filterOverviewItemsByPeriod(items, period) {
         const yearInfo = getPreviousCompletedYearRange(now);
         return items.filter(e => {
             const cDate = getOverviewCreatedDate(e);
-            if (!cDate) return false;
+            if (!cDate) return true;
             const parts = cDate.split('-');
-            if (parts.length < 2) return false;
+            if (parts.length < 2) return true;
             const y = parseInt(parts[0], 10);
             const m = parseInt(parts[1], 10) - 1;
             const d = parts.length >= 3 ? parseInt(parts[2], 10) : 1;
-            if (isNaN(y) || isNaN(m) || isNaN(d)) return false;
+            if (isNaN(y) || isNaN(m) || isNaN(d)) return true;
             const itemDate = new Date(y, m, d);
             return itemDate >= yearInfo.startDate && itemDate <= yearInfo.endDate;
         });
@@ -8226,7 +9275,58 @@ function renderTrendChart() {
     }
 
     const sliceOS = [];
-    let runningOS = 0;
+    let initialOS = 0;
+    if (period === 'month') {
+        const monthInfo = getPreviousCompletedMonthRange(now);
+        trendItems.forEach(e => {
+            const cDate = getOverviewCreatedDate(e);
+            if (cDate && cDate < monthInfo.startStr) {
+                const isClosed = isItemDone(e) || isItemCancelled(e);
+                if (!isClosed) {
+                    initialOS++;
+                } else {
+                    const compDate = getOverviewCompletedDate(e);
+                    if (compDate && compDate >= monthInfo.startStr) {
+                        initialOS++;
+                    }
+                }
+            }
+        });
+    } else if (period === 'week') {
+        const weekInfo = getPreviousCompletedWeekRange(now);
+        trendItems.forEach(e => {
+            const cDate = getOverviewCreatedDate(e);
+            if (cDate && cDate < weekInfo.startStr) {
+                const isClosed = isItemDone(e) || isItemCancelled(e);
+                if (!isClosed) {
+                    initialOS++;
+                } else {
+                    const compDate = getOverviewCompletedDate(e);
+                    if (compDate && compDate >= weekInfo.startStr) {
+                        initialOS++;
+                    }
+                }
+            }
+        });
+    } else if (period === 'year') {
+        const yearInfo = getPreviousCompletedYearRange(now);
+        trendItems.forEach(e => {
+            const cDate = getOverviewCreatedDate(e);
+            if (cDate && cDate < yearInfo.startStr) {
+                const isClosed = isItemDone(e) || isItemCancelled(e);
+                if (!isClosed) {
+                    initialOS++;
+                } else {
+                    const compDate = getOverviewCompletedDate(e);
+                    if (compDate && compDate >= yearInfo.startStr) {
+                        initialOS++;
+                    }
+                }
+            }
+        });
+    }
+
+    let runningOS = initialOS;
     for (let i = 0; i < sliceLabels.length; i++) {
         const inFlow = sliceMasuk[i] || 0;
         const outFlow = (sliceSelesai[i] || 0) + (sliceDibatalkan[i] || 0);
@@ -8604,8 +9704,17 @@ function renderStatusChart() {
     const catOverviewItems = filterOverviewItemsByCategory(rawOverviewItems, catFilter);
     const allEjos = filterOverviewItemsByPeriod(catOverviewItems, period);
 
-    const requested = allEjos.filter(e => !isItemDone(e) && !isItemCancelled(e) && (e.status === 'Requested' || e.status === 'Approved' || e.status.startsWith('Checking') || e.status === 'Waiting Dept Approval' || e.status === 'Pending Revision' || (typeof getGeneralEjoPhase === 'function' && getGeneralEjoPhase(e) === 1))).length;
-    const progress = allEjos.filter(e => !isItemDone(e) && !isItemCancelled(e) && ((e.status.startsWith('In Progress') && !e.status.includes('(Revisi')) || e.status === 'On Progress' || (typeof getGeneralEjoPhase === 'function' && getGeneralEjoPhase(e) === 2))).length;
+    const requested = allEjos.filter(e => {
+        if (!e || isItemDone(e) || isItemCancelled(e)) return false;
+        const st = String(e.status || '');
+        return st === 'Requested' || st === 'Approved' || st.startsWith('Checking') || st === 'Waiting Dept Approval' || st === 'Pending Revision' || (typeof getGeneralEjoPhase === 'function' && getGeneralEjoPhase(e) === 1);
+    }).length;
+
+    const progress = allEjos.filter(e => {
+        if (!e || isItemDone(e) || isItemCancelled(e)) return false;
+        const st = String(e.status || '');
+        return (st.startsWith('In Progress') && !st.includes('(Revisi')) || st === 'On Progress' || (typeof getGeneralEjoPhase === 'function' && getGeneralEjoPhase(e) === 2);
+    }).length;
     const completed = allEjos.filter(e => isItemDone(e)).length;
     const cancelled = allEjos.filter(e => isItemCancelled(e)).length;
 
@@ -8667,7 +9776,7 @@ function renderDeptChart() {
     if (!deptCanvas) return;
     const ctxDept = deptCanvas.getContext('2d');
     const allEjos = getVisibleOverviewEjos();
-    const depts = DEPARTMENT_OPTIONS.map(opt => opt.value);
+    const depts = DEPARTMENT_OPTIONS.map(opt => opt.value).filter(d => d !== 'ENG');
     const deptPeriod = state.trendPeriod || state.deptPeriod || 'year';
     const catFilter = state.trendCategoryFilter || 'all';
 
@@ -8808,7 +9917,7 @@ function renderCategoryChart() {
 
     catEjos.forEach(e => {
         let cat = e.category || '';
-        const isDrawing = (e.ejo_id || e.id || '').startsWith('DRW') || (e.ejo_id || e.id || '').startsWith('DEJO') || (e.ejo_id || e.id || '').startsWith('DWG') || cat.toLowerCase() === 'drawing' || Boolean(e.drawing_type || e.drafter);
+        const isDrawing = isDrawingItem(e);
 
         if (isDrawing) {
             cat = 'Drawing';
@@ -9423,7 +10532,7 @@ function openEJODetails(id) {
             if (labelEl) {
                 labelEl.innerHTML = `<i data-lucide="wrench" style="color: var(--color-green);"></i> Engineer (${ejo.category || "General"})`;
             }
-            engVal.textContent = ejo.engineer;
+            engVal.textContent = formatEngineerDisplay(ejo.engineer);
         } else {
             engField.style.display = "none";
         }
@@ -9808,7 +10917,7 @@ function openEJODetails(id) {
         if (!canChangeStatus) return;
 
         // If current status is In Progress, nobody can directly select Completed
-        if (ejo.status.startsWith('In Progress') && btnStatus === 'Completed') {
+        if (ejo.status && typeof ejo.status.startsWith === 'function' && ejo.status.startsWith('In Progress') && btnStatus === 'Completed') {
             return;
         }
 
@@ -11022,9 +12131,7 @@ async function createNewGeneralEJO() {
             if (!res.ok) throw new Error("Gagal mengupdate General EJO");
 
             await initData();
-            document.getElementById("gejo-form").reset();
-            resetGejoImagePreview();
-            toggleGejoRepairFields("");
+            resetFormContainerContent("gejo-form-container");
             document.getElementById("gejo-form-container").style.display = 'none';
             state.editingGejoId = null;
 
@@ -11094,9 +12201,7 @@ async function createNewGeneralEJO() {
         const savedId = resData.id;
 
         await initData();
-        document.getElementById("gejo-form").reset();
-        resetGejoImagePreview();
-        toggleGejoRepairFields("");
+        resetFormContainerContent("gejo-form-container");
         document.getElementById("gejo-form-container").style.display = 'none';
         renderGeneralEJO();
         showToast(`General EJO ${savedId} berhasil dibuat`, "success");
@@ -11281,21 +12386,9 @@ async function uploadDrawing() {
             }
 
             await initData();
-            document.getElementById("drawing-form").reset();
+            resetFormContainerContent("drawing-form-container");
             document.getElementById("drawing-form-container").style.display = 'none';
             state.editingDrawingId = null;
-
-            // ponytail: reset filename and preview
-            const drawingFilename = document.getElementById("drawing-file-filename");
-            const drawingPreview = document.getElementById("drawing-file-preview");
-            const drawingPreviewImg = document.getElementById("drawing-file-preview-img");
-            if (drawingFilename) drawingFilename.textContent = "Pilih file Lampiran (PDF/Gambar)";
-            if (drawingPreview) drawingPreview.style.display = "none";
-            if (drawingPreviewImg) drawingPreviewImg.src = "";
-
-            if (submitBtn) {
-                submitBtn.innerHTML = `<i data-lucide="plus-circle" style="width: 16px; height: 16px;"></i><span>Kirim Request Drawing</span>`;
-            }
             showToast("Drawing berhasil diperbarui", "success");
             renderDrawings();
         } catch (err) {
@@ -11352,16 +12445,8 @@ async function uploadDrawing() {
         }
 
         await initData();
-        document.getElementById("drawing-form").reset();
+        resetFormContainerContent("drawing-form-container");
         document.getElementById("drawing-form-container").style.display = 'none';
-
-        // ponytail: reset filename and preview
-        const drawingFilename = document.getElementById("drawing-file-filename");
-        const drawingPreview = document.getElementById("drawing-file-preview");
-        const drawingPreviewImg = document.getElementById("drawing-file-preview-img");
-        if (drawingFilename) drawingFilename.textContent = "Pilih file Lampiran (PDF/Gambar)";
-        if (drawingPreview) drawingPreview.style.display = "none";
-        if (drawingPreviewImg) drawingPreviewImg.src = "";
 
         showToast(`Request Drawing ${(data && data.id) || ''} berhasil dikirim`, "success");
         renderDrawings();
@@ -11380,6 +12465,18 @@ async function uploadDrawing() {
 window.editDrawingByUser = function (drawingId) {
     const drawing = (state.drawings || []).find(d => d.id === drawingId);
     if (!drawing) return;
+
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const username = state.currentUser ? state.currentUser.username : '';
+    const userLevel = state.currentUser ? getRoleLevel(state.currentUser.role) : 0;
+    const isServerUser = userRole === 'Server' || username === 'server' || userLevel === 100;
+    const phase = getDrawingPhase(drawing);
+    const isEditablePhase = isServerUser || (phase === 1 && (drawing.status === 'Pending Foreman Approval' || drawing.status === 'Checking'));
+
+    if (!isEditablePhase) {
+        showToast("Drawing yang sedang/sudah dalam proses persetujuan (Done) tidak dapat diedit.", "warning");
+        return;
+    }
 
     state.editingDrawingId = drawingId;
 
@@ -11423,7 +12520,8 @@ async function deleteDrawing(drawingId) {
     const userLevel = state.currentUser ? getRoleLevel(state.currentUser.role) : 0;
     const isServerUser = userRole === 'Server' || username === 'server' || userLevel === 100;
 
-    const isSchedulePhase = drawing.status === 'Pending Dept Approval' || drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected' || drawing.status === 'Checking';
+    const phase = getDrawingPhase(drawing);
+    const isSchedulePhase = (phase === 1) && (drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected' || drawing.status === 'Checking');
     const isUploader = state.currentUser && (drawing.uploader === state.currentUser.fullname || drawing.uploader === state.currentUser.username || drawing.requester === state.currentUser.fullname || drawing.requester === state.currentUser.username);
 
     let canDelete = false;
@@ -11432,18 +12530,21 @@ async function deleteDrawing(drawingId) {
     } else if (isSchedulePhase) {
         canDelete = (userLevel >= 40) || isUploader;
     } else {
-        canDelete = (userLevel === 100);
+        canDelete = false;
     }
 
     if (!canDelete) {
-        showToast("Anda tidak memiliki wewenang untuk tindakan ini", "error");
+        showToast("Drawing yang sedang/sudah dalam proses persetujuan (Done) tidak dapat dihapus.", "error");
         return;
     }
     if (!await showCustomConfirm(`Hapus drawing ${drawingId}?`)) return;
 
     try {
-        const res = await fetch(`/api/drawings/${drawingId}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Gagal menghapus drawing");
+        const res = await fetch(`/api/drawings/${drawingId}?requester=${encodeURIComponent(username)}`, { method: "DELETE" });
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || "Gagal menghapus drawing");
+        }
         await initData();
         showToast(`Drawing ${drawingId} berhasil dihapus`, "warning");
         renderDrawings();
@@ -11508,19 +12609,32 @@ function openDrawingDetails(drawingId, fromNotification = false) {
     if (projectBanner) {
         if (linkedProject) {
             projectBanner.style.display = "block";
-            projectBanner.innerHTML = `
-                <div style="background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 10px; padding: 0.65rem 0.85rem; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.8rem; color: var(--color-cyan); margin-bottom: 0.85rem;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
+            const canReviewProject = canUserReviewProject(state.currentUser);
+
+            if (canReviewProject) {
+                projectBanner.innerHTML = `
+                    <div style="background: rgba(0, 242, 254, 0.08); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 10px; padding: 0.65rem 0.85rem; width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.8rem; color: var(--color-cyan); margin-bottom: 0.85rem;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="folder-check" style="width: 18px; height: 18px; flex-shrink: 0;"></i>
+                            <div>
+                                Drawing ini masuk ke <strong style="color: var(--text-primary);">Project Monitoring (${linkedProject.id})</strong> &bull; <span style="color: #f59e0b; font-weight: 600;">Review Only</span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan); padding: 4px 10px; font-size: 0.73rem; border-radius: 6px; white-space: nowrap;" onclick="closeDrawingModal(); flexToProjectTab('${drawing.id}');">
+                            Buka Project &rarr;
+                        </button>
+                    </div>
+                `;
+            } else {
+                projectBanner.innerHTML = `
+                    <div style="background: rgba(0, 242, 254, 0.06); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 10px; padding: 0.65rem 0.85rem; width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--color-cyan); margin-bottom: 0.85rem;">
                         <i data-lucide="folder-check" style="width: 18px; height: 18px; flex-shrink: 0;"></i>
                         <div>
-                            Drawing ini masuk ke <strong style="color: var(--text-primary);">Project Monitoring (${linkedProject.id})</strong> &bull; <span style="color: #f59e0b; font-weight: 600;">Review Only</span>
+                            Drawing ini dihubungkan ke dalam <strong style="color: var(--text-primary);">Project Engineering (${linkedProject.id})</strong>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan); padding: 4px 10px; font-size: 0.73rem; border-radius: 6px; white-space: nowrap;" onclick="closeDrawingModal(); flexToProjectTab('${drawing.id}');">
-                        Buka Project &rarr;
-                    </button>
-                </div>
-            `;
+                `;
+            }
         } else {
             projectBanner.style.display = "none";
         }
@@ -11742,7 +12856,8 @@ function openDrawingDetails(drawingId, fromNotification = false) {
         const username = state.currentUser ? state.currentUser.username : '';
         const userLevel = state.currentUser ? getRoleLevel(state.currentUser.role) : 0;
         const isServerUser = userRole === 'Server' || username === 'server' || userLevel === 100;
-        const isSchedulePhase = drawing.status === 'Pending Dept Approval' || drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected' || drawing.status === 'Checking';
+        const phase = getDrawingPhase(drawing);
+        const isSchedulePhase = (phase === 1) && (drawing.status === 'Pending Foreman Approval' || drawing.status === 'Rejected' || drawing.status === 'Checking');
         const isUploader = state.currentUser && (drawing.uploader === state.currentUser.fullname || drawing.uploader === state.currentUser.username || drawing.requester === state.currentUser.fullname || drawing.requester === state.currentUser.username);
 
         let canDelete = false;
@@ -11751,7 +12866,7 @@ function openDrawingDetails(drawingId, fromNotification = false) {
         } else if (isSchedulePhase) {
             canDelete = (userLevel >= 40) || isUploader;
         } else {
-            canDelete = (userLevel === 100); // Only Server account can delete once drawing enters On Progress or Done
+            canDelete = false; // Only Server account can delete once drawing enters On Progress or Done
         }
 
         deleteBtn.style.display = canDelete ? 'flex' : 'none';
@@ -11782,7 +12897,7 @@ function openDrawingDetails(drawingId, fromNotification = false) {
 
         // Upload/edit/delete is allowed ONLY BEFORE Drafter submits to Requester
         const lockedStatuses = ['Pending Requester Approval', 'Pending Dept Approval', 'Pending Supervisor Approval', 'Pending Manager Approval', 'Pending Factory Manager Approval', 'Completed', 'Cancelled'];
-        const isEditablePhase = !lockedStatuses.includes(drawing.status);
+        const isEditablePhase = !lockedStatuses.includes(drawing.status) && (getDrawingPhase(drawing) === 2 || getDrawingPhase(drawing) === 1);
 
         if (isDrafterOrLead && isEditablePhase) {
             uploadSection.style.display = 'flex';
@@ -11931,7 +13046,7 @@ function openDrawingDetails(drawingId, fromNotification = false) {
         const isClosed = drawing.status === 'Completed' || drawing.status === 'Cancelled';
         let canAssign = false; // ponytail: disabled edit mode in sidebar; assignment is handled via popup modal during approval
 
-        assigneeName.textContent = drawing.engineer ? drawing.engineer : 'Belum ditugaskan';
+        assigneeName.textContent = drawing.engineer ? formatEngineerDisplay(drawing.engineer) : 'Belum ditugaskan';
 
         if (canAssign) {
             assignEdit.style.display = 'flex';
@@ -12290,6 +13405,16 @@ function closeDrawingModal() {
 window.closeDrawingModal = closeDrawingModal;
 window.closeDrawingDetailsModal = closeDrawingModal;
 
+// ponytail: Safe error handler for gallery & thumbnail images
+window.handleGalleryImageError = function(img) {
+    if (!img) return;
+    img.style.display = 'none';
+    if (img.parentElement) {
+        img.parentElement.innerHTML = '<i data-lucide="image-off" style="width:36px;height:36px;opacity:0.3;"></i>';
+        if (window.lucide) window.lucide.createIcons();
+    }
+};
+
 // ponytail: Helper to render interactive drawing preview (PDF/Image) with pan and zoom support (for desktop and mobile)
 function renderDrawingPreview(fileUrl, title, container) {
     if (!fileUrl) {
@@ -12403,7 +13528,10 @@ function renderDrawingPreview(fileUrl, title, container) {
                     }).promise;
                 })
                 .catch(err => {
-                    console.warn('ArrayBuffer PDF load failed, trying URL fallback:', err);
+                    if (err && String(err.message || '').includes('HTTP 404')) {
+                        throw new Error('Berkas PDF tidak ditemukan di server (HTTP 404)');
+                    }
+                    console.warn('ArrayBuffer PDF load failed, trying direct URL:', err);
                     return window.pdfjsLib.getDocument(fetchUrl).promise;
                 })
                 .then(pdf => {
@@ -12428,13 +13556,14 @@ function renderDrawingPreview(fileUrl, title, container) {
                     });
                 });
         }).catch(err => {
-            console.error('Interactive PDF error:', err);
+            console.warn('Interactive PDF preview unavailable:', err ? (err.message || err) : 'File missing');
             // Fallback inside content
+            const safeTitle = (title || 'Dokumen PDF').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             content.innerHTML = `
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 2rem;">
                     <i data-lucide="file-text" style="width: 48px; height: 48px; color: var(--color-cyan);"></i>
-                    <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">Dokumen PDF: ${title}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Pratinjau gagal dimuat. Silakan klik tombol di bawah untuk membuka berkas secara langsung.</div>
+                    <div style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary);">Dokumen PDF: ${safeTitle}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Pratinjau tidak dapat dimuat atau berkas belum diunggah. Silakan klik tombol di bawah untuk membuka berkas secara langsung.</div>
                     <a href="${viewUrl}" target="_blank" class="btn btn-primary" style="margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; padding: 6px 16px; font-size: 0.8rem;">
                         <i data-lucide="external-link" style="width: 14px; height: 14px;"></i> Buka di Tab Baru
                     </a>
@@ -14219,7 +15348,7 @@ function getDrawingStatusDisplay(status, dept) {
 
 // ponytail: Helper to map EJO status value to a descriptive role-based status string
 function getFriendlyStatusText(status, ejo) {
-    if (!status) return status;
+    if (!status) return (ejo && ejo.status) ? String(ejo.status) : 'Requested';
     let friendly = status;
     const isGeneral = ejo && (
         (state.generalEjos && state.generalEjos.some(ge => ge.id === ejo.id)) ||
@@ -14303,6 +15432,19 @@ function escapeHtml(str) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
 }
+window.escapeHtml = escapeHtml;
+
+function escapeJsString(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/\n/g, ' ')
+        .replace(/\r/g, ' ')
+        .replace(/\t/g, ' ');
+}
+window.escapeJsString = escapeJsString;
 
 // ponytail: Docs-style Markdown & Rich Text Formatter for details boxes
 function renderFormattedText(text) {
@@ -14473,7 +15615,7 @@ function updatePriorityTargetDateRequirement(selectId) {
         dateEl.required = false;
         dateEl.removeAttribute('required');
         if (labelEl) {
-            labelEl.innerHTML = `${item.labelText} <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Opsional)</span>`;
+            labelEl.innerHTML = `${item.labelText} <span style="font-size: 0.75rem; color: var(--color-amber, #f59e0b); font-weight: 500;">(Menyesuaikan Jadwal Engineer)</span>`;
         }
     }
 }
@@ -14799,6 +15941,8 @@ function renderProjects() {
         const matchesSearch = (p.id || '').toLowerCase().includes(searchVal) ||
             (p.title || '').toLowerCase().includes(searchVal) ||
             (p.desc || '').toLowerCase().includes(searchVal) ||
+            (p.no_io || '').toLowerCase().includes(searchVal) ||
+            (p.no_moc || '').toLowerCase().includes(searchVal) ||
             (p.pic || '').toLowerCase().includes(searchVal);
         const matchesDate = !dateVal || (p.targetDate && p.targetDate.includes(dateVal)) || (p.createdDate && p.createdDate.includes(dateVal));
         return matchesSearch && matchesDate;
@@ -14828,6 +15972,29 @@ function renderProjects() {
 
     // Render cards
     filtered.forEach(p => {
+        const isForemanAdminUser = state.currentUser && (isForemanAdminRole(state.currentUser.role) || isLeadRole(state.currentUser.role) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(state.currentUser.role));
+
+        const ioBadgeHtml = p.no_io ? `
+            <span class="project-tag-badge" style="font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); color: var(--color-cyan, #38bdf8); border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 600; display: inline-flex; align-items: center; gap: 3px;" title="No IO: ${escapeHtml(p.no_io)}${isForemanAdminUser ? ' (Klik untuk edit)' : ''}" ${isForemanAdminUser ? `onclick="event.stopPropagation(); editProjectIo('${escapeJsString(p.id)}')"` : ''}>
+                IO: ${escapeHtml(p.no_io)}
+                ${isForemanAdminUser ? '<i data-lucide="edit-2" style="width: 10px; height: 10px; opacity: 0.8;"></i>' : ''}
+            </span>
+        ` : (isForemanAdminUser ? `
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectIo('${escapeJsString(p.id)}')" style="padding: 1px 5px; font-size: 0.65rem; border-color: rgba(56, 189, 248, 0.4); color: var(--color-cyan, #38bdf8); background: rgba(56, 189, 248, 0.05); display: inline-flex; align-items: center; gap: 2px;" title="Input No IO">
+                + IO
+            </button>
+        ` : '');
+
+        const mocBadgeHtml = p.no_moc ? `
+            <span class="project-tag-badge" style="font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; background: rgba(168, 85, 247, 0.12); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 600; display: inline-flex; align-items: center; gap: 3px;" title="No MOC: ${escapeHtml(p.no_moc)}${isForemanAdminUser ? ' (Klik untuk edit)' : ''}" ${isForemanAdminUser ? `onclick="event.stopPropagation(); editProjectMoc('${escapeJsString(p.id)}')"` : ''}>
+                MOC: ${escapeHtml(p.no_moc)}
+                ${isForemanAdminUser ? '<i data-lucide="edit-2" style="width: 10px; height: 10px; opacity: 0.8;"></i>' : ''}
+            </span>
+        ` : (isForemanAdminUser ? `
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectMoc('${escapeJsString(p.id)}')" style="padding: 1px 5px; font-size: 0.65rem; border-color: rgba(168, 85, 247, 0.4); color: #c084fc; background: rgba(168, 85, 247, 0.05); display: inline-flex; align-items: center; gap: 2px;" title="Input No MOC">
+                + MOC
+            </button>
+        ` : '');
         // ponytail: show next signer in project card metadata
         let approvalStatusHtml = "";
 
@@ -14842,10 +16009,10 @@ function renderProjects() {
                 const execThumbsHtml = execDocs.map(docItem => {
                     const docUrl = getDocUrl(docItem);
                     if (!docUrl) return '';
-                    const safeUrl = docUrl.replace(/'/g, "\\'");
-                    return '<img src="' + docUrl + '" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal(\'' + safeUrl + '\', \'Foto Eksekusi Proyek\');" title="Lihat Foto" />';
+                    const safeUrl = encodeURI(docUrl);
+                    return `<img src="${docUrl}" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal('${safeUrl}', 'Foto Eksekusi Proyek');" title="Lihat Foto" />`;
                 }).filter(Boolean).join('');
-                const uploadDocBtnHtml = canUpload ? '<input type="file" id="card-upload-doc-' + p.id + '" accept="image/*" style="display: none;" multiple onchange="uploadProjectDocFromCard(\'' + p.id + '\', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById(\'card-upload-doc-' + p.id + '\').click();" title="Tambah Foto Dokumentasi"><i data-lucide="plus" style="width:13px;height:13px;"></i></button>' : '';
+                const uploadDocBtnHtml = canUpload ? `<input type="file" id="card-upload-doc-${p.id}" accept="image/*" style="display: none;" multiple onchange="uploadProjectDocFromCard('${p.id}', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById('card-upload-doc-${p.id}').click();" title="Tambah Foto Dokumentasi"><i data-lucide="plus" style="width:13px;height:13px;"></i></button>` : '';
 
                 docsPreviewHtml = `
                     <div class="project-card-docs-preview">
@@ -14854,7 +16021,7 @@ function renderProjects() {
                     </div>
                 `;
             } else if (p.phase === 3 || p.phase === 4) {
-                const uploadDocBtnHtml = canUpload ? '<input type="file" id="card-upload-doc-' + p.id + '" accept="image/*" style="display: none;" multiple onchange="uploadProjectDocFromCard(\'' + p.id + '\', this)"><button class="btn btn-outline btn-xs" style="padding: 2px 7px; font-size: 0.68rem; display: flex; align-items: center; gap: 4px;" onclick="event.stopPropagation(); document.getElementById(\'card-upload-doc-' + p.id + '\').click();" title="Upload Foto Dokumentasi"><i data-lucide="camera" style="width:11px;height:11px;"></i> + Upload</button>' : '';
+                const uploadDocBtnHtml = canUpload ? `<input type="file" id="card-upload-doc-${p.id}" accept="image/*" style="display: none;" multiple onchange="uploadProjectDocFromCard('${p.id}', this)"><button class="btn btn-outline btn-xs" style="padding: 2px 7px; font-size: 0.68rem; display: flex; align-items: center; gap: 4px;" onclick="event.stopPropagation(); document.getElementById('card-upload-doc-${p.id}').click();" title="Upload Foto Dokumentasi"><i data-lucide="camera" style="width:11px;height:11px;"></i> + Upload</button>` : '';
 
                 docsPreviewHtml = `
                     <div class="project-card-docs-empty">
@@ -14879,15 +16046,15 @@ function renderProjects() {
                     const docUrl = getDocUrl(docItem);
                     if (!docUrl) return '';
                     const isPdf = docUrl.split('?')[0].toLowerCase().endsWith('.pdf');
-                    const safeUrl = docUrl.replace(/'/g, "\\'");
+                    const safeUrl = encodeURI(docUrl);
                     if (isPdf) {
-                        return '<div class="project-doc-thumb" style="display: flex; align-items: center; justify-content: center; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: var(--color-green);" onclick="event.stopPropagation(); window.open(\'' + safeUrl + '\', \'_blank\');" title="Buka File Berita Acara (PDF)"><i data-lucide="file-text" style="width:18px;height:18px;"></i></div>';
+                        return `<div class="project-doc-thumb" style="display: flex; align-items: center; justify-content: center; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: var(--color-green);" onclick="event.stopPropagation(); window.open('${safeUrl}', '_blank');" title="Buka File Berita Acara (PDF)"><i data-lucide="file-text" style="width:18px;height:18px;"></i></div>`;
                     } else {
-                        return '<img src="' + docUrl + '" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal(\'' + safeUrl + '\', \'Foto Berita Acara\');" title="Lihat Foto Berita Acara" />';
+                        return `<img src="${docUrl}" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal('${safeUrl}', 'Foto Berita Acara');" title="Lihat Foto Berita Acara" />`;
                     }
                 }).filter(Boolean).join('');
 
-                const addBtnHtml = canUploadHandover ? '<input type="file" id="card-upload-handover-' + p.id + '" accept=".pdf,image/*" style="display: none;" multiple onchange="uploadProjectHandoverDocFromCard(\'' + p.id + '\', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById(\'card-upload-handover-' + p.id + '\').click();" title="Tambah File Berita Acara"><i data-lucide="plus" style="width:13px;height:13px;"></i></button>' : '';
+                const addBtnHtml = canUploadHandover ? `<input type="file" id="card-upload-handover-${p.id}" accept=".pdf,image/*" style="display: none;" multiple onchange="uploadProjectHandoverDocFromCard('${p.id}', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById('card-upload-handover-${p.id}').click();" title="Tambah File Berita Acara"><i data-lucide="plus" style="width:13px;height:13px;"></i></button>` : '';
 
                 handoverDocsHtml = `
                     <div class="project-card-docs-preview" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px; margin-top: 6px; flex-wrap: wrap;">
@@ -14899,7 +16066,7 @@ function renderProjects() {
                     </div>
                 `;
             } else if (p.phase === 4) {
-                const uploadBtnHtml = canUploadHandover ? '<input type="file" id="card-upload-handover-' + p.id + '" accept=".pdf,image/*" style="display: none;" multiple onchange="uploadProjectHandoverDocFromCard(\'' + p.id + '\', this)"><button class="btn btn-warning btn-xs" style="padding: 2px 7px; font-size: 0.68rem; display: flex; align-items: center; gap: 4px;" onclick="event.stopPropagation(); document.getElementById(\'card-upload-handover-' + p.id + '\').click();" title="Upload Dokumen Berita Acara Serah Terima"><i data-lucide="upload-cloud" style="width:11px;height:11px;"></i> Upload BA</button>' : '';
+                const uploadBtnHtml = canUploadHandover ? `<input type="file" id="card-upload-handover-${p.id}" accept=".pdf,image/*" style="display: none;" multiple onchange="uploadProjectHandoverDocFromCard('${p.id}', this)"><button class="btn btn-warning btn-xs" style="padding: 2px 7px; font-size: 0.68rem; display: flex; align-items: center; gap: 4px;" onclick="event.stopPropagation(); document.getElementById('card-upload-handover-${p.id}').click();" title="Upload Dokumen Berita Acara Serah Terima"><i data-lucide="upload-cloud" style="width:11px;height:11px;"></i> Upload BA</button>` : '';
 
                 handoverDocsHtml = `
                     <div class="project-card-docs-empty" style="border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.06); margin-top: 6px;">
@@ -14928,16 +16095,16 @@ function renderProjects() {
                     const docUrl = getDocUrl(docItem);
                     if (!docUrl) return '';
                     const isImg = /\.(jpg|jpeg|png|webp)$/i.test(docUrl.split('?')[0]);
-                    const safeUrl = docUrl.replace(/'/g, "\\'");
+                    const safeUrl = encodeURI(docUrl);
                     const deleteCardBtnHtml = canUploadBoq ? `<span onclick="event.stopPropagation(); event.preventDefault(); deleteProjectBoqDoc(event, '${p.id}', '${encodeURIComponent(docUrl)}')" style="color: var(--color-red); margin-left: 4px; font-weight: bold; cursor: pointer; padding: 0 2px;" title="Hapus BOQ">&times;</span>` : '';
                     if (isImg) {
-                        return '<div style="position:relative; display:inline-block;"><img src="' + docUrl + '" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal(\'' + safeUrl + '\', \'Foto Dokumen BOQ\');" title="Lihat Dokumen BOQ" />' + (canUploadBoq ? '<span onclick="event.stopPropagation(); event.preventDefault(); deleteProjectBoqDoc(event, \'' + p.id + '\', \'' + encodeURIComponent(docUrl) + '\')" style="position:absolute; top:-4px; right:-4px; background:var(--color-red); color:#fff; border-radius:50%; width:14px; height:14px; font-size:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:bold;" title="Hapus BOQ">&times;</span>' : '') + '</div>';
+                        return `<div style="position:relative; display:inline-block;"><img src="${docUrl}" class="project-doc-thumb" onclick="event.stopPropagation(); openImagePreviewModal('${safeUrl}', 'Foto Dokumen BOQ');" title="Lihat Dokumen BOQ" />${canUploadBoq ? `<span onclick="event.stopPropagation(); event.preventDefault(); deleteProjectBoqDoc(event, '${p.id}', '${encodeURIComponent(docUrl)}')" style="position:absolute; top:-4px; right:-4px; background:var(--color-red); color:#fff; border-radius:50%; width:14px; height:14px; font-size:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:bold;" title="Hapus BOQ">&times;</span>` : ''}</div>`;
                     } else {
-                        return '<span class="badge badge-outline" style="font-size:0.85rem; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px; border-color:var(--color-cyan); color:var(--color-cyan); padding:4px 10px;" onclick="event.stopPropagation(); window.open(\'' + safeUrl + '\', \'_blank\');" title="Buka File BOQ"><i data-lucide="file-text" style="width:14px;height:14px;"></i> BOQ ' + deleteCardBtnHtml + '</span>';
+                        return `<span class="badge badge-outline" style="font-size:0.85rem; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:5px; border-color:var(--color-cyan); color:var(--color-cyan); padding:4px 10px;" onclick="event.stopPropagation(); window.open('${safeUrl}', '_blank');" title="Buka File BOQ"><i data-lucide="file-text" style="width:14px;height:14px;"></i> BOQ ${deleteCardBtnHtml}</span>`;
                     }
                 }).filter(Boolean).join('');
 
-                const uploadBoqBtnHtml = canUploadBoq ? '<input type="file" id="card-upload-boq-' + p.id + '" accept=".pdf,image/*,.xlsx,.xls,.csv" style="display: none;" multiple onchange="uploadProjectBoqFromCard(\'' + p.id + '\', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById(\'card-upload-boq-' + p.id + '\').click();" title="Tambah / Update Dokumen BOQ"><i data-lucide="plus" style="width:16px;height:16px;"></i></button>' : '';
+                const uploadBoqBtnHtml = canUploadBoq ? `<input type="file" id="card-upload-boq-${p.id}" accept=".pdf,image/*,.xlsx,.xls,.csv" style="display: none;" multiple onchange="uploadProjectBoqFromCard('${p.id}', this)"><button class="project-doc-add-btn" onclick="event.stopPropagation(); document.getElementById('card-upload-boq-${p.id}').click();" title="Tambah / Update Dokumen BOQ"><i data-lucide="plus" style="width:16px;height:16px;"></i></button>` : '';
 
                 boqPreviewHtml = `
                     <div class="project-card-docs-preview" style="margin-top: 8px; padding: 8px 10px; background: rgba(0, 242, 254, 0.05); border: 1px dashed rgba(0, 242, 254, 0.3); border-radius: var(--border-radius-sm); flex-wrap: wrap;">
@@ -14963,25 +16130,24 @@ function renderProjects() {
             }
         }
 
-        const isReviewOnly = p.is_review_only || p.is_review_only === 1 || p.is_review_only === '1' || p.is_review_only === true;
-        const drawingBadgeHtml = p.drawing_id ? `<span class="ejo-id-badge" onclick="event.stopPropagation(); openDrawingDetails('${p.drawing_id}')" style="font-size:0.85rem; font-weight:700; padding: 4px 10px; cursor: pointer;" title="Klik untuk lihat Drawing EJO ${p.drawing_id}"><i data-lucide="file-text" style="width:14px;height:14px;margin-right:4px;display:inline-block;vertical-align:middle;"></i>${p.drawing_id}</span>` : '';
+        const drawingBadgeHtml = p.drawing_id ? `<span class="ejo-id-badge" onclick="event.stopPropagation(); openDrawingDetails('${escapeJsString(p.drawing_id)}')" style="font-size:0.85rem; font-weight:700; padding: 4px 10px; cursor: pointer;" title="Klik untuk lihat Drawing EJO ${escapeHtml(p.drawing_id)}"><i data-lucide="file-text" style="width:14px;height:14px;margin-right:4px;display:inline-block;vertical-align:middle;"></i>${escapeHtml(p.drawing_id)}</span>` : '';
 
         const userRoleCard = state.currentUser ? state.currentUser.role : '';
         const isForemanAdminCard = isForemanAdminRole(userRoleCard) || isLeadRole(userRoleCard) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleCard);
-        const editIdBtnHtml = isForemanAdminCard ? `<button class="btn-edit-project-id" onclick="event.stopPropagation(); editProjectId('${p.id}')" title="Edit ID Project" style="background: transparent; border: none; padding: 0 2px; cursor: pointer; color: var(--text-secondary); opacity: 0.85; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.color='var(--color-cyan)'; this.style.opacity='1';" onmouseout="this.style.color='var(--text-secondary)'; this.style.opacity='0.85';"><i data-lucide="edit-3" style="width: 14px; height: 14px;"></i></button>` : '';
+        const editIdBtnHtml = isForemanAdminCard ? `<button class="btn-edit-project-id" onclick="event.stopPropagation(); editProjectId('${escapeJsString(p.id)}')" title="Edit ID Project" style="background: transparent; border: none; padding: 0 2px; cursor: pointer; color: var(--text-secondary); opacity: 0.85; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.color='var(--color-cyan)'; this.style.opacity='1';" onmouseout="this.style.color='var(--text-secondary)'; this.style.opacity='0.85';"><i data-lucide="edit-3" style="width: 14px; height: 14px;"></i></button>` : '';
 
         // ponytail: custom status item inside project-card-meta box
         let customStatusMetaHtml = '';
         if (p.custom_status) {
             customStatusMetaHtml = `
-            <div class="project-meta-item" style="color: #f59e0b; ${isForemanAdminCard ? 'cursor: pointer;' : ''}" onclick="event.stopPropagation(); ${isForemanAdminCard ? `editProjectCustomStatus('${p.id}')` : ''}" title="${isForemanAdminCard ? 'Klik untuk edit Status' : ''}">
+            <div class="project-meta-item" style="color: #f59e0b; ${isForemanAdminCard ? 'cursor: pointer;' : ''}" onclick="event.stopPropagation(); ${isForemanAdminCard ? `editProjectCustomStatus('${escapeJsString(p.id)}')` : ''}" title="${isForemanAdminCard ? 'Klik untuk edit Status' : ''}">
                 <i data-lucide="tag" style="color: #f59e0b; width:15px; height:15px;"></i>
-                <span>Status: <span class="badge" style="font-size:0.85rem; font-weight:700; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;">${p.custom_status} ${isForemanAdminCard ? `<i data-lucide="edit-2" style="width:12px;height:12px;margin-left:2px;"></i>` : ''}</span></span>
+                <span>Status: <span class="badge" style="font-size:0.85rem; font-weight:700; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;">${escapeHtml(p.custom_status)} ${isForemanAdminCard ? `<i data-lucide="edit-2" style="width:12px;height:12px;margin-left:2px;"></i>` : ''}</span></span>
             </div>
             `;
         } else if (isForemanAdminCard) {
             customStatusMetaHtml = `
-            <div class="project-meta-item" style="color: #f59e0b; cursor: pointer;" onclick="event.stopPropagation(); editProjectCustomStatus('${p.id}')" title="Klik untuk Input Status Project">
+            <div class="project-meta-item" style="color: #f59e0b; cursor: pointer;" onclick="event.stopPropagation(); editProjectCustomStatus('${escapeJsString(p.id)}')" title="Klik untuk Input Status Project">
                 <i data-lucide="tag" style="color: #f59e0b; width:15px; height:15px;"></i>
                 <span>Status: <span class="badge" style="font-size:0.85rem; font-weight:700; background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px dashed rgba(245, 158, 11, 0.4); display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;">+ Input Status</span></span>
             </div>
@@ -14996,7 +16162,7 @@ function renderProjects() {
             const grVal = p.gr_percent !== undefined && p.gr_percent !== null ? p.gr_percent : 0;
 
             procurementPreviewHtml = `
-                <div class="project-card-docs-preview" style="margin-top: 8px; padding: 8px 10px; background: rgba(16, 185, 129, 0.06); border: 1px dashed rgba(16, 185, 129, 0.4); border-radius: var(--border-radius-sm); flex-wrap: wrap;" onclick="event.stopPropagation(); ${isForemanAdminCard ? `editProjectProcurement('${p.id}')` : ''}" title="${isForemanAdminCard ? 'Klik untuk Edit Progress PR / PO / GR' : ''}">
+                <div class="project-card-docs-preview" style="margin-top: 8px; padding: 8px 10px; background: rgba(16, 185, 129, 0.06); border: 1px dashed rgba(16, 185, 129, 0.4); border-radius: var(--border-radius-sm); flex-wrap: wrap;" onclick="event.stopPropagation(); ${isForemanAdminCard ? `editProjectProcurement('${escapeJsString(p.id)}')` : ''}" title="${isForemanAdminCard ? 'Klik untuk Edit Progress PR / PO / GR' : ''}">
                     <div style="font-size: 0.88rem; font-weight: 700; color: var(--color-green); margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; width: 100%;">
                         <span style="display: flex; align-items: center; gap: 6px;">
                             <i data-lucide="shopping-cart" style="width:15px;height:15px;"></i> Detail
@@ -15004,8 +16170,10 @@ function renderProjects() {
                         ${isForemanAdminCard ? `<span style="font-size:0.82rem; color: var(--color-green); font-weight: 700; opacity: 0.95; display: flex; align-items: center; gap: 4px; cursor: pointer;"><i data-lucide="edit-2" style="width:12px;height:12px;"></i> Edit</span>` : ''}
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%;">
-                        <div style="background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); border-radius: 6px; padding: 6px 8px; text-align: center;">
-                            <div style="font-size: 0.8rem; color: var(--color-cyan); font-weight: 700;">PR</div>
+                        <div style="background: rgba(0, 242, 254, 0.12); border: 1px solid rgba(0, 242, 254, 0.35); border-radius: 6px; padding: 6px 8px; text-align: center; cursor: pointer; transition: all 0.2s ease;" onclick="event.stopPropagation(); openPrCalculatorModal('${escapeJsString(p.id)}')" title="Lihat Rumus PR: (Total PR + Ready Stock WS/WSP : Total All Material)">
+                            <div style="font-size: 0.8rem; color: var(--color-cyan); font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px;">
+                                PR <i data-lucide="info" style="width: 10px; height: 10px; opacity: 0.85;"></i>
+                            </div>
                             <div style="font-size: 1.05rem; font-weight: 800; color: var(--color-cyan); margin-top: 1px;">${prVal}%</div>
                         </div>
                         <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 6px 8px; text-align: center;">
@@ -15048,13 +16216,13 @@ function renderProjects() {
                         <span style="display: flex; align-items: center; gap: 6px;">
                             <i data-lucide="calendar" style="width:15px;height:15px;"></i> Timeline Proyek
                         </span>
-                        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); openEditProjectTimelineModal('${p.id}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.1); display: inline-flex; align-items: center; gap: 3px;" title="Klik untuk Edit/Tambah Timeline">
+                        <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); openEditProjectTimelineModal('${escapeJsString(p.id)}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.1); display: inline-flex; align-items: center; gap: 3px;" title="Klik untuk Edit/Tambah Timeline">
                             <i data-lucide="edit-2" style="width:10px;height:10px;"></i> Kelola Timeline
                         </button>
                     </div>
 
                     <div style="width: 100%; margin-bottom: 6px;">
-                        <select class="form-control" style="width: 100%; padding: 4px 8px; font-size: 0.8rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; box-sizing: border-box;" onchange="event.stopPropagation(); updateProjectTimelineDesc(this.value, '${p.id}', 'card')">
+                        <select class="form-control" style="width: 100%; padding: 4px 8px; font-size: 0.8rem; background: var(--bg-primary); color: var(--text-primary); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; box-sizing: border-box;" onchange="event.stopPropagation(); updateProjectTimelineDesc(this.value, '${escapeJsString(p.id)}', 'card')">
                             ${optionsHtml}
                         </select>
                     </div>
@@ -15067,28 +16235,44 @@ function renderProjects() {
         }
 
         const cardHtml = `
-            <div class="project-card" style="cursor: pointer;" onclick="openProjectDetails(event, '${p.id}')">
-                <div class="project-card-header">
-                    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                        <span class="project-card-id" data-id="${p.id}" style="display: inline-flex; align-items: center; gap: 4px;">
-                            ${p.id}
-                            ${editIdBtnHtml}
-                        </span>
+            <div class="project-card" data-project-id="${escapeHtml(p.id)}" style="cursor: pointer;" onclick="openProjectDetails(event, '${escapeJsString(p.id)}')">
+                <div class="project-card-header" style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start; margin-bottom: 6px;">
+                    ${(ioBadgeHtml || drawingBadgeHtml) ? `
+                    <div class="project-header-row-io" style="display: flex; align-items: center; gap: 6px; width: 100%; flex-wrap: wrap;">
+                        ${ioBadgeHtml}
                         ${drawingBadgeHtml}
                     </div>
+                    ` : ''}
+                    ${mocBadgeHtml ? `
+                    <div class="project-header-row-moc" style="display: flex; align-items: center; gap: 6px; width: 100%;">
+                        ${mocBadgeHtml}
+                    </div>
+                    ` : ''}
                 </div>
-                <h5 class="project-card-title">${p.title}</h5>
-                <p class="project-card-desc">${p.desc}</p>
+                <h5 class="project-card-title">${escapeHtml(p.title)}</h5>
+                <p class="project-card-desc">${escapeHtml(p.desc)}</p>
 
                 <div class="project-card-meta">
                     <div class="project-meta-item">
                         <i data-lucide="building-2"></i>
-                        <span>Dept: ${p.dept || 'PRD'}</span>
+                        <span>Dept: ${escapeHtml(p.dept || 'PRD')}</span>
                     </div>
+                    ${p.no_io ? `
+                    <div class="project-meta-item" style="color: var(--color-cyan);">
+                        <i data-lucide="tag"></i>
+                        <span>No IO: <strong>${escapeHtml(p.no_io)}</strong></span>
+                    </div>
+                    ` : ''}
+                    ${p.no_moc ? `
+                    <div class="project-meta-item" style="color: #c084fc;">
+                        <i data-lucide="shield-check"></i>
+                        <span>No MOC: <strong>${escapeHtml(p.no_moc)}</strong></span>
+                    </div>
+                    ` : ''}
                     ${p.drawing_id ? `
-                    <div class="project-meta-item" style="color: var(--color-cyan); cursor: pointer;" onclick="event.stopPropagation(); openDrawingDetails('${p.drawing_id}')" title="Klik untuk melihat Drawing EJO">
+                    <div class="project-meta-item" style="color: var(--color-cyan); cursor: pointer;" onclick="event.stopPropagation(); openDrawingDetails('${escapeJsString(p.drawing_id)}')" title="Klik untuk melihat Drawing EJO">
                         <i data-lucide="file-text"></i>
-                        <span>Ref Drawing: <strong>${p.drawing_id}</strong></span>
+                        <span>Ref Drawing: <strong>${escapeHtml(p.drawing_id)}</strong></span>
                     </div>
                     ` : ''}
                     ${customStatusMetaHtml}
@@ -15694,7 +16878,7 @@ function renderDrawingGallery() {
                 <img src="${d.file_path}" alt="${d.title || 'Drawing'}" 
                      style="width: 100%; height: 100%; object-fit: cover;" 
                      loading="lazy"
-                     onerror="this.style.display='none'; this.parentElement.innerHTML='<i data-lucide=\\'image-off\\' style=\\'width:36px;height:36px;opacity:0.3;\\'></i>'; lucide.createIcons();" />
+                     onerror="handleGalleryImageError(this)" />
             `;
         }
 
@@ -15810,7 +16994,7 @@ function renderPartGallery() {
                 <img src="${p.image}" alt="${p.name || 'Spare Part'}" 
                      style="width: 100%; height: 100%; object-fit: cover;" 
                      loading="lazy"
-                     onerror="this.style.display='none'; this.parentElement.innerHTML='<i data-lucide=\\'image-off\\' style=\\'width:36px;height:36px;opacity:0.3;\\'></i>'; lucide.createIcons();" />
+                     onerror="handleGalleryImageError(this)" />
             </div>
             <div style="padding: 0.75rem 1rem;">
                 <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${p.name || ''}">
@@ -16066,7 +17250,58 @@ function renderPartlistCharts(filtered) {
 
     // ponytail: compute cumulative running Outstanding (OS) matching Overview Trend Chart logic
     const sliceOS = [];
-    let runningOS = 0;
+    let initialOS = 0;
+    if (period === 'month') {
+        const monthInfo = getPreviousCompletedMonthRange(now);
+        allRepairEjos.forEach(e => {
+            const cDate = getCreatedDate(e);
+            if (cDate && cDate < monthInfo.startStr) {
+                const isClosed = isItemDone(e) || isItemCancelled(e);
+                if (!isClosed) {
+                    initialOS++;
+                } else {
+                    const compDate = getCompletedDate(e);
+                    if (compDate && compDate >= monthInfo.startStr) {
+                        initialOS++;
+                    }
+                }
+            }
+        });
+    } else if (period === 'week') {
+        const weekInfo = getPreviousCompletedWeekRange(now);
+        allRepairEjos.forEach(e => {
+            const cDate = getCreatedDate(e);
+            if (cDate && cDate < weekInfo.startStr) {
+                const isClosed = isItemDone(e) || isItemCancelled(e);
+                if (!isClosed) {
+                    initialOS++;
+                } else {
+                    const compDate = getCompletedDate(e);
+                    if (compDate && compDate >= weekInfo.startStr) {
+                        initialOS++;
+                    }
+                }
+            }
+        });
+    } else if (period === 'year') {
+        const yearInfo = getPreviousCompletedYearRange(now);
+        allRepairEjos.forEach(e => {
+            const cDate = getCreatedDate(e);
+            if (cDate && cDate < yearInfo.startStr) {
+                const isClosed = isItemDone(e) || isItemCancelled(e);
+                if (!isClosed) {
+                    initialOS++;
+                } else {
+                    const compDate = getCompletedDate(e);
+                    if (compDate && compDate >= yearInfo.startStr) {
+                        initialOS++;
+                    }
+                }
+            }
+        });
+    }
+
+    let runningOS = initialOS;
     for (let i = 0; i < sliceLabels.length; i++) {
         const inFlow = sliceMasuk[i] || 0;
         const outFlow = (sliceSelesai[i] || 0) + (sliceDibatalkan[i] || 0);
@@ -17114,7 +18349,8 @@ function getGeneralEjoCardActions(e) {
     const isRequester = checkIsRequester(e.requester);
     const detailOnlyButton = `<button class="btn btn-outline btn-xs" onclick="openEJODetails('${e.id}')">Detail</button>`;
 
-    if (e.status === 'Requested') {
+    const status = String(e.status || '');
+    if (status === 'Requested') {
         if (isRequester) {
             return `
                 <button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Batal / Hapus</button>
@@ -17126,7 +18362,7 @@ function getGeneralEjoCardActions(e) {
             <button class="btn btn-danger-outline btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Cancelled')">Tolak</button>
             <button class="btn btn-primary btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Checking')">Setujui &rarr;</button>
         `;
-    } else if (e.status === 'Approved' || e.status.startsWith('Checking')) {
+    } else if (status === 'Approved' || status.startsWith('Checking')) {
         if (isRequester) {
             return `
                 <button class="btn btn-danger-outline btn-xs" onclick="deleteGeneralEjo('${e.id}')">Batal / Hapus</button>
@@ -17141,16 +18377,61 @@ function getGeneralEjoCardActions(e) {
             `;
         }
         return detailOnlyButton;
-    } else if (e.status.startsWith('In Progress')) {
-        if (isLead || isAssigned || isForemanAdmin) {
-            const revCount = getCurrentRevisionCount(e);
-            const completeLabel = revCount > 0 ? `Selesaikan (Revisi ${revCount}) &rarr;` : `Selesaikan &rarr;`;
-            return `
-                ${(isLead || isForemanAdmin) ? `<button class="btn btn-outline btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Requested')">&larr; Balikkan</button>` : ''}
-                <button class="btn btn-primary btn-xs glow-button" onclick="moveGeneralEjoStatus('${e.id}', 'Pending User Approval')">${completeLabel}</button>
-            `;
+    } else if (status.startsWith('In Progress')) {
+        const revCount = getCurrentRevisionCount(e);
+        const completeLabel = revCount > 0 ? `Selesaikan (Revisi ${revCount}) &rarr;` : `Selesaikan &rarr;`;
+
+        // ponytail: For Repair Part EJO, "Selesaikan ->" button only appears when work is confirmed AND quantities are fully input to targets
+        const isRepairPartCategory = e.category === 'Repair Part' || (e.category && e.category.toLowerCase().includes('repair'));
+        let canShowComplete = true;
+        let isWorkConfirmed = true;
+        if (isRepairPartCategory) {
+            isWorkConfirmed = parseInt(e.qty_work_confirmed) === 1;
+            const qVal = (parseInt(e.quantity) !== undefined && parseInt(e.quantity) !== null && parseInt(e.quantity) > 0) ? parseInt(e.quantity) : 1;
+            const qNeededTarget = (e.qty_needed_target !== undefined && e.qty_needed_target !== null && parseInt(e.qty_needed_target) > 0)
+                ? parseInt(e.qty_needed_target)
+                : ((e.qty_needed !== undefined && e.qty_needed !== null && parseInt(e.qty_needed) > 0) ? parseInt(e.qty_needed) : 1);
+            const qStockTarget = (e.qty_stock_target !== undefined && e.qty_stock_target !== null && parseInt(e.qty_stock_target) > 0)
+                ? parseInt(e.qty_stock_target)
+                : Math.max(0, qVal - qNeededTarget);
+            const totalTarget = Math.max(qVal, qNeededTarget + qStockTarget);
+
+            const qNeeded = (e.qty_needed_actual !== undefined && e.qty_needed_actual !== null)
+                ? parseInt(e.qty_needed_actual)
+                : 0;
+            const qStock = (e.qty_stock !== undefined && e.qty_stock !== null) ? parseInt(e.qty_stock) : 0;
+            const totalInput = qNeeded + qStock;
+
+            canShowComplete = isWorkConfirmed && (totalInput >= totalTarget) && (qNeededTarget <= 0 || qNeeded >= qNeededTarget) && (qStockTarget <= 0 || qStock >= qStockTarget);
         }
-        return `<span class="text-muted text-xs" style="font-style: italic;">Hanya Engineer yang ditunjuk yang dapat memproses</span>`;
+
+        if (isForemanAdmin) {
+            let actions = `<button class="btn btn-outline btn-xs" onclick="moveGeneralEjoStatus('${e.id}', 'Requested')">&larr; Balikkan</button>`;
+            if (canShowComplete) {
+                actions += ` <button class="btn btn-primary btn-xs glow-button" onclick="moveGeneralEjoStatus('${e.id}', 'Pending User Approval')">${completeLabel}</button>`;
+            } else if (isRepairPartCategory) {
+                const noticeText = !isWorkConfirmed ? "Konfirmasi pekerjaan terlebih dahulu" : "Pengisian Qty Mesin/Stok wajib terisi";
+                const noticeIcon = !isWorkConfirmed ? "lock" : "alert-circle";
+                actions += ` <span class="text-muted text-xs" style="font-style: italic; color: #fbbf24; text-align: center; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 2px 0;"><i data-lucide="${noticeIcon}" style="width:12px;height:12px;display:inline;"></i> ${noticeText}</span>`;
+            }
+            return actions;
+        } else if (isAssigned) {
+            if (canShowComplete) {
+                return `
+                    <button class="btn btn-primary btn-xs glow-button" onclick="moveGeneralEjoStatus('${e.id}', 'Pending User Approval')">${completeLabel}</button>
+                `;
+            }
+            if (isRepairPartCategory) {
+                const noticeText = !isWorkConfirmed ? "Konfirmasi pekerjaan terlebih dahulu" : "Pengisian Qty Mesin/Stok wajib terisi";
+                const noticeIcon = !isWorkConfirmed ? "lock" : "alert-circle";
+                return `
+                    <button class="btn btn-outline btn-xs" onclick="openEJODetails('${e.id}')">Detail</button>
+                    <span class="text-muted text-xs" style="font-style: italic; color: #fbbf24; text-align: center; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 2px 0;"><i data-lucide="${noticeIcon}" style="width:12px;height:12px;display:inline;"></i> ${noticeText}</span>
+                `;
+            }
+            return detailOnlyButton;
+        }
+        return detailOnlyButton;
     } else if (e.status === 'Pending User Approval') {
         const isRequester = checkIsRequester(e.requester);
         if (isRequester) {
@@ -17766,6 +19047,7 @@ async function archiveDrawingCard(drawingId) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 status: 'Archived',
+                is_archived: 1,
                 logs: [newLog]
             })
         });
@@ -17808,19 +19090,10 @@ function getDrawingCardActions(d) {
                 <button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'reject')">Tolak</button>
                 <button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'approve')">Setujui &rarr;</button>
             `;
-            if (isUploader) {
-                buttons += `
-                    <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editDrawingByUser('${d.id}')">Edit</button>
-                `;
-            }
-        } else if (isUploader) {
-            buttons += `
-                <button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); deleteDrawing('${d.id}')">Batal / Hapus</button>
-                <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editDrawingByUser('${d.id}')">Edit</button>
-            `;
         }
     } else if (d.status === 'Pending Foreman Approval') {
-        if (!d.file_path) {
+        const isPhase1 = (getDrawingPhase(d) === 1) || (!d.file_path);
+        if (isPhase1) {
             if (isUploader) {
                 buttons += `
                     <button class="btn btn-danger-outline btn-xs" onclick="event.stopPropagation(); deleteDrawing('${d.id}')">Batal / Hapus</button>
@@ -17833,7 +19106,7 @@ function getDrawingCardActions(d) {
                 `;
             }
         } else {
-            // Official sign-off step (after Requester approval)
+            // Official sign-off step (after Requester & Dept approval)
             if (isForeman) {
                 buttons += `
                     <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); moveDrawingStatus('${d.id}', 'reject')">&larr; Tolak</button>
@@ -17893,6 +19166,7 @@ function getDrawingCardActions(d) {
             `;
         }
     } else if (d.status === 'Completed') {
+        if (typeof isDrawingAutoArchiveDue === 'function' && isDrawingAutoArchiveDue(d)) return '';
         const isRequester = (userFullname === d.requester || userFullname === d.uploader || userRole === 'Admin Eng' || userRole === 'Server');
         if (isRequester || userRole === 'Foreman Eng') {
             buttons += `
@@ -17908,14 +19182,9 @@ function getDrawingCardActions(d) {
         }
     }
 
-    // ponytail: Add "Alihkan ke Project" or "Di Project" button across all drawing phases
-    const linkedProjAction = state.projects && state.projects.find(p => p.drawing_id === d.id);
-    if (linkedProjAction) {
-        if (!buttons.includes("flexToProjectTab")) {
-            buttons += ` <button class="btn btn-outline btn-xs" style="border-color: var(--color-green); color: var(--color-green); opacity: 0.9;" onclick="event.stopPropagation(); flexToProjectTab('${d.id}')" title="Sudah dialihkan ke Project Monitoring (${linkedProjAction.id})"><i data-lucide="check" style="width:11px;height:11px;"></i> Di Project (${linkedProjAction.id})</button>`;
-        }
-    } else if (isForemanAdminRole(userRole)) {
-        buttons += ` <button class="btn btn-outline btn-xs" style="border-color: var(--color-cyan); color: var(--color-cyan);" onclick="event.stopPropagation(); openTransferDrawingToProjectModal('${d.id}')"><i data-lucide="external-link" style="width:11px;height:11px;"></i> Alihkan ke Project</button>`;
+    // ponytail: Add "Detail" button across all drawing card actions instead of "Di Project"
+    if (!buttons.includes(`openDrawingDetails('${d.id}')`)) {
+        buttons += ` <button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); openDrawingDetails('${d.id}')">Detail</button>`;
     }
 
     if (!buttons) {
@@ -17957,6 +19226,11 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
         if (!isCancelled) {
             const isRepairPartCategory = ejo.category === 'Repair Part' || (ejo.category && ejo.category.toLowerCase().includes('repair'));
             if (isRepairPartCategory) {
+                const isWorkConfirmed = parseInt(ejo.qty_work_confirmed) === 1;
+                if (!isWorkConfirmed) {
+                    showToast("Pekerjaan harus dikonfirmasi terlebih dahulu sebelum diselesaikan.", "error");
+                    return;
+                }
                 const qVal = parseInt(ejo.quantity || 1);
                 const qNeededTarget = (ejo.qty_needed_target !== undefined && ejo.qty_needed_target !== null && parseInt(ejo.qty_needed_target) > 0)
                     ? parseInt(ejo.qty_needed_target)
@@ -17964,14 +19238,16 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
                 const qStockTarget = (ejo.qty_stock_target !== undefined && ejo.qty_stock_target !== null && parseInt(ejo.qty_stock_target) > 0)
                     ? parseInt(ejo.qty_stock_target)
                     : Math.max(0, qVal - qNeededTarget);
+                const totalTarget = Math.max(qVal, qNeededTarget + qStockTarget);
 
                 const qNeeded = (ejo.qty_needed_actual !== undefined && ejo.qty_needed_actual !== null)
                     ? parseInt(ejo.qty_needed_actual)
                     : 0;
                 const qStock = (ejo.qty_stock !== undefined && ejo.qty_stock !== null) ? parseInt(ejo.qty_stock) : 0;
+                const totalInput = qNeeded + qStock;
 
-                if ((qNeededTarget > 0 && qNeeded < qNeededTarget) || (qStockTarget > 0 && qStock < qStockTarget)) {
-                    showToast("Quantity mesin & stok harus terpenuhi.", "error");
+                if (totalInput < totalTarget || (qNeededTarget > 0 && qNeeded < qNeededTarget) || (qStockTarget > 0 && qStock < qStockTarget)) {
+                    showToast("Quantity mesin & stok harus terpenuhi sebelum menyelesaikan pekerjaan.", "error");
                     return;
                 }
             }
@@ -17995,10 +19271,10 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
         } else if (oldStatus === 'Approved' || oldStatus.startsWith('Checking')) {
             canMove = isForeman;
         } else if (oldStatus.startsWith('In Progress') && nextStatus === 'Pending User Approval') {
-            canMove = isLead || isAssigned;
+            canMove = isForeman || isAssigned;
         } else if (oldStatus.startsWith('In Progress') && (nextStatus === 'Checking' || nextStatus === 'Requested')) {
-            // ponytail: allow foreman/assignee/lead to revert in progress back to checking or requested
-            canMove = isForeman || isAssigned || isLead;
+            // ponytail: allow foreman/admin to revert in progress back to checking or requested
+            canMove = isForeman;
         } else if (oldStatus === 'Pending User Approval' && (nextStatus === 'Completed' || nextStatus === 'Pending Foreman Approval')) {
             canMove = isRequester;
         } else if (oldStatus === 'Pending Foreman Approval' && nextStatus === 'Completed') {
@@ -18007,7 +19283,11 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
     }
 
     if (!canMove) {
-        if (oldStatus === 'Pending User Approval' && !isRequester) {
+        if (oldStatus.startsWith('In Progress') && nextStatus === 'Pending User Approval' && !isForeman && !isAssigned) {
+            showToast("Hanya Engineer yang ditunjuk atau Foreman/Admin yang dapat menyelesaikan pekerjaan!", "error");
+        } else if (oldStatus.startsWith('In Progress') && !isForeman) {
+            showToast("Hanya Foreman ENG / Admin ENG yang dapat mengembalikan status ini!", "error");
+        } else if (oldStatus === 'Pending User Approval' && !isRequester) {
             showToast("Hanya User (Requester) pemohon EJO yang dapat memproses status ini!", "error");
         } else if (oldStatus === 'Pending Foreman Approval' && !isForeman && !isRequester) {
             showToast("Hanya Foreman / Admin atau Requester yang dapat memproses status ini!", "error");
@@ -19124,12 +20404,35 @@ async function createNewProject() {
         showToast("Akses ditolak. Jabatan Staff tidak memiliki akses untuk membuat Project baru.", "warning");
         return;
     }
-    const title = document.getElementById("proj-title").value;
-    const dept = document.getElementById("proj-dept").value;
-    const budget = parseInt(document.getElementById("proj-budget").value) || 0;
+    const title = (document.getElementById("proj-title")?.value || "").trim();
+    const no_io = (document.getElementById("proj-no-io")?.value || "").trim();
+    const no_moc = (document.getElementById("proj-no-moc")?.value || "").trim();
+    const dept = document.getElementById("proj-dept")?.value || "PRD";
+    const budget = parseInt(document.getElementById("proj-budget")?.value) || 0;
     const targetDate = "";
     const pic = state.currentUser ? state.currentUser.fullname : "System User";
-    const desc = document.getElementById("proj-desc").value;
+    const desc = (document.getElementById("proj-desc")?.value || "").trim();
+
+    if (!title) {
+        showToast("Judul / Nama Project wajib diisi!", "warning");
+        document.getElementById("proj-title")?.focus();
+        return;
+    }
+    if (!no_io) {
+        showToast("No IO wajib diisi!", "warning");
+        document.getElementById("proj-no-io")?.focus();
+        return;
+    }
+    if (!no_moc) {
+        showToast("No MOC wajib diisi!", "warning");
+        document.getElementById("proj-no-moc")?.focus();
+        return;
+    }
+    if (!desc) {
+        showToast("Deskripsi issue & benefit wajib diisi!", "warning");
+        document.getElementById("proj-desc")?.focus();
+        return;
+    }
 
     // ponytail: validate file attachment extension before submission
     const fileInput = document.getElementById("proj-attachment");
@@ -19153,9 +20456,15 @@ async function createNewProject() {
     const nextIdNum = lastIdNum + 1;
     const nextId = `PRJ-2026-${String(nextIdNum).padStart(3, '0')}`;
 
-    // ponytail: Extract selected drawing from Select Dropdown
+    // ponytail: Extract selected drawing from Autodetect or Select Dropdown
+    const searchInput = document.getElementById("proj-form-drawing-search");
     const drawingSelect = document.getElementById("proj-drawing-select");
-    const drawingId = drawingSelect ? drawingSelect.value : "";
+    let drawingId = (drawingSelect ? drawingSelect.value : "") || (searchInput ? (searchInput.dataset.selectedDrawingId || "") : "");
+    if (!drawingId && searchInput && searchInput.value) {
+        const valTrim = searchInput.value.trim().toLowerCase();
+        const found = (state.drawings || []).find(d => d.id.toLowerCase() === valTrim || valTrim.startsWith(d.id.toLowerCase()));
+        if (found) drawingId = found.id;
+    }
 
     const selectedDrawing = drawingId ? (state.drawings || []).find(d => d.id === drawingId) : null;
     const drawingFile = selectedDrawing ? (selectedDrawing.file_path || "") : "";
@@ -19164,6 +20473,8 @@ async function createNewProject() {
     const newProject = {
         id: nextId,
         title,
+        no_io,
+        no_moc,
         dept,
         budget,
         targetDate,
@@ -19348,7 +20659,7 @@ window.editProjectId = async function editProjectId(projId) {
     );
 
     if (newId === null) return; // User cancelled
-    const trimmedId = newId.trim();
+    const trimmedId = newId.trim().replace(/[\r\n\t]+/g, ' ');
 
     if (!trimmedId) {
         showToast("ID Project tidak boleh kosong!", "error");
@@ -19391,6 +20702,108 @@ window.editProjectId = async function editProjectId(projId) {
     } catch (err) {
         console.error("Error editing project ID:", err);
         showToast(err.message || "Gagal memperbarui ID Project", "error");
+    }
+};
+
+// ponytail: Edit No IO for project by Foreman Eng / Admin Eng
+window.editProjectIo = async function editProjectIo(projId) {
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const isAuthorized = isForemanAdminRole(userRole) || isLeadRole(userRole) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRole);
+    if (!isAuthorized) {
+        showToast("Hanya Foreman Eng atau Admin Eng yang diperbolehkan mengedit No IO!", "error");
+        return;
+    }
+
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) {
+        showToast("Project tidak ditemukan!", "error");
+        return;
+    }
+
+    const newIo = await showCustomPrompt(
+        "Masukkan No IO Project (kosongkan jika tidak ada):",
+        proj.no_io || "",
+        "Edit No IO Project"
+    );
+
+    if (newIo === null) return; // User cancelled
+    const trimmedIo = newIo.trim().replace(/[\r\n\t]+/g, ' ');
+
+    try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(proj.id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ no_io: trimmedIo })
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || "Gagal memperbarui No IO!");
+        }
+
+        proj.no_io = trimmedIo;
+
+        if (state.currentDetailProjectId === proj.id) {
+            openProjectDetails(null, proj.id);
+        }
+
+        renderProjects();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        showToast("No IO berhasil diperbarui!", "success");
+    } catch (err) {
+        console.error("Error editing project IO:", err);
+        showToast(err.message || "Gagal memperbarui No IO", "error");
+    }
+};
+
+// ponytail: Edit No MOC for project by Foreman Eng / Admin Eng
+window.editProjectMoc = async function editProjectMoc(projId) {
+    const userRole = state.currentUser ? state.currentUser.role : '';
+    const isAuthorized = isForemanAdminRole(userRole) || isLeadRole(userRole) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRole);
+    if (!isAuthorized) {
+        showToast("Hanya Foreman Eng atau Admin Eng yang diperbolehkan mengedit No MOC!", "error");
+        return;
+    }
+
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    if (!proj) {
+        showToast("Project tidak ditemukan!", "error");
+        return;
+    }
+
+    const newMoc = await showCustomPrompt(
+        "Masukkan No MOC Project (kosongkan jika tidak ada):",
+        proj.no_moc || "",
+        "Edit No MOC Project"
+    );
+
+    if (newMoc === null) return; // User cancelled
+    const trimmedMoc = newMoc.trim().replace(/[\r\n\t]+/g, ' ');
+
+    try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(proj.id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ no_moc: trimmedMoc })
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || "Gagal memperbarui No MOC!");
+        }
+
+        proj.no_moc = trimmedMoc;
+
+        if (state.currentDetailProjectId === proj.id) {
+            openProjectDetails(null, proj.id);
+        }
+
+        renderProjects();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        showToast("No MOC berhasil diperbarui!", "success");
+    } catch (err) {
+        console.error("Error editing project MOC:", err);
+        showToast(err.message || "Gagal memperbarui No MOC", "error");
     }
 };
 
@@ -19485,21 +20898,141 @@ window.editProjectProcurement = async function editProjectProcurement(projId) {
     modal.style.display = 'flex';
     if (window.lucide) lucide.createIcons();
 
+    // ponytail: Smart Automated Percentage Formula & Balancer
+    // When 1 or 2 fields are typed, remaining component(s) are automatically balanced to 100%.
+    // "apabila minus maka jadikan hasil itu adalah plus, jika plus tetap plus"
+    let editOrder = [];
+    let isAutoCalculating = false;
+
+    function getCleanNumber(input) {
+        if (!input || !input.value.trim()) return 0;
+        let v = parseInt(input.value, 10);
+        if (isNaN(v)) return 0;
+        return Math.abs(v); // Hasil akhir ga boleh minus: jika minus jadikan plus
+    }
+
+    function updateVisualSummary() {
+        const pr = getCleanNumber(inputPr);
+        const po = getCleanNumber(inputPo);
+        const gr = getCleanNumber(inputGr);
+        const total = pr + po + gr;
+
+        const totalBadge = document.getElementById("procurement-total-badge");
+        if (totalBadge) {
+            totalBadge.textContent = `${total}%`;
+            if (total === 100) {
+                totalBadge.style.color = "var(--color-green)";
+            } else if (total > 100) {
+                totalBadge.style.color = "#f59e0b";
+            } else {
+                totalBadge.style.color = "var(--color-cyan)";
+            }
+        }
+
+        const barPr = document.getElementById("procurement-bar-pr");
+        const barPo = document.getElementById("procurement-bar-po");
+        const barGr = document.getElementById("procurement-bar-gr");
+
+        if (barPr && barPo && barGr) {
+            const visualTotal = Math.max(100, total);
+            barPr.style.width = `${(pr / visualTotal) * 100}%`;
+            barPo.style.width = `${(po / visualTotal) * 100}%`;
+            barGr.style.width = `${(gr / visualTotal) * 100}%`;
+        }
+    }
+
+    function handleAutoCalc(changedKey) {
+        if (isAutoCalculating) return;
+        isAutoCalculating = true;
+
+        try {
+            const inputs = { pr: inputPr, po: inputPo, gr: inputGr };
+            const currentInput = inputs[changedKey];
+
+            // Normalize typed value: prevent negative, make positive
+            if (currentInput) {
+                let currentVal = currentInput.value.trim() === '' ? 0 : parseInt(currentInput.value, 10);
+                if (isNaN(currentVal)) currentVal = 0;
+                if (currentVal < 0) {
+                    currentVal = Math.abs(currentVal);
+                    currentInput.value = currentVal;
+                }
+            }
+
+            // Track recent edit order
+            editOrder = editOrder.filter(k => k !== changedKey);
+            editOrder.push(changedKey);
+
+            const allKeys = ['pr', 'po', 'gr'];
+            const uneditedKeys = allKeys.filter(k => !editOrder.includes(k));
+
+            if (editOrder.length === 1) {
+                // 1 komponen diinput -> 2 komponen sisanya dibagi rata dari sisa 100%
+                const k1 = editOrder[0];
+                const v1 = getCleanNumber(inputs[k1]);
+                let remainder = 100 - v1;
+                // Apabila minus maka jadikan hasil itu adalah plus, jika plus tetap plus
+                if (remainder < 0) remainder = Math.abs(remainder);
+                remainder = Math.min(100, remainder);
+
+                const k2 = uneditedKeys[0] || (k1 === 'pr' ? 'po' : 'pr');
+                const k3 = uneditedKeys[1] || (k1 === 'gr' ? 'po' : 'gr');
+
+                const half1 = Math.round(remainder / 2);
+                const half2 = Math.max(0, remainder - half1);
+
+                inputs[k2].value = half1;
+                inputs[k3].value = half2;
+            } else {
+                // 2 atau 3 komponen: Cari 1 komponen target penampung sisa (yang unedited atau paling lama tidak diedit)
+                let targetKey = uneditedKeys[0];
+                if (!targetKey) {
+                    targetKey = editOrder[0]; // Paling lama diedit
+                }
+
+                const otherKeys = allKeys.filter(k => k !== targetKey);
+                const sumOthers = otherKeys.reduce((acc, k) => acc + getCleanNumber(inputs[k]), 0);
+
+                let remainder = 100 - sumOthers;
+                // Apabila minus maka jadikan hasil itu adalah plus, jika plus tetap plus
+                if (remainder < 0) remainder = Math.abs(remainder);
+                remainder = Math.min(100, remainder);
+
+                inputs[targetKey].value = remainder;
+            }
+
+            updateVisualSummary();
+        } finally {
+            isAutoCalculating = false;
+        }
+    }
+
+    const onInputPr = () => handleAutoCalc('pr');
+    const onInputPo = () => handleAutoCalc('po');
+    const onInputGr = () => handleAutoCalc('gr');
+
+    inputPr.addEventListener('input', onInputPr);
+    inputPo.addEventListener('input', onInputPo);
+    inputGr.addEventListener('input', onInputGr);
+
+    updateVisualSummary();
+
+    const cleanupListeners = () => {
+        inputPr.removeEventListener('input', onInputPr);
+        inputPo.removeEventListener('input', onInputPo);
+        inputGr.removeEventListener('input', onInputGr);
+    };
+
     return new Promise((resolve) => {
         btnOk.onclick = async (e) => {
             if (e) e.preventDefault();
 
-            let prVal = parseInt(inputPr.value, 10);
-            let poVal = parseInt(inputPo.value, 10);
-            let grVal = parseInt(inputGr.value, 10);
+            let prVal = getCleanNumber(inputPr);
+            let poVal = getCleanNumber(inputPo);
+            let grVal = getCleanNumber(inputGr);
 
-            if (isNaN(prVal) || prVal < 0) prVal = 0;
             if (prVal > 100) prVal = 100;
-
-            if (isNaN(poVal) || poVal < 0) poVal = 0;
             if (poVal > 100) poVal = 100;
-
-            if (isNaN(grVal) || grVal < 0) grVal = 0;
             if (grVal > 100) grVal = 100;
 
             try {
@@ -19540,6 +21073,7 @@ window.editProjectProcurement = async function editProjectProcurement(projId) {
                 console.error("Error updating procurement progress:", err);
                 showToast(err.message || "Gagal memperbarui status procurement!", "error");
             } finally {
+                cleanupListeners();
                 modal.style.display = 'none';
                 btnOk.onclick = null;
                 btnCancel.onclick = null;
@@ -19549,12 +21083,38 @@ window.editProjectProcurement = async function editProjectProcurement(projId) {
 
         btnCancel.onclick = (e) => {
             if (e) e.preventDefault();
+            cleanupListeners();
             modal.style.display = 'none';
             btnOk.onclick = null;
             btnCancel.onclick = null;
             resolve();
         };
     });
+};
+
+// ponytail: Open PR Formula Info Modal
+// Formula: Progress PR (%) = (Total PR + Total Ready Stock WS/WSP) ÷ Total All Material × 100%
+window.openPrCalculatorModal = function openPrCalculatorModal(projId) {
+    const proj = state.projects ? state.projects.find(p => p.id === projId) : null;
+    const modal = document.getElementById("pr-calculator-modal");
+    const titleEl = document.getElementById("pr-calc-modal-title");
+    const btnCancel = document.getElementById("pr-calc-btn-cancel");
+
+    if (!modal) return;
+
+    if (titleEl && proj) {
+        titleEl.textContent = `Rumus Progress PR (${proj.id})`;
+    }
+
+    modal.style.display = "flex";
+    if (window.lucide) lucide.createIcons();
+
+    if (btnCancel) {
+        btnCancel.onclick = (e) => {
+            if (e) e.preventDefault();
+            modal.style.display = "none";
+        };
+    }
 };
 
 async function deleteProject(projId) {
@@ -20145,8 +21705,8 @@ function openProjectDetails(event, projId) {
         const isForemanAdminModal = isForemanAdminRole(userRoleModal) || isLeadRole(userRoleModal) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleModal);
         if (isForemanAdminModal) {
             modalIdEl.innerHTML = `
-                ${proj.id}
-                <button onclick="event.stopPropagation(); editProjectId('${proj.id}')" title="Edit ID Project" style="background: transparent; border: none; padding: 0 4px; cursor: pointer; color: var(--color-cyan); display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;">
+                ${escapeHtml(proj.id)}
+                <button onclick="event.stopPropagation(); editProjectId('${escapeJsString(proj.id)}')" title="Edit ID Project" style="background: transparent; border: none; padding: 0 4px; cursor: pointer; color: var(--color-cyan); display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;">
                     <i data-lucide="edit-3" style="width: 13px; height: 13px;"></i>
                 </button>
             `;
@@ -20154,11 +21714,39 @@ function openProjectDetails(event, projId) {
             modalIdEl.textContent = proj.id;
         }
     }
+    const ioBadgeEl = document.getElementById("modal-project-io-badge");
+    if (ioBadgeEl) {
+        const userRoleModal = state.currentUser ? state.currentUser.role : '';
+        const isForemanAdminModal = isForemanAdminRole(userRoleModal) || isLeadRole(userRoleModal) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleModal);
+        if (proj.no_io) {
+            ioBadgeEl.style.display = "inline-flex";
+            ioBadgeEl.innerHTML = `<span class="project-tag-badge" style="font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); color: var(--color-cyan, #38bdf8); border: 1px solid rgba(56, 189, 248, 0.3); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; ${isForemanAdminModal ? 'cursor: pointer;' : ''}" ${isForemanAdminModal ? `onclick="event.stopPropagation(); editProjectIo('${escapeJsString(proj.id)}')"` : ''} title="${isForemanAdminModal ? 'Klik untuk edit No IO' : 'No IO'}"><i data-lucide="tag" style="width:12px;height:12px;"></i> No IO: ${escapeHtml(proj.no_io)} ${isForemanAdminModal ? '<i data-lucide="edit-2" style="width:10px;height:10px;margin-left:2px;"></i>' : ''}</span>`;
+        } else if (isForemanAdminModal) {
+            ioBadgeEl.style.display = "inline-flex";
+            ioBadgeEl.innerHTML = `<button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectIo('${escapeJsString(proj.id)}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: rgba(56, 189, 248, 0.4); color: var(--color-cyan, #38bdf8); background: rgba(56, 189, 248, 0.08); display: inline-flex; align-items: center; gap: 3px;"><i data-lucide="plus" style="width:10px;height:10px;"></i> + Input IO</button>`;
+        } else {
+            ioBadgeEl.style.display = "none";
+        }
+    }
+    const mocBadgeEl = document.getElementById("modal-project-moc-badge");
+    if (mocBadgeEl) {
+        const userRoleModal = state.currentUser ? state.currentUser.role : '';
+        const isForemanAdminModal = isForemanAdminRole(userRoleModal) || isLeadRole(userRoleModal) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleModal);
+        if (proj.no_moc) {
+            mocBadgeEl.style.display = "inline-flex";
+            mocBadgeEl.innerHTML = `<span class="project-tag-badge" style="font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; background: rgba(168, 85, 247, 0.12); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; ${isForemanAdminModal ? 'cursor: pointer;' : ''}" ${isForemanAdminModal ? `onclick="event.stopPropagation(); editProjectMoc('${escapeJsString(proj.id)}')"` : ''} title="${isForemanAdminModal ? 'Klik untuk edit No MOC' : 'No MOC'}"><i data-lucide="shield-check" style="width:12px;height:12px;"></i> No MOC: ${escapeHtml(proj.no_moc)} ${isForemanAdminModal ? '<i data-lucide="edit-2" style="width:10px;height:10px;margin-left:2px;"></i>' : ''}</span>`;
+        } else if (isForemanAdminModal) {
+            mocBadgeEl.style.display = "inline-flex";
+            mocBadgeEl.innerHTML = `<button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectMoc('${escapeJsString(proj.id)}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: rgba(168, 85, 247, 0.4); color: #c084fc; background: rgba(168, 85, 247, 0.08); display: inline-flex; align-items: center; gap: 3px;"><i data-lucide="plus" style="width:10px;height:10px;"></i> + Input MOC</button>`;
+        } else {
+            mocBadgeEl.style.display = "none";
+        }
+    }
     const drawingBadgeEl = document.getElementById("modal-project-drawing-badge");
     if (drawingBadgeEl) {
         if (proj.drawing_id) {
             drawingBadgeEl.style.display = "inline-flex";
-            drawingBadgeEl.innerHTML = `<span class="ejo-id-badge" onclick="event.stopPropagation(); openDrawingDetails('${proj.drawing_id}')" style="font-size: 0.78rem; padding: 3px 10px; cursor: pointer; border: 1px solid var(--color-cyan); color: var(--color-cyan);" title="Klik untuk lihat Drawing EJO ${proj.drawing_id}"><i data-lucide="file-text" style="width:12px;height:12px;margin-right:4px;display:inline-block;vertical-align:middle;"></i> Ref Drawing: ${proj.drawing_id}</span>`;
+            drawingBadgeEl.innerHTML = `<span class="ejo-id-badge" onclick="event.stopPropagation(); openDrawingDetails('${escapeJsString(proj.drawing_id)}')" style="font-size: 0.78rem; padding: 3px 10px; cursor: pointer; border: 1px solid var(--color-cyan); color: var(--color-cyan);" title="Klik untuk lihat Drawing EJO ${escapeHtml(proj.drawing_id)}"><i data-lucide="file-text" style="width:12px;height:12px;margin-right:4px;display:inline-block;vertical-align:middle;"></i> Ref Drawing: ${escapeHtml(proj.drawing_id)}</span>`;
         } else {
             drawingBadgeEl.style.display = "none";
         }
@@ -20184,10 +21772,10 @@ function openProjectDetails(event, projId) {
         const isForemanAdminModal = isForemanAdminRole(userRoleModal) || isLeadRole(userRoleModal) || ['Foreman Eng', 'Admin Eng', 'Server'].includes(userRoleModal);
         if (proj.custom_status) {
             customStatusModalEl.style.display = "inline-flex";
-            customStatusModalEl.innerHTML = `<span class="badge" onclick="event.stopPropagation(); ${isForemanAdminModal ? `editProjectCustomStatus('${proj.id}')` : ''}" style="font-size: 0.72rem; padding: 3px 9px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-flex; align-items: center; gap: 4px; ${isForemanAdminModal ? 'cursor: pointer;' : ''}" title="${isForemanAdminModal ? 'Klik untuk edit Status' : ''}"><i data-lucide="tag" style="width:11px;height:11px;"></i> ${proj.custom_status} ${isForemanAdminModal ? `<i data-lucide="edit-2" style="width:10px;height:10px;margin-left:2px;"></i>` : ''}</span>`;
+            customStatusModalEl.innerHTML = `<span class="badge" onclick="event.stopPropagation(); ${isForemanAdminModal ? `editProjectCustomStatus('${escapeJsString(proj.id)}')` : ''}" style="font-size: 0.72rem; padding: 3px 9px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); display: inline-flex; align-items: center; gap: 4px; ${isForemanAdminModal ? 'cursor: pointer;' : ''}" title="${isForemanAdminModal ? 'Klik untuk edit Status' : ''}"><i data-lucide="tag" style="width:11px;height:11px;"></i> ${escapeHtml(proj.custom_status)} ${isForemanAdminModal ? `<i data-lucide="edit-2" style="width:10px;height:10px;margin-left:2px;"></i>` : ''}</span>`;
         } else if (isForemanAdminModal) {
             customStatusModalEl.style.display = "inline-flex";
-            customStatusModalEl.innerHTML = `<button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectCustomStatus('${proj.id}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.1); display: inline-flex; align-items: center; gap: 3px;"><i data-lucide="plus" style="width:10px;height:10px;"></i> + Input Status</button>`;
+            customStatusModalEl.innerHTML = `<button class="btn btn-outline btn-xs" onclick="event.stopPropagation(); editProjectCustomStatus('${escapeJsString(proj.id)}')" style="padding: 2px 7px; font-size: 0.7rem; border-color: #f59e0b; color: #f59e0b; background: rgba(245, 158, 11, 0.1); display: inline-flex; align-items: center; gap: 3px;"><i data-lucide="plus" style="width:10px;height:10px;"></i> + Input Status</button>`;
         } else {
             customStatusModalEl.style.display = "none";
         }
@@ -21150,6 +22738,7 @@ async function renderUsers(preFetchedUsers = null) {
                     </td>
                     <td data-label="Username"><span class="user-username">${u.username}</span></td>
                     <td data-label="Nama Lengkap"><span>${u.fullname}</span></td>
+                    <td data-label="Bagian / Sub-Divisi"><span class="badge" style="background: rgba(255,255,255,0.06); border: 1px solid var(--card-border); font-size: 0.75rem; color: var(--color-cyan);">${u.section || '-'}</span></td>
                     <td data-label="Departemen">${u.dept || '-'}</td>
                     <td data-label="Role / Jabatan"><span class="user-role-badge">${u.role}</span></td>
                     <td data-label="Kredensial">
@@ -21252,6 +22841,9 @@ function resetUserForm() {
     const titleEl = document.getElementById("user-form-title");
     if (titleEl) titleEl.textContent = "Daftarkan User Baru";
 
+    const secInput = document.getElementById("usr-section");
+    if (secInput) secInput.value = "";
+
     const submitBtn = document.getElementById("btn-save-user-submit");
     if (submitBtn) submitBtn.innerHTML = '<i data-lucide="save"></i> Simpan User';
 
@@ -21264,6 +22856,7 @@ function resetUserForm() {
     }
     lucide.createIcons();
 }
+window.resetUserForm = resetUserForm;
 
 async function saveUserData() {
     const modeInput = document.getElementById("user-form-mode");
@@ -21273,6 +22866,7 @@ async function saveUserData() {
     const originalUsername = usrInput ? (usrInput.getAttribute("data-original-username") || username) : username;
     const password = document.getElementById("usr-password").value;
     const fullname = document.getElementById("usr-fullname").value.trim();
+    const section = (document.getElementById("usr-section")?.value || "").trim();
     const dept = document.getElementById("usr-dept").value;
     const role = document.getElementById("usr-role").value;
     const avatarInput = document.getElementById("usr-avatar").value.trim();
@@ -21334,6 +22928,7 @@ async function saveUserData() {
         original_username: originalUsername,
         password,
         fullname,
+        section,
         role,
         avatar,
         dept,
@@ -21502,6 +23097,8 @@ window.editUser = function (username, fullname = '', role = '', avatar = '', pas
             finalDept = 'WRH';
         } else if (finalRole.includes('TMB')) {
             finalDept = 'TMB';
+        } else if (finalRole.includes('EUT')) {
+            finalDept = 'EUT';
         } else {
             finalDept = 'ENG';
         }
@@ -21560,6 +23157,9 @@ window.editUser = function (username, fullname = '', role = '', avatar = '', pas
 
     const fullnameInput = document.getElementById("usr-fullname");
     if (fullnameInput) fullnameInput.value = finalFullname;
+
+    const sectionInput = document.getElementById("usr-section");
+    if (sectionInput) sectionInput.value = (u ? u.section : '') || '';
 
     const deptSelect = document.getElementById("usr-dept");
     if (deptSelect) deptSelect.value = finalDept;
@@ -21655,7 +23255,7 @@ window.restoreHistoryEJO = async function (id) {
     if (!confirmRestore) return;
 
     const isProject = id.startsWith('PRJ');
-    const isDrawing = id.startsWith('DRW');
+    const isDrawing = (state.drawings && state.drawings.some(d => d.id === id)) || id.startsWith('DRW') || id.startsWith('DEJO') || id.startsWith('DWG');
     const isGeneral = state.generalEjos && state.generalEjos.some(ge => ge.id === id);
 
     const now = new Date();
@@ -21694,6 +23294,7 @@ window.restoreHistoryEJO = async function (id) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     status: "In Progress (Revisi 1)",
+                    is_archived: 0,
                     logs: JSON.stringify(logs)
                 })
             });
@@ -21768,7 +23369,7 @@ window.deleteHistoryEJO = async function (id) {
     if (!confirmDelete) return;
 
     const isProject = id.startsWith('PRJ');
-    const isDrawing = id.startsWith('DRW');
+    const isDrawing = (state.drawings && state.drawings.some(d => d.id === id)) || id.startsWith('DRW') || id.startsWith('DEJO') || id.startsWith('DWG');
     const isGeneral = state.generalEjos && state.generalEjos.some(ge => ge.id === id);
     const queryParam = `?requester=${encodeURIComponent(state.currentUser.username)}`;
     let apiUrl;
@@ -21943,82 +23544,87 @@ function exportToExcel() {
 
 function mapExcelToDept(val) {
     if (!val) return 'PRD';
-    const clean = val.toUpperCase().trim();
-    if (clean === 'UTL') return 'ENG';
+    const clean = String(val).toUpperCase().trim();
+    if (clean === 'NEG') return 'ENG';
+    if (clean === 'ITE' || clean === 'IT') return 'ENG';
     return normalizeDepartmentCode(clean);
 }
 
-function mapExcelToCategory(val) {
-    if (!val) return 'Mekanik';
-    const clean = val.toUpperCase().trim();
-    if (clean === 'CIV') return 'Sipil';
-    if (clean === 'MEC') return 'Mekanik';
-    if (clean === 'ELC') return 'Elektrik';
-    if (clean === 'CAL' || clean === 'KLB') return 'Kalibrasi';
-    if (clean === 'AUT' || clean === 'OTO') return 'Mekanik';
-    if (clean === 'PRG') return 'Program';
-    // ponytail: added Repair Part & Drawing clean conversion mapping
-    if (clean === 'RPP' || clean === 'REP' || clean === 'RPT' || clean.includes('BQM-REPAIR') || clean.includes('BQM_REPAIR')) return 'Repair Part';
-    if (clean === 'TMB' || clean === 'TIMBANGAN' || clean === 'SCALE') return 'Kalibrasi';
-    if (clean === 'DRW' || clean === 'DWG' || clean === 'DRAWING') return 'Drawing';
-    if (clean === 'BQM') return 'Mekanik';
-    // ponytail: map AC and MEC&ELC categories to Mekanik to prevent skip/miss-import
-    if (clean === 'AC' || clean === 'MEC&ELC') return 'Mekanik';
+// ponytail: comprehensive category mapping supporting Tim codes, engineer names, and keywords
+function mapExcelToCategory(timVal, catVal, subject, description) {
+    const tim = String(timVal || '').toUpperCase().trim();
+    const cat = String(catVal || '').toUpperCase().trim();
+    const combined = ((timVal || '') + ' ' + (catVal || '') + ' ' + (subject || '') + ' ' + (description || '')).toUpperCase();
 
-    const cats = ['Sipil', 'Elektrik', 'Kalibrasi', 'Mekanik', 'Program', 'Repair Part', 'Drawing'];
-    const found = cats.find(c => c.toUpperCase() === clean);
-    return found || val;
+    if (tim === 'CIV' || tim === 'SIPIL' || ['TEDY', 'DADANG', 'MTC SIPIL'].includes(tim)) return 'Sipil';
+    if (tim === 'ELC' || tim === 'ELEKTRIK' || ['THORIK', 'THORIQ', 'RIFKY', 'HADI', 'ROHADI', '.ELECTRIC PRODUKSI'].includes(tim)) return 'Elektrik';
+    if (tim === 'PRG' || tim === 'PROGRAM' || ['PROGRAM PLC', 'CHANDRA'].includes(tim)) return 'Program';
+    if (tim === 'KLB' || tim === 'CAL' || tim === 'KALIBRASI' || ['ADEN', 'TMB', 'TIMBANGAN', 'SCALE'].includes(tim)) return 'Kalibrasi';
+    if (tim === 'RPP' || tim === 'REP' || tim === 'RPT' || tim === 'REPAIR PART' || ['RAHMAD', 'RAHMAT'].includes(tim) || cat.includes('BQM-REPAIR') || cat.includes('BQM_REPAIR')) return 'Repair Part';
+    if (tim === 'MEC' || tim === 'MEKANIK' || ['OTO', 'AUT', 'OTOMOTIF', 'AC', 'MTC AC', 'BBT', 'MTR', 'JAR', 'YULI', 'YULIYANTO', 'EMAN', 'REKSA', 'CAHYA', 'MARTIN', 'ROJAK', 'MULYANA', 'AINUL'].includes(tim)) return 'Mekanik';
+    if (tim === 'DRW' || tim === 'DWG' || tim === 'DNG' || tim === 'DRAWING') return 'Drawing';
+
+    if (combined.includes('SIPIL') || combined.includes('BANGUNAN') || combined.includes('SEMEN') || combined.includes('PINTU') || combined.includes('DINDING') || combined.includes('LANTAI') || combined.includes('PAGAR') || combined.includes('JALAN') || combined.includes('PLAFON') || combined.includes('ATAP')) return 'Sipil';
+    if (combined.includes('LISTRIK') || combined.includes('ELEKTRIK') || combined.includes('PANEL') || combined.includes('KABEL') || combined.includes('LAMPU') || combined.includes('CCTV') || combined.includes('SENSOR') || combined.includes('POWER')) return 'Elektrik';
+    if (combined.includes('KALIBRASI') || combined.includes('THERMOCOUPLE') || combined.includes('TIMBANGAN') || combined.includes('PRESSURE GAUGE') || combined.includes('SCALE')) return 'Kalibrasi';
+    if (combined.includes('PROGRAM') || combined.includes('PLC') || combined.includes('SCADA') || combined.includes('HMI')) return 'Program';
+    if (combined.includes('REPAIR PART') || combined.includes('SPAREPART') || combined.includes('SPARE PART') || combined.includes('SUKU CADANG')) return 'Repair Part';
+
+    const validCats = ['Sipil', 'Elektrik', 'Kalibrasi', 'Mekanik', 'Program', 'Repair Part', 'Drawing'];
+    const found = validCats.find(c => c.toUpperCase() === tim || c.toUpperCase() === cat);
+    return found || 'Mekanik';
 }
 
 // ponytail: helper to map Excel status to technical Drawing statuses
+// ponytail: helper to map Excel status to technical Drawing statuses
 function mapExcelToDrawingStatus(val) {
     if (!val) return 'Pending Foreman Approval';
-    const clean = val.toUpperCase().trim();
-    if (clean.includes('UNPROCESSED') || clean.includes('CEK')) return 'Pending Foreman Approval';
-    if (clean.includes('SCHEDULE') || clean.includes('APPROV')) return 'Pending Foreman Approval';
-    if (clean.includes('PROGRES') || clean.includes('PLAY') || clean.includes('ON PROGRESS')) return 'On Progress';
-    if (clean.includes('COMPLET') || clean.includes('DONE') || clean.includes('CLOSE')) return 'Completed';
-    if (clean.includes('CANCEL')) return 'Cancelled';
+    const clean = String(val).toUpperCase().trim();
+    if (clean.includes('CLOSE') || clean.includes('CLOSED') || clean.includes('CANCEL') || clean.includes('BATAL') || clean.includes('REJECT') || clean.includes('DOUBLE')) return 'Cancelled';
+    if (clean.includes('COMPLET') || clean.includes('DONE')) return 'Completed';
+    if (clean.includes('PROGRES') || clean.includes('PLAY') || clean.includes('ON PROGRESS') || clean.includes('CORRECTIVE MAINTENANCE')) return 'On Progress';
+    if (clean.includes('SCHEDULE') || clean.includes('APPROV') || clean.includes('LIST MATERIAL') || clean.includes('OI/PR') || clean.includes('PROJECT') || clean.includes('NEED DETAIL') || clean.includes('DETAIL N/A') || clean.includes('CEK') || clean.includes('WAITING') || clean.includes('UNDER')) return 'Pending Foreman Approval';
     return 'Pending Foreman Approval';
 }
 
 // ponytail: auto-detect technical drawing categories based on subject/desc keywords
-function autoDetectDrawingCategory(subject, description, excelCategory) {
-    const text = ((subject || "") + " " + (description || "") + " " + (excelCategory || "")).toLowerCase();
-    if (text.includes("sipil") || text.includes("dinding") || text.includes("lantai") || text.includes("semen") || text.includes("pagar") || text.includes("jalan") || text.includes("curving") || text.includes("bangunan")) {
+function autoDetectDrawingCategory(subject, description, excelCategory, timVal) {
+    const text = ((timVal || "") + " " + (excelCategory || "") + " " + (subject || "") + " " + (description || "")).toLowerCase();
+    if (text.includes("sipil") || text.includes("civ") || text.includes("dinding") || text.includes("lantai") || text.includes("semen") || text.includes("pagar") || text.includes("jalan") || text.includes("curving") || text.includes("bangunan") || text.includes("pintu") || text.includes("plafon") || text.includes("atap") || text.includes("saluran") || text.includes("drainase") || text.includes("tanggul") || text.includes("toilet") || text.includes("ruang") || text.includes("office") || text.includes("tangga") || text.includes("cor") || text.includes("beton") || text.includes("cat") || text.includes("keramik") || text.includes("toren")) {
         return "Sipil";
     }
-    if (text.includes("elektrik") || text.includes("listrik") || text.includes("kabel") || text.includes("lampu") || text.includes("panel") || text.includes("hmi") || text.includes("sensor") || text.includes("power") || text.includes("bect") || text.includes("control")) {
+    if (text.includes("elektrik") || text.includes("elc") || text.includes("listrik") || text.includes("kabel") || text.includes("lampu") || text.includes("panel") || text.includes("hmi") || text.includes("sensor") || text.includes("power") || text.includes("bect") || text.includes("control") || text.includes("cctv")) {
         return "Elektrik";
     }
-    if (text.includes("kalibrasi") || text.includes("calibration") || text.includes("thermocouple") || text.includes("pressure gauge") || text.includes(" pg ") || text.includes("timbangan") || text.includes("tmb") || text.includes("timbang") || text.includes("scale")) {
+    if (text.includes("kalibrasi") || text.includes("klb") || text.includes("cal") || text.includes("calibration") || text.includes("thermocouple") || text.includes("pressure gauge") || text.includes(" pg ") || text.includes("timbangan") || text.includes("tmb") || text.includes("timbang") || text.includes("scale")) {
         return "Kalibrasi";
     }
-    if (text.includes("program") || text.includes("plc") || text.includes("scada") || text.includes("hmi program")) {
+    if (text.includes("program") || text.includes("prg") || text.includes("plc") || text.includes("scada") || text.includes("hmi program")) {
         return "Program";
     }
-    if (text.includes("repair part") || text.includes("rpp") || text.includes("part baru") || text.includes("suku cadang")) {
+    if (text.includes("repair part") || text.includes("rpp") || text.includes("rep") || text.includes("part baru") || text.includes("suku cadang") || text.includes("sparepart") || text.includes("spare part") || text.includes("standing petri") || text.includes("tube nozzle") || text.includes("kupingan") || text.includes("spring") || text.includes("pinion") || text.includes("finger")) {
         return "Repair Part";
     }
-    if (text.includes("mobil") || text.includes("forklift") || text.includes("otomotif") || text.includes("vehicle")) {
+    if (text.includes("mobil") || text.includes("forklift") || text.includes("otomotif") || text.includes("vehicle") || text.includes("oto") || text.includes("aut")) {
         return "Mekanik";
     }
     return "Mekanik"; // default fallback
 }
 
+// ponytail: helper to map Excel status to General EJO statuses (Close = Cancelled / Tertolak, Done = Completed / Selesai)
 function mapExcelToStatus(val) {
     if (!val) return 'Requested';
-    const clean = val.toUpperCase().trim();
-    if (clean.includes('UNPROCESSED') || clean.includes('CEK')) return 'Requested';
-    if (clean.includes('SCHEDULE') || clean.includes('APPROV')) return 'Approved';
-    if (clean.includes('PROGRES') || clean.includes('PLAY')) return 'In Progress';
-    if (clean.includes('COMPLET') || clean.includes('DONE') || clean.includes('CLOSE')) return 'Completed';
-    if (clean.includes('CANCEL')) return 'Cancelled';
+    const clean = String(val).toUpperCase().trim();
+    if (clean.includes('CLOSE') || clean.includes('CLOSED') || clean.includes('CANCEL') || clean.includes('BATAL') || clean.includes('REJECT') || clean.includes('DOUBLE')) return 'Cancelled';
+    if (clean.includes('COMPLET') || clean.includes('DONE')) return 'Completed';
+    if (clean.includes('PROGRES') || clean.includes('PLAY') || clean.includes('PROGRESS')) return 'In Progress';
+    if (clean.includes('SCHEDULE') || clean.includes('APPROV') || clean.includes('LIST MATERIAL') || clean.includes('OI/PR') || clean.includes('PROJECT') || clean.includes('NEED') || clean.includes('DETAIL N/A') || clean.includes('CEK') || clean.includes('MAINTENANCE') || clean.includes('UNDER') || clean.includes('WAITING') || clean.includes('VENDOR') || clean.includes('TUNGGU')) return 'Approved';
+    if (clean.includes('UNPROCESSED') || clean.includes('REQUEST')) return 'Requested';
     return 'Requested';
 }
 
-// ponytail: robust Excel date parsing with serial conversion and format fallback
-function parseExcelDate(val) {
+// ponytail: robust Excel date parsing with support for timestamps, serial numbers, relative day-only numbers, and multiple formats
+function parseExcelDate(val, baseDate = null) {
     if (val === null || val === undefined) return null;
     if (val instanceof Date) {
         if (!isNaN(val.getTime())) {
@@ -22029,17 +23635,45 @@ function parseExcelDate(val) {
         }
     }
     const str = String(val).trim();
-    if (!str) return null;
+    if (!str || str === 'None' || str === '-') return null;
 
-    // YYYY-MM-DD or YYYY/MM/DD
-    const matchYMD = str.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+    // Day-only relative number (e.g. "29" or 29 when baseDate is "2026-07-27")
+    const matchDayOnly = str.match(/^(\d{1,2})$/);
+    if (matchDayOnly && baseDate) {
+        const dayNum = parseInt(matchDayOnly[1], 10);
+        if (dayNum >= 1 && dayNum <= 31) {
+            const baseParts = String(baseDate).split('-');
+            if (baseParts.length >= 2) {
+                return `${baseParts[0]}-${baseParts[1]}-${String(dayNum).padStart(2, '0')}`;
+            }
+        }
+    }
+
+    // YYYY-MM-DD (with optional timestamp e.g. 2024-01-09 - 08:08:32 or 2024-01-09 08:08:32)
+    const matchYMD = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
     if (matchYMD) {
-        return `${matchYMD[1]}-${matchYMD[2]}-${matchYMD[3]}`;
+        const yyyy = matchYMD[1];
+        const mm = parseInt(matchYMD[2], 10);
+        const dd = parseInt(matchYMD[3], 10);
+        if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+            return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+        }
+    }
+
+    // DD-MM-YYYY or DD/MM/YYYY
+    const matchDMY = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (matchDMY) {
+        const dd = parseInt(matchDMY[1], 10);
+        const mm = parseInt(matchDMY[2], 10);
+        const yyyy = matchDMY[3];
+        if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+            return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+        }
     }
 
     // Excel serial number
     const num = Number(str);
-    if (!isNaN(num) && isFinite(num) && num > 0) {
+    if (!isNaN(num) && isFinite(num) && num > 1000) {
         const date = new Date((num - 25569) * 86400 * 1000);
         if (!isNaN(date.getTime())) {
             const yyyy = date.getFullYear();
@@ -22049,7 +23683,7 @@ function parseExcelDate(val) {
         }
     }
 
-    // Parse other formats
+    // Standard date parsing fallback
     const parsed = new Date(str);
     if (!isNaN(parsed.getTime())) {
         const yyyy = parsed.getFullYear();
@@ -22061,15 +23695,270 @@ function parseExcelDate(val) {
     return null;
 }
 
+// ponytail: unified modal sheet picker for both General EJO and Technical Drawing Excel imports
+function showExcelSheetPicker(workbook, options = {}) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById("excel-sheet-modal");
+        const select = document.getElementById("excel-sheet-select");
+        const list = document.getElementById("excel-sheet-list");
+        const searchInput = document.getElementById("excel-sheet-search");
+        const selectAllBtn = document.getElementById("excel-sheet-btn-select-all");
+        const deselectAllBtn = document.getElementById("excel-sheet-btn-deselect-all");
+        const selectedText = document.getElementById("excel-sheet-selected-text");
+        const selectedBadge = document.getElementById("excel-sheet-selected-badge");
+        const confirmBtn = document.getElementById("excel-sheet-btn-confirm");
+        const cancelBtn = document.getElementById("excel-sheet-btn-cancel");
+        const closeBtn = document.getElementById("excel-sheet-close-btn");
+        const titleEl = modal ? modal.querySelector(".excel-sheet-modal-title") : null;
+        const subtitleEl = modal ? modal.querySelector(".excel-sheet-modal-subtitle") : null;
+
+        if (titleEl && options.title) titleEl.textContent = options.title;
+        if (subtitleEl && options.subtitle) subtitleEl.textContent = options.subtitle;
+
+        // Default selection: last sheet if available, or first sheet
+        const defaultSheet = workbook.SheetNames[workbook.SheetNames.length - 1] || workbook.SheetNames[0];
+        const selectedSet = new Set(options.defaultSheets || [defaultSheet]);
+        let lastClickedSheet = defaultSheet;
+
+        function updateSelectionSummary() {
+            const count = selectedSet.size;
+            if (selectedText) {
+                selectedText.textContent = count === 0
+                    ? "Belum ada sheet yang dipilih"
+                    : `${count} dari ${workbook.SheetNames.length} sheet dipilih`;
+            }
+            if (selectedBadge) {
+                if (count === 0) {
+                    selectedBadge.textContent = "Pilih minimal 1";
+                    selectedBadge.style.color = "var(--color-danger, #ef4444)";
+                } else {
+                    selectedBadge.textContent = `${count} Sheet`;
+                    selectedBadge.style.color = "var(--color-cyan)";
+                }
+            }
+            if (confirmBtn) {
+                confirmBtn.disabled = (count === 0);
+                confirmBtn.textContent = count > 1 ? `Mulai Impor (${count} Sheet)` : "Mulai Impor";
+            }
+            if (select) {
+                Array.from(select.options).forEach(opt => {
+                    opt.selected = selectedSet.has(opt.value);
+                });
+            }
+        }
+
+        function renderSheetList(searchTerm = "") {
+            if (!list) return;
+            list.innerHTML = "";
+            const term = (searchTerm || "").toLowerCase().trim();
+
+            const filteredNames = workbook.SheetNames.filter(name => {
+                if (!term) return true;
+                return name.toLowerCase().includes(term);
+            });
+
+            if (filteredNames.length === 0) {
+                const emptyMsg = document.createElement("div");
+                emptyMsg.style.padding = "1.5rem";
+                emptyMsg.style.textAlign = "center";
+                emptyMsg.style.fontSize = "0.85rem";
+                emptyMsg.style.color = "var(--text-secondary, #94a3b8)";
+                emptyMsg.textContent = `Tidak ada sheet yang cocok dengan "${searchTerm}"`;
+                list.appendChild(emptyMsg);
+                return;
+            }
+
+            filteredNames.forEach((name) => {
+                const isChecked = selectedSet.has(name);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "excel-sheet-option" + (isChecked ? " active selected" : "");
+                button.dataset.sheetName = name;
+                button.setAttribute("role", "option");
+                button.setAttribute("aria-selected", String(isChecked));
+
+                const checkbox = document.createElement("span");
+                checkbox.className = "excel-sheet-checkbox";
+                checkbox.innerHTML = isChecked ? "✓" : "";
+
+                const info = document.createElement("div");
+                info.className = "excel-sheet-option-info";
+
+                const title = document.createElement("span");
+                title.className = "excel-sheet-option-title";
+                title.textContent = name;
+
+                const sheetIdx = workbook.SheetNames.indexOf(name) + 1;
+                const hasData = workbook.Sheets[name] && workbook.Sheets[name]['!ref'] ? 'Tersedia data' : 'Sheet kosong';
+                const meta = document.createElement("span");
+                meta.className = "excel-sheet-option-meta";
+                meta.textContent = `Sheet ${sheetIdx} • ${hasData}`;
+
+                info.appendChild(title);
+                info.appendChild(meta);
+                button.appendChild(checkbox);
+                button.appendChild(info);
+
+                button.addEventListener("click", (evt) => {
+                    if (evt.shiftKey && lastClickedSheet) {
+                        const startIdx = workbook.SheetNames.indexOf(lastClickedSheet);
+                        const endIdx = workbook.SheetNames.indexOf(name);
+                        const minI = Math.min(startIdx, endIdx);
+                        const maxI = Math.max(startIdx, endIdx);
+                        for (let i = minI; i <= maxI; i++) {
+                            selectedSet.add(workbook.SheetNames[i]);
+                        }
+                    } else {
+                        if (selectedSet.has(name)) {
+                            selectedSet.delete(name);
+                        } else {
+                            selectedSet.add(name);
+                        }
+                    }
+                    lastClickedSheet = name;
+                    renderSheetList(searchInput ? searchInput.value : "");
+                    updateSelectionSummary();
+                });
+
+                // Double click: pick this sheet exclusively and confirm
+                button.addEventListener("dblclick", (e) => {
+                    e.preventDefault();
+                    cleanup();
+                    resolve([name]);
+                });
+
+                list.appendChild(button);
+            });
+        }
+
+        // Populate hidden native select
+        if (select) {
+            select.innerHTML = "";
+            workbook.SheetNames.forEach(name => {
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = name;
+                opt.selected = selectedSet.has(name);
+                select.appendChild(opt);
+            });
+        }
+
+        if (searchInput) {
+            searchInput.value = "";
+            searchInput.oninput = () => {
+                renderSheetList(searchInput.value);
+            };
+        }
+
+        if (selectAllBtn) {
+            selectAllBtn.onclick = () => {
+                const term = (searchInput ? searchInput.value : "").toLowerCase().trim();
+                workbook.SheetNames.forEach(name => {
+                    if (!term || name.toLowerCase().includes(term)) {
+                        selectedSet.add(name);
+                    }
+                });
+                renderSheetList(searchInput ? searchInput.value : "");
+                updateSelectionSummary();
+            };
+        }
+
+        if (deselectAllBtn) {
+            deselectAllBtn.onclick = () => {
+                const term = (searchInput ? searchInput.value : "").toLowerCase().trim();
+                if (!term) {
+                    selectedSet.clear();
+                } else {
+                    workbook.SheetNames.forEach(name => {
+                        if (name.toLowerCase().includes(term)) {
+                            selectedSet.delete(name);
+                        }
+                    });
+                }
+                renderSheetList(searchInput ? searchInput.value : "");
+                updateSelectionSummary();
+            };
+        }
+
+        renderSheetList("");
+        updateSelectionSummary();
+
+        const handleBackdropClick = (evt) => {
+            if (evt.target === modal) {
+                cleanup();
+                resolve(null);
+            }
+        };
+
+        function cleanup() {
+            if (modal) {
+                modal.removeEventListener("click", handleBackdropClick);
+                modal.classList.remove("active");
+            }
+            if (searchInput) searchInput.oninput = null;
+            if (selectAllBtn) selectAllBtn.onclick = null;
+            if (deselectAllBtn) deselectAllBtn.onclick = null;
+            if (confirmBtn) {
+                confirmBtn.onclick = null;
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = "Mulai Impor";
+            }
+            if (cancelBtn) cancelBtn.onclick = null;
+            if (closeBtn) closeBtn.onclick = null;
+        }
+
+        if (modal) {
+            modal.classList.add("active");
+            modal.addEventListener("click", handleBackdropClick);
+        }
+
+        if (confirmBtn) {
+            confirmBtn.onclick = () => {
+                if (selectedSet.size === 0) {
+                    showToast("Pilih minimal 1 sheet untuk diimpor!", "warning");
+                    return;
+                }
+                const chosen = Array.from(selectedSet);
+                cleanup();
+                resolve(chosen);
+            };
+        }
+        if (cancelBtn) {
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(null);
+            };
+        }
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                cleanup();
+                resolve(null);
+            };
+        }
+    });
+}
+
+// ponytail: import EJO from standard Excel files
 async function importFromExcel(event) {
-    const file = event.target.files[0];
+    const file = event.target.files && event.target.files[0];
     if (!file) return;
+
+    if (typeof XLSX === 'undefined') {
+        showToast("Pustaka SheetJS (XLSX) tidak ditemukan!", "error");
+        return;
+    }
 
     const reader = new FileReader();
     reader.onload = async function (e) {
         try {
+            showToast("Membaca file Excel...", "info");
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
+
+            if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+                showToast("File Excel tidak memiliki sheet yang valid.", "error");
+                return;
+            }
 
             if (workbook.SheetNames.includes("NEW MASTER") || (file.name && file.name.toUpperCase().includes("WSP"))) {
                 const count = parseWSPMasterWorkbook(e.target.result);
@@ -22078,314 +23967,802 @@ async function importFromExcel(event) {
                 }
                 return;
             }
+
+            let selectedSheets = [workbook.SheetNames[0]];
+
             if (workbook.SheetNames.length > 1) {
-                sheetName = await new Promise((resolve) => {
-                    const modal = document.getElementById("excel-sheet-modal");
-                    const select = document.getElementById("excel-sheet-select");
-                    const list = document.getElementById("excel-sheet-list");
-                    const selectedInfo = document.getElementById("excel-sheet-selected");
-                    const confirmBtn = document.getElementById("excel-sheet-btn-confirm");
-                    const cancelBtn = document.getElementById("excel-sheet-btn-cancel");
-                    const closeBtn = document.getElementById("excel-sheet-close-btn");
-                    let selectedSheet = workbook.SheetNames[workbook.SheetNames.length - 1];
-
-                    const updateSelectedSheet = (name) => {
-                        selectedSheet = name;
-                        select.value = name;
-                        selectedInfo.textContent = `Sheet terpilih: ${name}`;
-                        Array.from(list.querySelectorAll(".excel-sheet-option")).forEach((button) => {
-                            const isActive = button.dataset.sheetName === name;
-                            button.classList.toggle("active", isActive);
-                            button.setAttribute("aria-selected", String(isActive));
-                        });
-                    };
-
-                    // Clear options and fill them
-                    select.innerHTML = '';
-                    list.innerHTML = '';
-                    workbook.SheetNames.forEach(name => {
-                        const opt = document.createElement("option");
-                        opt.value = name;
-                        opt.textContent = name;
-                        select.appendChild(opt);
-
-                        const button = document.createElement("button");
-                        button.type = "button";
-                        button.className = "excel-sheet-option";
-                        button.dataset.sheetName = name;
-                        button.setAttribute("role", "option");
-                        const title = document.createElement("span");
-                        title.className = "excel-sheet-option-title";
-                        title.textContent = name;
-
-                        const meta = document.createElement("span");
-                        meta.className = "excel-sheet-option-meta";
-                        meta.textContent = "Klik untuk memilih sheet ini";
-
-                        button.appendChild(title);
-                        button.appendChild(meta);
-                        button.addEventListener("click", () => updateSelectedSheet(name));
-                        button.addEventListener("dblclick", () => {
-                            updateSelectedSheet(name);
-                            cleanup();
-                            resolve(selectedSheet);
-                        });
-                        list.appendChild(button);
-                    });
-
-                    const handleBackdropClick = (event) => {
-                        if (event.target === modal) {
-                            cleanup();
-                            resolve(null);
-                        }
-                    };
-
-                    function cleanup() {
-                        modal.removeEventListener("click", handleBackdropClick);
-                        confirmBtn.replaceWith(confirmBtn.cloneNode(true));
-                        cancelBtn.replaceWith(cancelBtn.cloneNode(true));
-                        closeBtn.replaceWith(closeBtn.cloneNode(true));
-                        modal.classList.remove("active");
-                    }
-
-                    updateSelectedSheet(selectedSheet);
-                    modal.classList.add("active");
-                    modal.addEventListener("click", handleBackdropClick);
-
-                    document.getElementById("excel-sheet-btn-confirm").addEventListener("click", () => {
-                        cleanup();
-                        resolve(selectedSheet);
-                    });
-
-                    document.getElementById("excel-sheet-btn-cancel").addEventListener("click", () => {
-                        cleanup();
-                        resolve(null);
-                    });
-
-                    document.getElementById("excel-sheet-close-btn").addEventListener("click", () => {
-                        cleanup();
-                        resolve(null);
-                    });
+                selectedSheets = await showExcelSheetPicker(workbook, {
+                    title: "Pilih Sheet Excel EJO",
+                    subtitle: "File ini memiliki banyak sheet. Pilih satu atau beberapa sheet EJO untuk diimpor sekaligus."
                 });
-
-                if (!sheetName) return; // Cancelled
-            }
-
-            const worksheet = workbook.Sheets[sheetName];
-
-            // ponytail: auto-detect header row index by searching for 'Ticket ID'
-            let headerRowIndex = 0;
-            const ref = worksheet['!ref'];
-            if (ref) {
-                const range = XLSX.utils.decode_range(ref);
-                for (let r = range.s.r; r <= range.e.r; r++) {
-                    const rowValues = [];
-                    for (let c = range.s.c; c <= range.e.c; c++) {
-                        const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
-                        if (cell && cell.v !== undefined && cell.v !== null) {
-                            rowValues.push(String(cell.v).trim().toLowerCase());
-                        }
-                    }
-                    if (rowValues.includes('ticket id')) {
-                        headerRowIndex = r;
-                        break;
-                    }
-                }
-            }
-
-            const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex });
-
-            if (rows.length === 0) {
-                showToast("File Excel kosong atau tidak menemukan kolom 'Ticket ID'!", "warning");
-                return;
+                if (!selectedSheets || selectedSheets.length === 0) return; // Cancelled
             }
 
             let importCountGejo = 0;
             let importCountDrawing = 0;
+            let skippedDuplicates = 0;
             const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
+            const processedInBatch = new Set();
+            const gejoBatch = [];
+            const drawingBatch = [];
 
-            for (const row of rows) {
-                const ticketId = row['Ticket ID'] ? String(row['Ticket ID']).trim() : null;
-                if (!ticketId) continue;
+            for (const sheetName of selectedSheets) {
+                const worksheet = workbook.Sheets[sheetName];
+                if (!worksheet) continue;
 
-                const title = row['Subject'] ? String(row['Subject']).trim() : 'Imported EJO';
-
-                // Primary 'Dept.', fallback to 'Dep'
-                const deptVal = row['Dept.'] || row['Dep'];
-                const dept = mapExcelToDept(deptVal);
-
-                // Primary 'Tim' or 'Category', fallback to 'Tin'
-                const categoryVal = row['Tim'] || row['Category'] || row['Tin'];
-
-                // ponytail: do not skip AC or MEC&ELC categories, they are mapped to Mekanik
-
-                // ponytail: Distinguish between EJO Drawing (Tim is 'DWG') and General EJO
-                const isDrawing = categoryVal && String(categoryVal).toUpperCase().trim() === 'DWG';
-
-                // ponytail: extract creation date (Date) and target date (Schedule) from spreadsheet
-                const parsedDate = parseExcelDate(row['Date']);
-                const parsedSchedule = parseExcelDate(row['Schedule']);
-                const createdDate = parsedDate || new Date().toISOString().split('T')[0];
-                const targetDate = parsedSchedule || parsedDate || new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0];
-                const description = row['Description'] ? String(row['Description']).trim() : 'Diimpor dari file Excel.';
-                const requester = row['Requestor'] ? String(row['Requestor']).trim() : (state.currentUser ? state.currentUser.fullname : 'System Import');
-
-                const pic = row['PIC ACTION'] ? String(row['PIC ACTION']).trim() : 'Unassigned';
-                let matchedEngineer = 'Unassigned';
-                if (pic !== 'Unassigned') {
-                    const norm = s => String(s).toUpperCase().replace(/[^A-Z]/g, '').replace(/TH/g, 'T').replace(/Q/g, 'K').replace(/Y/g, 'I');
-                    const cleanPic = norm(pic);
-                    const found = engineersList.find(eng => {
-                        const engNorm = norm(eng.name);
-                        return engNorm.includes(cleanPic) || cleanPic.includes(engNorm);
-                    });
-                    if (found) {
-                        matchedEngineer = found.name;
-                    } else {
-                        matchedEngineer = pic;
+                // ponytail: auto-detect header row index by searching for 'Ticket ID' or related keywords in first 30 rows
+                let headerRowIndex = 0;
+                const ref = worksheet['!ref'];
+                if (ref) {
+                    const range = XLSX.utils.decode_range(ref);
+                    for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 30); r++) {
+                        const rowValues = [];
+                        for (let c = range.s.c; c <= range.e.c; c++) {
+                            const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+                            if (cell && cell.v !== undefined && cell.v !== null) {
+                                rowValues.push(String(cell.v).trim().toLowerCase());
+                            }
+                        }
+                        if (rowValues.some(v => v.includes('ticket id') || v === 'ticket' || v === 'no ejo' || v === 'no. ejo' || v === 'id ejo' || v.includes('subject') || v === 'judul')) {
+                            headerRowIndex = r;
+                            break;
+                        }
                     }
                 }
 
-                // Parse completion date if status is Completed
-                let completionDate = null;
-                if (row['Date Done']) {
-                    completionDate = parseExcelDate(row['Date Done']);
-                }
+                const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex });
+                if (!rows || rows.length === 0) continue;
 
-                if (isDrawing) {
-                    const existing = (state.drawings || []).find(item => item.id.toLowerCase() === ticketId.toLowerCase());
-                    if (existing) {
-                        // ponytail: ignore if drawing request already exists in the system
+                for (const row of rows) {
+                    // Find Ticket ID flexibly:
+                    let ticketId = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'ticket id' || k === 'ticket_id' || k === 'ticket' || k === 'no ejo' || k === 'no. ejo' || k === 'id ejo' || k === 'id') {
+                            if (row[key] !== undefined && row[key] !== null) {
+                                ticketId = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+                    if (!ticketId) continue;
+
+                    // Deduplicate within this current import batch:
+                    const normId = ticketId.toLowerCase();
+                    if (processedInBatch.has(normId)) {
+                        skippedDuplicates++;
                         continue;
                     }
+                    processedInBatch.add(normId);
 
-                    const drawingStatus = mapExcelToDrawingStatus(row['Status']);
-                    let logsList = [];
-                    if (drawingStatus === 'Completed') {
-                        const logDate = completionDate ? completionDate + " 00:00" : timestamp;
-                        logsList.push({
-                            date: logDate,
-                            message: "Drawing selesai dilakukan."
+                    // Find Subject / Title flexibly:
+                    let title = 'Imported EJO';
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'subject' || k === 'title' || k === 'judul' || k === 'nama project' || k === 'uraian' || k === 'nama ejo') {
+                            if (row[key]) {
+                                title = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    // Dept:
+                    let deptVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'dept.' || k === 'dept' || k === 'dep' || k === 'departemen' || k === 'department' || k === 'divisi') {
+                            deptVal = row[key];
+                            break;
+                        }
+                    }
+                    const dept = mapExcelToDept(deptVal);
+
+                    // Category & Tim:
+                    let timVal = null;
+                    let categoryVal = null;
+                    let picVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'tim' || k === 'team' || k === 'tin') {
+                            // If key has _1 (e.g. SheetJS disambiguated duplicate column), it's the second Tim column which is PIC
+                            if (key.includes('_')) {
+                                picVal = row[key];
+                            } else {
+                                timVal = row[key];
+                            }
+                        } else if (k === 'category' || k === 'kategori') {
+                            categoryVal = row[key];
+                        } else if (k === 'pic action' || k === 'pic' || k === 'engineer' || k === 'drafter' || k === 'teknisi') {
+                            picVal = row[key];
+                        }
+                    }
+
+                    // Module / Location:
+                    let moduleVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'module' || k === 'lokasi' || k === 'location' || k === 'section' || k === 'area') {
+                            if (row[key]) {
+                                moduleVal = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    // Type:
+                    let typeVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'type' || k === 'tipe' || k === 'jenis') {
+                            if (row[key]) {
+                                typeVal = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    // Note:
+                    let noteVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'note' || k === 'catatan' || k === 'keterangan') {
+                            if (row[key]) {
+                                noteVal = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    // Description:
+                    let rawDesc = '';
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'description' || k === 'deskripsi' || k === 'detail') {
+                            if (row[key]) rawDesc = String(row[key]).trim();
+                            break;
+                        }
+                    }
+
+                    let fullDescription = rawDesc || ('Diimpor dari file Excel sheet [' + sheetName + '].');
+                    if (moduleVal && moduleVal !== 'None' && !fullDescription.includes(moduleVal)) {
+                        fullDescription += `\n[Area/Module: ${moduleVal}]`;
+                    }
+                    if (typeVal && typeVal !== 'None' && !fullDescription.includes(typeVal)) {
+                        fullDescription += `\n[Tipe: ${typeVal}]`;
+                    }
+                    if (noteVal && noteVal !== 'None' && !fullDescription.includes(noteVal)) {
+                        fullDescription += `\n[Catatan: ${noteVal}]`;
+                    }
+
+                    // Requestor:
+                    let requester = (state.currentUser ? state.currentUser.fullname : 'System Import');
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'requestor' || k === 'requester' || k === 'pemohon' || k === 'user') {
+                            if (row[key]) requester = String(row[key]).trim();
+                            break;
+                        }
+                    }
+
+                    // Date:
+                    let dateVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'date' || k === 'tanggal' || k === 'tgl' || k === 'created date' || k === 'created_at') {
+                            dateVal = row[key];
+                            break;
+                        }
+                    }
+
+                    // Schedule / Target Date:
+                    let scheduleVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'schedule' || k === 'target date' || k === 'target' || k === 'deadline') {
+                            scheduleVal = row[key];
+                            break;
+                        }
+                    }
+
+                    // Status:
+                    let statusVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'status' || k === 'stat' || k === 'kondisi') {
+                            statusVal = row[key];
+                            break;
+                        }
+                    }
+
+                    // Date Done:
+                    let dateDoneVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'date done' || k === 'done date' || k === 'done' || k === 'tanggal selesai' || k === 'completion date') {
+                            dateDoneVal = row[key];
+                            break;
+                        }
+                    }
+
+                    const cleanTim = String(timVal || '').toUpperCase().trim();
+                    const cleanCat = String(categoryVal || '').toUpperCase().trim();
+                    const cleanTitle = title.toLowerCase();
+                    const isDrawing = ['DWG', 'DNG', 'DRW', 'DRAWING'].includes(cleanTim) || cleanCat.includes('DRAWING') || cleanTitle.startsWith('drawing') || cleanTitle.startsWith('revisi drawing') || cleanTitle.startsWith('pembuatan drawing') || cleanTitle.startsWith('request gambar');
+
+                    const parsedDate = parseExcelDate(dateVal);
+                    const parsedSchedule = parseExcelDate(scheduleVal);
+                    const createdDate = parsedDate || new Date().toISOString().split('T')[0];
+                    const targetDate = parsedSchedule || parsedDate || new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0];
+
+                    let matchedEngineer = 'Unassigned';
+                    const rawPic = String(picVal || '').trim();
+                    if (rawPic && rawPic !== 'None' && rawPic !== '-') {
+                        const norm = s => String(s).toUpperCase().replace(/[^A-Z]/g, '').replace(/TH/g, 'T').replace(/Q/g, 'K').replace(/Y/g, 'I');
+                        const cleanPic = norm(rawPic);
+                        const found = (engineersList || []).find(eng => {
+                            const engNorm = norm(eng.name);
+                            return engNorm.includes(cleanPic) || cleanPic.includes(engNorm);
                         });
+                        if (found) {
+                            matchedEngineer = found.name;
+                        } else {
+                            matchedEngineer = rawPic;
+                        }
                     }
 
-                    const drawingData = {
-                        id: ticketId,
-                        title: title,
-                        dept: dept,
-                        category: autoDetectDrawingCategory(title, description, row['Category']),
-                        priority: 'Medium',
-                        location: 'Pabrik PT. BAS',
-                        targetDate: targetDate,
-                        status: drawingStatus,
-                        engineer: matchedEngineer,
-                        description: description,
-                        requester: requester,
-                        uploader: requester,
-                        drawing_type: 'import',
-                        logs: logsList,
-                        createdDate: createdDate
-                    };
-
-                    drawingData.logs.push({
-                        date: timestamp,
-                        message: `Drawing dibuat melalui import Excel oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
-                    });
-
-                    const res = await fetch("/api/drawings", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(drawingData)
-                    });
-                    if (!res.ok) {
-                        console.error("Gagal membuat EJO Drawing: " + ticketId);
-                    } else {
-                        importCountDrawing++;
+                    let completionDate = null;
+                    if (dateDoneVal) {
+                        completionDate = parseExcelDate(dateDoneVal, createdDate);
                     }
 
-                } else {
-                    const existing = (state.generalEjos || []).find(item => item.id.toLowerCase() === ticketId.toLowerCase());
-                    if (existing) {
-                        // ponytail: ignore if general EJO already exists in the system
-                        continue;
-                    }
+                    const locationVal = moduleVal && moduleVal !== 'None' ? moduleVal : 'Pabrik PT. BAS';
 
-                    const gejoStatus = mapExcelToStatus(row['Status']);
-                    let logsList = [];
-                    if (gejoStatus === 'Completed') {
-                        const logDate = completionDate ? completionDate + " 00:00" : timestamp;
+                    if (isDrawing) {
+                        const existing = (state.drawings || []).find(item => String(item.id).toLowerCase() === normId);
+                        if (existing) {
+                            skippedDuplicates++;
+                            continue;
+                        }
+
+                        const drawingStatus = mapExcelToDrawingStatus(statusVal);
+                        const logsList = [];
+                        if (drawingStatus === 'Completed') {
+                            const finalCompDate = completionDate || createdDate;
+                            const logDate = finalCompDate ? finalCompDate + " 00:00" : timestamp;
+                            logsList.push({
+                                date: logDate,
+                                message: "Drawing selesai dilakukan."
+                            });
+                        } else if (drawingStatus === 'Cancelled') {
+                            const finalCancelDate = completionDate || createdDate;
+                            const logDate = finalCancelDate ? finalCancelDate + " 00:00" : timestamp;
+                            logsList.push({
+                                date: logDate,
+                                message: `Drawing ditutup / dibatalkan: ${statusVal || 'Close'}`
+                            });
+                        }
                         logsList.push({
-                            date: logDate,
-                            message: "EJO selesai dilakukan."
+                            date: timestamp,
+                            message: `Drawing dibuat melalui import Excel sheet [${sheetName}] oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
                         });
-                    }
 
-                    const category = mapExcelToCategory(categoryVal);
+                        const drawingCategory = autoDetectDrawingCategory(title, fullDescription, categoryVal, timVal);
 
-                    const ejoData = {
-                        id: ticketId,
-                        title: title,
-                        dept: dept,
-                        category: category,
-                        priority: 'Medium',
-                        location: 'Pabrik PT. BAS',
-                        targetDate: targetDate,
-                        status: gejoStatus,
-                        engineer: matchedEngineer,
-                        estCost: 0,
-                        actCost: 0,
-                        description: description,
-                        requester: requester,
-                        logs: logsList,
-                        createdDate: createdDate
-                    };
-
-                    ejoData.logs.push({
-                        date: timestamp,
-                        message: `EJO dibuat melalui import Excel oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
-                    });
-
-                    const res = await fetch("/api/general-ejos", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(ejoData)
-                    });
-                    if (!res.ok) {
-                        console.error("Gagal membuat General EJO: " + ticketId);
+                        drawingBatch.push({
+                            id: ticketId,
+                            title: title,
+                            dept: dept,
+                            category: drawingCategory,
+                            priority: 'Medium',
+                            location: locationVal,
+                            targetDate: targetDate,
+                            status: drawingStatus,
+                            engineer: matchedEngineer,
+                            description: fullDescription,
+                            requester: requester,
+                            uploader: requester,
+                            drawing_type: 'import',
+                            is_import: true,
+                            logs: logsList,
+                            createdDate: createdDate
+                        });
                     } else {
-                        importCountGejo++;
+                        const existing = (state.generalEjos || []).find(item => String(item.id).toLowerCase() === normId);
+                        if (existing) {
+                            skippedDuplicates++;
+                            continue;
+                        }
+
+                        const gejoStatus = mapExcelToStatus(statusVal);
+                        const logsList = [];
+                        if (gejoStatus === 'Completed') {
+                            const finalCompDate = completionDate || createdDate;
+                            const logDate = finalCompDate ? finalCompDate + " 00:00" : timestamp;
+                            logsList.push({
+                                date: logDate,
+                                message: "EJO selesai dilakukan."
+                            });
+                        } else if (gejoStatus === 'Cancelled') {
+                            const finalCancelDate = completionDate || createdDate;
+                            const logDate = finalCancelDate ? finalCancelDate + " 00:00" : timestamp;
+                            logsList.push({
+                                date: logDate,
+                                message: `EJO ditutup / dibatalkan: ${statusVal || 'Close'}`
+                            });
+                        }
+                        logsList.push({
+                            date: timestamp,
+                            message: `EJO dibuat melalui import Excel sheet [${sheetName}] oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
+                        });
+
+                        const gejoCategory = mapExcelToCategory(timVal, categoryVal, title, fullDescription);
+
+                        gejoBatch.push({
+                            id: ticketId,
+                            title: title,
+                            dept: dept,
+                            category: gejoCategory,
+                            priority: 'Medium',
+                            location: locationVal,
+                            targetDate: targetDate,
+                            status: gejoStatus,
+                            engineer: matchedEngineer,
+                            estCost: 0,
+                            actCost: 0,
+                            description: fullDescription,
+                            requester: requester,
+                            is_import: true,
+                            logs: logsList,
+                            createdDate: createdDate
+                        });
                     }
                 }
             }
 
+            // ponytail: high-speed chunked batch upload to server
+            const CHUNK_SIZE = 250;
+            if (gejoBatch.length > 0) {
+                for (let i = 0; i < gejoBatch.length; i += CHUNK_SIZE) {
+                    const chunk = gejoBatch.slice(i, i + CHUNK_SIZE);
+                    try {
+                        const res = await fetch("/api/general-ejos", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(chunk)
+                        });
+                        if (res.ok) {
+                            importCountGejo += chunk.length;
+                        } else {
+                            // Fallback to individual posting
+                            for (const item of chunk) {
+                                const singleRes = await fetch("/api/general-ejos", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(item)
+                                });
+                                if (singleRes.ok) importCountGejo++;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Batch General EJO import error:", e);
+                    }
+                }
+            }
+
+            if (drawingBatch.length > 0) {
+                for (let i = 0; i < drawingBatch.length; i += CHUNK_SIZE) {
+                    const chunk = drawingBatch.slice(i, i + CHUNK_SIZE);
+                    try {
+                        const res = await fetch("/api/drawings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(chunk)
+                        });
+                        if (res.ok) {
+                            importCountDrawing += chunk.length;
+                        } else {
+                            // Fallback to individual posting
+                            for (const item of chunk) {
+                                const singleRes = await fetch("/api/drawings", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(item)
+                                });
+                                if (singleRes.ok) importCountDrawing++;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Batch Drawing import error:", e);
+                    }
+                }
+            }
+
+            const totalSheets = selectedSheets.length;
+            const sheetSummary = totalSheets > 1 ? ` dari ${totalSheets} sheet` : "";
+
             if (importCountGejo > 0 && importCountDrawing > 0) {
-                showToast(`${importCountGejo} EJO & ${importCountDrawing} EJO Drawing berhasil diproses!`, "success");
+                showToast(`${importCountGejo} EJO & ${importCountDrawing} EJO Drawing berhasil diimpor${sheetSummary}!`, "success");
                 await initData();
                 switchTab("general-ejo");
             } else if (importCountDrawing > 0) {
-                showToast(`${importCountDrawing} EJO Drawing berhasil diproses!`, "success");
+                showToast(`${importCountDrawing} EJO Drawing berhasil diimpor${sheetSummary}!`, "success");
                 await initData();
                 switchTab("drawing");
             } else if (importCountGejo > 0) {
-                showToast(`${importCountGejo} EJO berhasil diproses!`, "success");
+                showToast(`${importCountGejo} EJO berhasil diimpor${sheetSummary}!`, "success");
                 await initData();
                 switchTab("general-ejo");
+            } else if (skippedDuplicates > 0) {
+                showToast(`Semua tiket (${skippedDuplicates}) pada ${totalSheets} sheet yang dipilih sudah ada di dalam database.`, "info");
             } else {
-                showToast("Tidak ada data baru yang diproses.", "info");
+                showToast("Tidak ada data valid yang dapat diimpor dari sheet yang dipilih.", "warning");
             }
         } catch (err) {
-            console.error(err);
-            showToast("Gagal membaca atau memproses file Excel!", "error");
+            console.error("Excel Import Error:", err);
+            showToast("Gagal membaca atau memproses file Excel: " + (err.message || "Format tidak sesuai"), "error");
         } finally {
-            event.target.value = '';
+            if (event.target) event.target.value = '';
         }
     };
     reader.readAsArrayBuffer(file);
 }
+window.importFromExcel = importFromExcel;
+
+// ponytail: dedicated import function for technical drawing EJO Excel files
+async function importDrawingFromExcel(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    if (typeof XLSX === 'undefined') {
+        showToast("Pustaka SheetJS (XLSX) tidak ditemukan!", "error");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+        try {
+            showToast("Membaca file Drawing Excel...", "info");
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+                showToast("File Excel tidak memiliki sheet yang valid.", "error");
+                return;
+            }
+
+            let selectedSheets = [workbook.SheetNames[0]];
+
+            if (workbook.SheetNames.length > 1) {
+                selectedSheets = await showExcelSheetPicker(workbook, {
+                    title: "Pilih Sheet Excel Drawing",
+                    subtitle: "File ini memiliki banyak sheet. Pilih satu atau beberapa sheet Drawing EJO untuk diimpor sekaligus."
+                });
+                if (!selectedSheets || selectedSheets.length === 0) return; // Cancelled
+            }
+
+            let importCountDrawing = 0;
+            let skippedDuplicates = 0;
+            const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 16);
+            const processedInBatch = new Set();
+            const drawingBatch = [];
+
+            for (const sheetName of selectedSheets) {
+                const worksheet = workbook.Sheets[sheetName];
+                if (!worksheet) continue;
+
+                let headerRowIndex = 0;
+                const ref = worksheet['!ref'];
+                if (ref) {
+                    const range = XLSX.utils.decode_range(ref);
+                    for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 30); r++) {
+                        const rowValues = [];
+                        for (let c = range.s.c; c <= range.e.c; c++) {
+                            const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+                            if (cell && cell.v !== undefined && cell.v !== null) {
+                                rowValues.push(String(cell.v).trim().toLowerCase());
+                            }
+                        }
+                        if (rowValues.some(v => v.includes('ticket id') || v === 'ticket' || v === 'no ejo' || v === 'no. ejo' || v === 'id ejo' || v.includes('subject') || v === 'judul' || v.includes('drawing'))) {
+                            headerRowIndex = r;
+                            break;
+                        }
+                    }
+                }
+
+                const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex });
+                if (!rows || rows.length === 0) continue;
+
+                for (const row of rows) {
+                    let ticketId = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'ticket id' || k === 'ticket_id' || k === 'ticket' || k === 'no ejo' || k === 'no. ejo' || k === 'id ejo' || k === 'id' || k === 'id drawing' || k === 'drawing id') {
+                            if (row[key] !== undefined && row[key] !== null) {
+                                ticketId = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+                    if (!ticketId) continue;
+
+                    const normId = ticketId.toLowerCase();
+                    if (processedInBatch.has(normId)) {
+                        skippedDuplicates++;
+                        continue;
+                    }
+                    processedInBatch.add(normId);
+
+                    let title = 'Drawing Imported';
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'subject' || k === 'title' || k === 'judul' || k === 'nama project' || k === 'uraian' || k === 'nama ejo' || k === 'nama drawing') {
+                            if (row[key]) {
+                                title = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    let deptVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'dept.' || k === 'dept' || k === 'dep' || k === 'departemen' || k === 'department' || k === 'divisi') {
+                            deptVal = row[key];
+                            break;
+                        }
+                    }
+                    const dept = mapExcelToDept(deptVal);
+
+                    let timVal = null;
+                    let categoryVal = null;
+                    let picVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'tim' || k === 'team' || k === 'tin') {
+                            if (key.includes('_')) picVal = row[key];
+                            else timVal = row[key];
+                        } else if (k === 'category' || k === 'kategori') {
+                            categoryVal = row[key];
+                        } else if (k === 'pic action' || k === 'pic' || k === 'engineer' || k === 'drafter' || k === 'teknisi') {
+                            picVal = row[key];
+                        }
+                    }
+
+                    let moduleVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'module' || k === 'lokasi' || k === 'location' || k === 'section' || k === 'area') {
+                            if (row[key]) {
+                                moduleVal = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    let typeVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'type' || k === 'tipe' || k === 'jenis') {
+                            if (row[key]) {
+                                typeVal = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    let noteVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'note' || k === 'catatan' || k === 'keterangan') {
+                            if (row[key]) {
+                                noteVal = String(row[key]).trim();
+                                break;
+                            }
+                        }
+                    }
+
+                    let rawDesc = '';
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'description' || k === 'deskripsi' || k === 'detail') {
+                            if (row[key]) rawDesc = String(row[key]).trim();
+                            break;
+                        }
+                    }
+
+                    let fullDescription = rawDesc || ('Diimpor dari file Excel sheet [' + sheetName + '].');
+                    if (moduleVal && moduleVal !== 'None' && !fullDescription.includes(moduleVal)) {
+                        fullDescription += `\n[Area/Module: ${moduleVal}]`;
+                    }
+                    if (typeVal && typeVal !== 'None' && !fullDescription.includes(typeVal)) {
+                        fullDescription += `\n[Tipe: ${typeVal}]`;
+                    }
+                    if (noteVal && noteVal !== 'None' && !fullDescription.includes(noteVal)) {
+                        fullDescription += `\n[Catatan: ${noteVal}]`;
+                    }
+
+                    let requester = (state.currentUser ? state.currentUser.fullname : 'System Import');
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'requestor' || k === 'requester' || k === 'pemohon' || k === 'user') {
+                            if (row[key]) requester = String(row[key]).trim();
+                            break;
+                        }
+                    }
+
+                    let dateVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'date' || k === 'tanggal' || k === 'tgl' || k === 'created date' || k === 'created_at') {
+                            dateVal = row[key];
+                            break;
+                        }
+                    }
+
+                    let scheduleVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'schedule' || k === 'target date' || k === 'target' || k === 'deadline') {
+                            scheduleVal = row[key];
+                            break;
+                        }
+                    }
+
+                    let statusVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'status' || k === 'stat' || k === 'kondisi') {
+                            statusVal = row[key];
+                            break;
+                        }
+                    }
+
+                    let dateDoneVal = null;
+                    for (const key of Object.keys(row)) {
+                        const k = key.trim().toLowerCase();
+                        if (k === 'date done' || k === 'done date' || k === 'done' || k === 'tanggal selesai' || k === 'completion date') {
+                            dateDoneVal = row[key];
+                            break;
+                        }
+                    }
+
+                    const parsedDate = parseExcelDate(dateVal);
+                    const parsedSchedule = parseExcelDate(scheduleVal);
+                    const createdDate = parsedDate || new Date().toISOString().split('T')[0];
+                    const targetDate = parsedSchedule || parsedDate || new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0];
+
+                    let matchedEngineer = 'Unassigned';
+                    const rawPic = String(picVal || '').trim();
+                    if (rawPic && rawPic !== 'None' && rawPic !== '-') {
+                        const norm = s => String(s).toUpperCase().replace(/[^A-Z]/g, '').replace(/TH/g, 'T').replace(/Q/g, 'K').replace(/Y/g, 'I');
+                        const cleanPic = norm(rawPic);
+                        const found = (engineersList || []).find(eng => {
+                            const engNorm = norm(eng.name);
+                            return engNorm.includes(cleanPic) || cleanPic.includes(engNorm);
+                        });
+                        if (found) {
+                            matchedEngineer = found.name;
+                        } else {
+                            matchedEngineer = rawPic;
+                        }
+                    }
+
+                    let completionDate = null;
+                    if (dateDoneVal) {
+                        completionDate = parseExcelDate(dateDoneVal, createdDate);
+                    }
+
+                    const locationVal = moduleVal && moduleVal !== 'None' ? moduleVal : 'Pabrik PT. BAS';
+
+                    const existing = (state.drawings || []).find(item => String(item.id).toLowerCase() === normId);
+                    if (existing) {
+                        skippedDuplicates++;
+                        continue;
+                    }
+
+                    const drawingStatus = mapExcelToDrawingStatus(statusVal);
+                    const logsList = [];
+                    if (drawingStatus === 'Completed') {
+                        const finalCompDate = completionDate || createdDate;
+                        const logDate = finalCompDate ? finalCompDate + " 00:00" : timestamp;
+                        logsList.push({
+                            date: logDate,
+                            message: "Drawing selesai dilakukan."
+                        });
+                    } else if (drawingStatus === 'Cancelled') {
+                        const finalCancelDate = completionDate || createdDate;
+                        const logDate = finalCancelDate ? finalCancelDate + " 00:00" : timestamp;
+                        logsList.push({
+                            date: logDate,
+                            message: `Drawing ditutup / dibatalkan: ${statusVal || 'Close'}`
+                        });
+                    }
+                    logsList.push({
+                        date: timestamp,
+                        message: `Drawing dibuat melalui import Excel sheet [${sheetName}] oleh ${state.currentUser ? state.currentUser.fullname : 'System'}.`
+                    });
+
+                    const drawingCategory = autoDetectDrawingCategory(title, fullDescription, categoryVal, timVal);
+
+                    drawingBatch.push({
+                        id: ticketId,
+                        title: title,
+                        dept: dept,
+                        category: drawingCategory,
+                        priority: 'Medium',
+                        location: locationVal,
+                        targetDate: targetDate,
+                        status: drawingStatus,
+                        engineer: matchedEngineer,
+                        description: fullDescription,
+                        requester: requester,
+                        uploader: requester,
+                        drawing_type: 'import',
+                        is_import: true,
+                        logs: logsList,
+                        createdDate: createdDate
+                    });
+                }
+            }
+
+            const CHUNK_SIZE = 250;
+            if (drawingBatch.length > 0) {
+                for (let i = 0; i < drawingBatch.length; i += CHUNK_SIZE) {
+                    const chunk = drawingBatch.slice(i, i + CHUNK_SIZE);
+                    try {
+                        const res = await fetch("/api/drawings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(chunk)
+                        });
+                        if (res.ok) {
+                            importCountDrawing += chunk.length;
+                        } else {
+                            for (const item of chunk) {
+                                const singleRes = await fetch("/api/drawings", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify(item)
+                                });
+                                if (singleRes.ok) importCountDrawing++;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Batch Drawing import error:", e);
+                    }
+                }
+            }
+
+            const totalSheets = selectedSheets.length;
+            const sheetSummary = totalSheets > 1 ? ` dari ${totalSheets} sheet` : "";
+
+            if (importCountDrawing > 0) {
+                showToast(`${importCountDrawing} EJO Drawing berhasil diimpor${sheetSummary}!`, "success");
+                await initData();
+                switchTab("drawing");
+            } else if (skippedDuplicates > 0) {
+                showToast(`Semua tiket Drawing (${skippedDuplicates}) pada ${totalSheets} sheet yang dipilih sudah ada di dalam database.`, "info");
+            } else {
+                showToast("Tidak ada data valid yang dapat diimpor dari sheet yang dipilih.", "warning");
+            }
+        } catch (err) {
+            console.error("Drawing Excel Import Error:", err);
+            showToast("Gagal membaca atau memproses file Excel Drawing: " + (err.message || "Format tidak sesuai"), "error");
+        } finally {
+            if (event.target) event.target.value = '';
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+window.importDrawingFromExcel = importDrawingFromExcel;
 
 // ponytail: self check suite for Excel mappings
 // ponytail: self check suite for Excel mappings using custom assert to throw actual errors
+let isExcelSelfTestExecuted = false;
 function runExcelSelfTest() {
+    if (isExcelSelfTestExecuted) return;
+    isExcelSelfTestExecuted = true;
     function assert(condition, message) {
         if (!condition) throw new Error(message);
     }
@@ -22393,7 +24770,7 @@ function runExcelSelfTest() {
         assert(mapDeptToExcel('Production') === 'PRD', 'Dept translation failed');
         assert(mapExcelToDept('PRD') === 'PRD', 'Excel to Dept translation failed');
         assert(mapExcelToDept('Maintenance') === 'WRH', 'Legacy maintenance alias failed');
-        assert(mapExcelToDept('Utility') === 'ENG', 'Legacy utility alias failed');
+        assert(mapExcelToDept('Utility') === 'EUT', 'Utility alias to EUT failed');
         assert(mapCategoryToExcel('Sipil') === 'CIV', 'Category translation failed');
         assert(mapExcelToCategory('CIV') === 'Sipil', 'Excel to Category translation failed');
         // ponytail: added Repair Part self tests
@@ -22402,6 +24779,10 @@ function runExcelSelfTest() {
         assert(mapExcelToCategory('REP') === 'Repair Part', 'Excel REP alias to Repair Part category translation failed');
         assert(mapStatusToExcel('Requested') === 'Unprocessed Ticket', 'Status translation failed');
         assert(mapExcelToStatus('Unprocessed Ticket') === 'Requested', 'Excel to Status translation failed');
+        assert(mapExcelToStatus('Close') === 'Cancelled', 'Excel Close to Cancelled failed');
+        assert(mapExcelToStatus('Close, Material N/A') === 'Cancelled', 'Excel Close variant to Cancelled failed');
+        assert(mapExcelToStatus('Done') === 'Completed', 'Excel Done to Completed failed');
+        assert(mapExcelToStatus('Done, List Material') === 'Completed', 'Excel Done variant to Completed failed');
         console.log("Excel Self Test: OK");
     } catch (e) {
         console.error("Excel Self Test: FAILED", e);
@@ -22480,6 +24861,11 @@ window.applyDashboardSettings = function () {
     if (state.charts.trend) state.charts.trend.resize();
     if (state.charts.dept) state.charts.dept.resize();
     if (state.charts.category) state.charts.category.resize();
+
+    // ponytail: refresh activity log view
+    if (typeof renderOverviewActivityLog === 'function') {
+        renderOverviewActivityLog();
+    }
 };
 
 // ponytail: Apply Maintenance Mode status to toggle inputs in UI
@@ -22539,8 +24925,7 @@ document.addEventListener("click", function (evt) {
         if (match) {
             projId = match[1];
         } else if (card) {
-            const idEl = card.querySelector(".project-card-id");
-            if (idEl) projId = idEl.dataset.id || (idEl.textContent.match(/PRJ-[^\s]+/) || [idEl.textContent.trim()])[0];
+            projId = card.dataset.projectId || (card.querySelector(".project-card-id") ? (card.querySelector(".project-card-id").dataset.id || card.querySelector(".project-card-id").textContent.trim()) : null);
         }
 
         if (!projId && card) {
@@ -22619,10 +25004,21 @@ function parseWSPMasterWorkbook(arrayBuffer) {
             wspMap.set(`${codeKey} - ${desc.toLowerCase()}`, item);
         }
 
+
         state.wspMaterials = materials;
         state.wspMap = wspMap;
 
+        // Save to backend
+        fetch("/api/wsp-materials/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(materials)
+        }).then(r => r.json()).then(res => {
+            console.log("WSP materials saved to database", res);
+        }).catch(err => console.error("Error saving WSP", err));
+
         // ponytail: render lightweight top 50 datalist options using fast innerHTML string
+
         populateWSPMaterialDatalist();
 
         const infoEl = document.getElementById("gejo-wsp-status-info");
@@ -22813,27 +25209,32 @@ function setupWSPMaterialEvents() {
     }
 
     // Auto-fetch default local WSP Master Material file on startup if present
-    fetch(encodeURI("/WSP MASTER MATERIAL 2025 (1).xlsx"))
+    fetch("/api/wsp-materials")
         .then(res => {
-            if (res.ok) return res.arrayBuffer();
-            throw new Error("Local WSP file not found");
+            if (!res.ok) return null;
+            return res.json();
         })
-        .then(buf => {
-            const count = parseWSPMasterWorkbook(buf);
-            console.log(`Auto-loaded local WSP Master Material: ${count} items`);
+        .then(data => {
+            if (Array.isArray(data) && data.length > 0) {
+                wspMasterData = data;
+            }
         })
-        .catch(err => {
-            console.debug("No default WSP Master Material auto-loaded:", err.message);
-        });
+        .catch(() => {});
 }
 
-// ponytail: initialize WSP events when DOM ready
+// ponytail: initialize WSP, Drawing Autodetect, & Form Inactivity Auto-Close when DOM ready
 if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
-        setupWSPMaterialEvents();
+        if (typeof loadWspFromDatabase === 'function') loadWspFromDatabase();
+        if (typeof setupWSPMaterialEvents === 'function') setupWSPMaterialEvents();
+        if (typeof window.setupProjectDrawingAutodetect === 'function') window.setupProjectDrawingAutodetect();
+        if (typeof setupFormInactivityListeners === 'function') setupFormInactivityListeners();
     });
 } else {
-    setupWSPMaterialEvents();
+    if (typeof loadWspFromDatabase === 'function') loadWspFromDatabase();
+    if (typeof setupWSPMaterialEvents === 'function') setupWSPMaterialEvents();
+    if (typeof window.setupProjectDrawingAutodetect === 'function') window.setupProjectDrawingAutodetect();
+    if (typeof setupFormInactivityListeners === 'function') setupFormInactivityListeners();
 }
 
 // ponytail: Modal & Submit handlers for transferring Drawing EJO to Project Monitoring (Fase 1 Review Only)
@@ -22870,6 +25271,13 @@ function closeTransferDrawingToProjectModal() {
 window.closeTransferDrawingToProjectModal = closeTransferDrawingToProjectModal;
 
 function flexToProjectTab(drawingId) {
+    const canReviewProject = canUserReviewProject(state.currentUser);
+
+    if (!canReviewProject) {
+        showToast("Project ini dikelola secara internal oleh Tim Engineering.", "info");
+        return;
+    }
+
     const projTabBtn = document.querySelector('[data-tab="projects"]');
     if (projTabBtn) {
         projTabBtn.click();
@@ -22877,7 +25285,7 @@ function flexToProjectTab(drawingId) {
         switchTab('projects');
     }
 
-    const linkedProject = state.projects ? state.projects.find(p => p.drawing_id === drawingId || p.id === drawingId) : null;
+    const linkedProject = state.projects ? state.projects.find(p => p.drawing_id === drawingId || p.id === drawingId || p.ejo_id === drawingId) : null;
     if (linkedProject) {
         openProjectDetails(null, linkedProject.id);
         showToast(`Membuka Project (${linkedProject.id})`, "info");
@@ -23433,3 +25841,35 @@ window.adjustEjoRepairPartQty = async function (ejoId, delta, event) {
 };
 
 
+
+
+async function loadWspFromDatabase() {
+    try {
+        const res = await fetch("/api/wsp-materials");
+        if (res.ok) {
+            const materials = await res.json();
+            if (materials && Array.isArray(materials) && materials.length > 0) {
+                state.wspMaterials = materials;
+                const wspMap = new Map();
+                materials.forEach(item => {
+                    if (!item || !item.material) return;
+                    const codeKey = item.material.toLowerCase();
+                    wspMap.set(codeKey, item);
+                    if (item.description) {
+                        wspMap.set(`${codeKey} - ${item.description.toLowerCase()}`, item);
+                    }
+                });
+                state.wspMap = wspMap;
+                populateWSPMaterialDatalist();
+                const infoEl = document.getElementById("gejo-wsp-status-info");
+                if (infoEl) {
+                    infoEl.style.display = "block";
+                    infoEl.textContent = `✓ WSP Master Material dimuat (${materials.length.toLocaleString('id-ID')} items terdaftar)`;
+                }
+                console.log(`Loaded ${materials.length} WSP materials from database.`);
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load WSP materials", e);
+    }
+}

@@ -1254,6 +1254,205 @@ body {
     }
 }
 
+.overview-split-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 1.5rem;
+    align-items: start;
+    margin-bottom: 1.5rem;
+}
+
+.overview-main-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.overview-activity-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.eng-activity-card {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    max-height: 560px;
+    min-height: 380px;
+    padding: 1.25rem 1.25rem 1rem 1.25rem;
+    box-sizing: border-box;
+}
+
+.eng-activity-scroll-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    padding-right: 4px;
+    max-height: 480px;
+}
+
+.eng-activity-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0.85rem;
+    border-radius: var(--border-radius-md);
+    background-color: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: var(--transition-smooth);
+}
+
+.eng-activity-item:hover {
+    background-color: rgba(255, 255, 255, 0.045);
+    border-color: rgba(6, 182, 212, 0.25);
+}
+
+.eng-activity-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.eng-activity-badge-grp {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.eng-activity-engineer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--color-cyan);
+    background: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.eng-activity-time {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.eng-activity-msg {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.eng-activity-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.73rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.eng-activity-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    gap: 8px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 1200px) {
+    .overview-split-layout {
+        grid-template-columns: 1fr;
+    }
+    .eng-activity-card {
+        max-height: 420px;
+    }
+    .eng-activity-scroll-body {
+        max-height: 340px;
+    }
+}
+
+.eng-activity-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0.85rem;
+    border-radius: var(--border-radius-md);
+    background-color: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: var(--transition-smooth);
+}
+
+.eng-activity-item:hover {
+    background-color: rgba(255, 255, 255, 0.045);
+    border-color: rgba(6, 182, 212, 0.25);
+}
+
+.eng-activity-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.eng-activity-badge-grp {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.eng-activity-time {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.eng-activity-msg {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.eng-activity-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.73rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.eng-activity-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    gap: 8px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 1200px) {
+    .overview-split-layout {
+        grid-template-columns: 1fr;
+    }
+    .eng-activity-card {
+        max-height: 480px;
+    }
+}
+
 .dashboard-summary-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -1965,13 +2164,14 @@ body {
 }
 
 .ejo-id-badge {
-    font-size: 0.72rem;
+    font-size: 0.82rem;
     font-weight: 700;
     color: var(--color-cyan);
     background-color: rgba(6, 182, 212, 0.15);
-    padding: 1px 6px;
-    border-radius: 4px;
-    border: 1px solid rgba(6, 182, 212, 0.2);
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    letter-spacing: 0.3px;
 }
 
 .recent-item-title {
@@ -2010,12 +2210,12 @@ body {
 }
 
 .badge-status {
-    font-size: 0.68rem;
+    font-size: 0.82rem;
     text-transform: none;
     font-weight: 700;
     letter-spacing: 0.5px;
-    padding: 4px 10px;
-    border-radius: 12px;
+    padding: 5px 12px;
+    border-radius: 8px;
     white-space: normal;
     line-height: 1.3;
     display: inline-block;
@@ -2388,9 +2588,9 @@ select.form-control,
 }
 
 .job-card-title {
-    font-size: 1.02rem;
-    font-weight: 600;
-    line-height: 1.35;
+    font-size: 1.12rem;
+    font-weight: 700;
+    line-height: 1.4;
     cursor: pointer;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -2399,7 +2599,7 @@ select.form-control,
     overflow: hidden;
     height: auto;
     min-height: auto;
-    margin: 4px 0 0 0;
+    margin: 6px 0 2px 0;
     transition: var(--transition-smooth);
 }
 
@@ -2411,14 +2611,14 @@ select.form-control,
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     font-weight: 700;
     text-transform: uppercase;
 }
 
 .p-dot {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
 }
 
@@ -2431,27 +2631,29 @@ select.form-control,
     margin-bottom: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.65rem;
 }
 
 .job-card-meta {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    font-size: 0.78rem;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    font-size: 0.88rem;
     color: var(--text-secondary);
+    line-height: 1.4;
 }
 
 .job-card-meta div {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
-.job-card-meta i {
-    width: 14px;
-    height: 14px;
-    color: var(--text-muted);
+.job-card-meta i, .job-card-meta svg {
+    width: 16px;
+    height: 16px;
+    color: var(--color-cyan);
+    flex-shrink: 0;
 }
 
 /* ==========================================
@@ -2734,16 +2936,17 @@ select.form-control,
 .engineer-badge {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 0.78rem;
-    font-weight: 500;
+    gap: 10px;
+    font-size: 0.92rem;
+    font-weight: 600;
 }
 
 .engineer-badge img {
-    width: 24px;
-    height: 24px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     background-color: var(--bg-main);
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
 }
 
 /* Tabular view formatting */
@@ -3186,13 +3389,69 @@ select.form-control,
     color: var(--text-secondary);
 }
 
+.excel-sheet-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+}
+
+.excel-sheet-search-input {
+    flex: 1;
+    min-width: 150px;
+    height: 34px;
+    font-size: 0.82rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--card-border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    outline: none;
+    transition: var(--transition-smooth);
+}
+
+.excel-sheet-search-input:focus {
+    border-color: var(--color-cyan);
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+}
+
+.excel-sheet-toolbar-btns {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.excel-sheet-toolbar-btn {
+    padding: 0.3rem 0.65rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--card-border);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.excel-sheet-toolbar-btn:hover {
+    border-color: var(--color-cyan);
+    background: rgba(6, 182, 212, 0.12);
+    color: var(--color-cyan);
+}
+
 .excel-sheet-list {
-    max-height: 320px;
+    max-height: 290px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.3rem;
+    gap: 0.45rem;
+    padding: 0.35rem;
     border: 1px solid var(--card-border);
     border-radius: var(--border-radius-md);
     background: rgba(8, 15, 29, 0.55);
@@ -3200,50 +3459,87 @@ select.form-control,
 
 .excel-sheet-option {
     width: 100%;
-    border: 1px solid transparent;
-    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-primary);
-    padding: 0.85rem 0.95rem;
+    padding: 0.7rem 0.85rem;
     text-align: left;
     cursor: pointer;
     transition: var(--transition-smooth);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    user-select: none;
 }
 
 .excel-sheet-option:hover {
-    border-color: rgba(56, 189, 248, 0.25);
-    background: rgba(56, 189, 248, 0.1);
+    border-color: rgba(56, 189, 248, 0.3);
+    background: rgba(56, 189, 248, 0.08);
     transform: translateY(-1px);
 }
 
 .excel-sheet-option.active {
-    border-color: rgba(56, 189, 248, 0.55);
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.22), rgba(37, 99, 235, 0.22));
-    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.18);
+    border-color: rgba(56, 189, 248, 0.6);
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.18), rgba(37, 99, 235, 0.18));
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.2);
+}
+
+.excel-sheet-checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+    background: rgba(0, 0, 0, 0.2);
+    color: transparent;
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.excel-sheet-option.active .excel-sheet-checkbox {
+    background: var(--color-cyan);
+    border-color: var(--color-cyan);
+    color: #031024;
+}
+
+.excel-sheet-option-info {
+    flex: 1;
+    min-width: 0;
 }
 
 .excel-sheet-option-title {
     display: block;
-    font-size: 0.92rem;
+    font-size: 0.88rem;
     font-weight: 600;
     color: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .excel-sheet-option-meta {
     display: block;
-    margin-top: 0.2rem;
-    font-size: 0.75rem;
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
     color: var(--text-secondary);
 }
 
 .excel-sheet-selected {
-    padding: 0.75rem 0.9rem;
+    padding: 0.7rem 0.9rem;
     border-radius: var(--border-radius-md);
-    border: 1px solid rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.18);
     background: rgba(56, 189, 248, 0.08);
     color: var(--text-primary);
-    font-size: 0.84rem;
+    font-size: 0.82rem;
     font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 .excel-sheet-select-native {
@@ -3261,8 +3557,21 @@ select.form-control,
     background: rgba(255, 255, 255, 0.92);
 }
 
+[data-theme="light"] .excel-sheet-search-input {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: #0f172a;
+}
+
+[data-theme="light"] .excel-sheet-toolbar-btn {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: #334155;
+}
+
 [data-theme="light"] .excel-sheet-option {
     background: #ffffff;
+    border-color: #e2e8f0;
 }
 
 [data-theme="light"] .excel-sheet-option:hover {
@@ -3271,6 +3580,11 @@ select.form-control,
 
 [data-theme="light"] .excel-sheet-option.active {
     background: linear-gradient(135deg, rgba(6, 182, 212, 0.14), rgba(37, 99, 235, 0.12));
+}
+
+[data-theme="light"] .excel-sheet-checkbox {
+    border-color: #94a3b8;
+    background: #f1f5f9;
 }
 
 .modal-drawing-body {
@@ -5592,6 +5906,19 @@ select.form-control,
     border-bottom: 2px solid var(--card-border);
     margin-bottom: 1.25rem;
     position: relative;
+    cursor: pointer;
+    user-select: none;
+    transition: var(--transition-smooth);
+    border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+}
+
+.column-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.column-header:hover h4 {
+    color: var(--color-cyan);
+    transition: color 0.2s ease;
 }
 
 .column-header h4 {
@@ -5843,8 +6170,8 @@ select.form-control,
 }
 
 .btn-xs {
-    padding: 0.42rem 0.8rem;
-    font-size: 0.82rem;
+    padding: 0.55rem 1rem;
+    font-size: 0.88rem;
     font-weight: 600;
     border-radius: var(--border-radius-sm);
 }
@@ -8411,8 +8738,9 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
         box-sizing: border-box !important;
     }
     .job-card-title {
-        font-size: 0.95rem !important;
-        line-height: 1.38 !important;
+        font-size: 1.05rem !important;
+        font-weight: 700 !important;
+        line-height: 1.4 !important;
         height: auto !important;
         -webkit-line-clamp: 3 !important;
         line-clamp: 3 !important;
@@ -8423,7 +8751,7 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
     .job-card-meta {
         grid-template-columns: 1fr !important;
         gap: 6px !important;
-        font-size: 0.78rem !important;
+        font-size: 0.88rem !important;
         width: 100% !important;
         box-sizing: border-box !important;
     }
@@ -8923,4 +9251,5 @@ input[type="password"]::-webkit-credentials-auto-fill-button {
         height: 42px !important;
     }
 }
+
 

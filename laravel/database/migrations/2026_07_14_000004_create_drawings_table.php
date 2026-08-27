@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('drawings', function (Blueprint $table) {
             $table->string('id')->primary();
             $table->string('ejo_id')->nullable();
-            $table->string('title');
+            $table->string('title')->nullable();
             $table->string('file_path')->nullable();
             $table->string('uploader')->nullable();
             $table->string('uploaded_at')->nullable();
@@ -29,6 +29,9 @@ return new class extends Migration
             $table->string('estDate')->nullable();
             $table->string('drawing_type')->default('request');
             $table->string('sub_status')->nullable();
+            $table->string('etiket_category')->nullable()->default('Sipil');
+            $table->string('etiket_orientation')->nullable()->default('landscape');
+            $table->boolean('is_archived')->default(false);
         });
     }
 
