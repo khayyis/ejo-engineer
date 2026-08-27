@@ -5388,7 +5388,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=40.0"></script>
+    <script src="app.js?v=41.0"></script>
 </body>
 
 </html>

@@ -3495,9 +3495,19 @@ function initEventListeners() {
     });
 
     // ponytail: Repair Part Detail Modal Close listeners
-    document.getElementById("modal-part-close-btn").addEventListener("click", closePartModal);
-    document.getElementById("part-detail-modal").addEventListener("click", (e) => {
+    document.getElementById("modal-part-close-btn")?.addEventListener("click", closePartModal);
+    document.getElementById("part-detail-modal")?.addEventListener("click", (e) => {
         if (e.target === document.getElementById("part-detail-modal")) closePartModal();
+    });
+
+    // ponytail: Daily Activity Modal listeners
+    document.getElementById("btn-add-daily-activity")?.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openAddDailyActivityModal();
+    });
+    document.getElementById("modal-daily-activity")?.addEventListener("click", (e) => {
+        if (e.target === document.getElementById("modal-daily-activity")) closeAddDailyActivityModal();
     });
 
     // ponytail: Project Detail Modal Close listeners
@@ -6888,7 +6898,8 @@ function canManageDailyActivity() {
     return isForeman || isAdmin || isLead;
 }
 
-window.openAddDailyActivityModal = function() {
+// Explicit global functions for Daily Activity Modal
+function openAddDailyActivityModal() {
     const modal = document.getElementById("modal-daily-activity");
     if (!modal) {
         console.error("Modal #modal-daily-activity not found in DOM");
@@ -6926,21 +6937,23 @@ window.openAddDailyActivityModal = function() {
     const ejoTitleInput = document.getElementById("input-activity-ejotitle");
     if (ejoTitleInput) ejoTitleInput.value = "";
 
-    // Force remove inline display none & add active class
-    modal.style.display = "flex";
+    // Force style & class
+    modal.style.setProperty("display", "flex", "important");
     modal.classList.add("active");
     if (typeof lucide !== 'undefined' && lucide.createIcons) {
         lucide.createIcons();
     }
-};
+}
+window.openAddDailyActivityModal = openAddDailyActivityModal;
 
-window.closeAddDailyActivityModal = function() {
+function closeAddDailyActivityModal() {
     const modal = document.getElementById("modal-daily-activity");
     if (modal) {
         modal.classList.remove("active");
-        modal.style.display = "none";
+        modal.style.setProperty("display", "none", "important");
     }
-};
+}
+window.closeAddDailyActivityModal = closeAddDailyActivityModal;
 
 window.handleActivityGroupChange = function() {
     const groupSel = document.getElementById("input-activity-group");
