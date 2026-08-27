@@ -1275,93 +1275,117 @@ body {
 .overview-activity-standalone-row .eng-activity-scroll-body {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 1.25rem;
     overflow-y: auto;
     padding-right: 4px;
-    max-height: 420px;
+    max-height: 520px;
 }
 
-.eng-activity-item {
+/* Daily Recap / WhatsApp Table Style Layout */
+.recap-section-block {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 0.85rem 1rem;
-    border-radius: var(--border-radius-sm, 8px);
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.04);
-    border-left: 3px solid rgba(6, 182, 212, 0.4);
-    transition: var(--transition-smooth, all 0.2s ease);
-}
-
-.eng-activity-item:hover {
-    background: rgba(255, 255, 255, 0.045);
-    border-color: rgba(6, 182, 212, 0.3);
-    border-left-color: var(--color-cyan, #06b6d4);
-    transform: translateX(2px);
-}
-
-.eng-activity-item-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     gap: 8px;
+    width: 100%;
 }
 
-.eng-activity-badge-grp {
+.recap-section-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-
-.eng-activity-engineer-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.72rem;
+    gap: 8px;
+    font-size: 0.85rem;
     font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     color: var(--color-cyan, #06b6d4);
-    background: rgba(6, 182, 212, 0.1);
-    border: 1px solid rgba(6, 182, 212, 0.22);
-    padding: 2px 7px;
-    border-radius: 4px;
-    letter-spacing: 0.2px;
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.18);
+    padding: 6px 12px;
+    border-radius: 6px;
 }
 
-.eng-activity-time {
-    font-size: 0.72rem;
-    color: var(--text-secondary, #94a3b8);
-    white-space: nowrap;
-    font-weight: 500;
+.recap-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.eng-activity-msg {
+.recap-custom-table {
+    width: 100%;
+    border-collapse: collapse;
     font-size: 0.82rem;
-    line-height: 1.45;
-    color: var(--text-primary, #f8fafc);
-    word-break: break-word;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.015);
 }
 
-.eng-activity-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.72rem;
+.recap-custom-table th {
+    background: rgba(255, 255, 255, 0.04);
     color: var(--text-secondary, #94a3b8);
-    margin-top: 2px;
-    padding-top: 4px;
-    border-top: 1px dashed rgba(255, 255, 255, 0.05);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.eng-activity-empty {
+.recap-custom-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    vertical-align: middle;
+}
+
+.recap-custom-table td:last-child {
+    border-right: none;
+}
+
+.recap-cell-name {
+    background: rgba(255, 255, 255, 0.025);
+    font-weight: 600;
+}
+
+.recap-name-box {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.recap-engineer-name {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-primary, #f8fafc);
+}
+
+.recap-cell-task {
+    transition: background 0.15s ease;
+}
+
+.recap-cell-task.clickable-task {
+    cursor: pointer;
+}
+
+.recap-cell-task.clickable-task:hover {
+    background: rgba(6, 182, 212, 0.06);
+}
+
+.recap-task-content {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 3rem 1rem;
-    gap: 8px;
-    text-align: center;
-    color: var(--text-secondary);
+    flex-wrap: wrap;
+    gap: 4px;
+    line-height: 1.45;
+}
+
+.recap-task-msg {
+    color: var(--text-primary, #f8fafc);
+    font-weight: 400;
+}
+
+.recap-task-title {
+    color: var(--text-secondary, #94a3b8);
 }
 
 /* Custom minimal slim scrollbar */

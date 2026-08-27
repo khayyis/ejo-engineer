@@ -6924,7 +6924,7 @@ function isCurrentUserEngDept() {
     return normalizedDept === 'ENG' || / eng$/i.test(role) || / eng /i.test(role) || /_eng$/i.test(role) || isEngRole;
 }
 
-// ponytail: extract, sort, and render live engineer activity stream on dashboard
+// ponytail: extract, sort, and render live engineer activity stream in WhatsApp/Daily Recap style
 function renderOverviewActivityLog() {
     const container = document.getElementById("overview-eng-activity-list");
     const panel = document.getElementById("overview-eng-activity-panel");
@@ -6980,8 +6980,6 @@ function renderOverviewActivityLog() {
 
                 // Extract engineer name from log message or assignment
                 let engineerName = "";
-                
-                // 1. Check if log message mentions "kepada [Engineer]" or "ditunjuk: [Engineer]" or "oleh [Engineer]"
                 const assignedToMatch = cleanMsg.match(/(?:kepada|ditugaskan kepada|ditunjuk:?)\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
                 if (assignedToMatch && assignedToMatch[1] && assignedToMatch[1].toLowerCase() !== 'unassigned') {
                     engineerName = assignedToMatch[1].trim();
@@ -6989,7 +6987,6 @@ function renderOverviewActivityLog() {
                     const matchedEng = cleanMsg.match(/oleh\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
                     if (matchedEng && matchedEng[1]) {
                         const actor = matchedEng[1].trim();
-                        // If actor is admin/system server, prioritize assigned technician if available
                         if ((actor.toLowerCase().includes('server') || actor.toLowerCase().includes('admin')) && item.engineer && item.engineer !== 'Unassigned') {
                             engineerName = item.engineer.split(',')[0].trim();
                         } else {
@@ -7000,6 +6997,10 @@ function renderOverviewActivityLog() {
                     } else if (item.drafter) {
                         engineerName = item.drafter.split(',')[0].trim();
                     }
+                }
+
+                if (!engineerName || engineerName.toLowerCase() === 'user' || engineerName.toLowerCase() === 'unassigned') {
+                    engineerName = item.engineer && item.engineer !== 'Unassigned' ? item.engineer.split(',')[0].trim() : 'Teknisi';
                 }
 
                 rawActivities.push({
@@ -7022,47 +7023,124 @@ function renderOverviewActivityLog() {
     rawActivities.sort((a, b) => b.sortTime - a.sortTime || String(b.date).localeCompare(String(a.date)));
 
     if (totalBadge) {
-        totalBadge.textContent = `${rawActivities.length} Aktivitas`;
+        totalBadge.textContent = `${rawActivities.length} Entri`;
     }
 
     if (rawActivities.length === 0) {
         container.innerHTML = `
             <div class="eng-activity-empty">
                 <i data-lucide="inbox" style="width: 32px; height: 32px; color: var(--text-secondary); opacity: 0.6;"></i>
-                <span style="font-size: 0.8rem;">Belum ada interaksi aktivitas teknisi.</span>
+                <span style="font-size: 0.8rem;">Belum ada rekap aktivitas teknisi.</span>
             </div>
         `;
         lucide.createIcons();
         return;
     }
 
-    // Render feed items (limited to 50 latest activities)
-    const displayFeed = rawActivities.slice(0, 50);
-    container.innerHTML = displayFeed.map(act => {
-        const catClass = 'role-badge-' + (act.category || 'general').toLowerCase().replace(/\s+/g, '-');
-        const clickHandler = act.isDrawing ? `openDrawingDetails('${act.id}')` : (act.id.startsWith('PRJ') ? `openProjectDetails(null, '${act.id}')` : `openEJODetails('${act.id}')`);
-        const engineerBadge = act.engineer ? `<span class="eng-activity-engineer-badge"><i data-lucide="user" style="width: 10px; height: 10px;"></i>${act.engineer}</span>` : '';
+    // Separate into TIM EJO (Mekanik, Elektrik, Sipil, Repair Part, Program, Kalibrasi) and TIM DRAFTER
+    const timEjoActivities = [];
+    const timDrafterActivities = [];
+
+    rawActivities.forEach(act => {
+        const catLower = (act.category || '').toLowerCase();
+        if (catLower.includes('drafter') || act.isDrawing) {
+            timDrafterActivities.push(act);
+        } else {
+            timEjoActivities.push(act);
+        }
+    });
+
+    // Helper to render table section in WhatsApp/Daily Recap tabular style
+    const renderSectionTable = (title, activities, iconName) => {
+        if (activities.length === 0) return '';
+        
+        // Group activities by engineer
+        const byEngineer = new Map();
+        activities.forEach(act => {
+            const eng = act.engineer || 'Teknisi';
+            if (!byEngineer.has(eng)) byEngineer.set(eng, []);
+            byEngineer.get(eng).push(act);
+        });
+
+        let rowsHtml = '';
+        byEngineer.forEach((actList, engName) => {
+            const firstAct = actList[0];
+            const rowSpan = actList.length;
+            const clickHandler = firstAct.isDrawing ? `openDrawingDetails('${firstAct.id}')` : (firstAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${firstAct.id}')` : `openEJODetails('${firstAct.id}')`);
+            const catClass = 'role-badge-' + (firstAct.category || 'general').toLowerCase().replace(/\s+/g, '-');
+
+            rowsHtml += `
+                <tr class="recap-table-row">
+                    <td class="recap-cell-name" rowspan="${rowSpan}">
+                        <div class="recap-name-box">
+                            <span class="recap-engineer-name">${engName}</span>
+                            <span class="eng-role-badge ${catClass}" style="font-size: 0.65rem; padding: 1px 5px;">${firstAct.category}</span>
+                        </div>
+                    </td>
+                    <td class="recap-cell-task clickable-task" onclick="${clickHandler}">
+                        <div class="recap-task-content">
+                            <span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${firstAct.id}</span>
+                            <span class="recap-task-msg">${firstAct.message}</span>
+                            <span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${firstAct.title})</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+
+            for (let i = 1; i < actList.length; i++) {
+                const subAct = actList[i];
+                const subClick = subAct.isDrawing ? `openDrawingDetails('${subAct.id}')` : (subAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${subAct.id}')` : `openEJODetails('${subAct.id}')`);
+                rowsHtml += `
+                    <tr class="recap-table-row">
+                        <td class="recap-cell-task clickable-task" onclick="${subClick}">
+                            <div class="recap-task-content">
+                                <span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${subAct.id}</span>
+                                <span class="recap-task-msg">${subAct.message}</span>
+                                <span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${subAct.title})</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+        });
 
         return `
-            <div class="eng-activity-item cursor-pointer" onclick="${clickHandler}">
-                <div class="eng-activity-item-header">
-                    <div class="eng-activity-badge-grp">
-                        <span class="ejo-id-badge" style="font-size: 0.72rem; padding: 2px 6px;">${act.id}</span>
-                        <span class="eng-role-badge ${catClass}" style="font-size: 0.68rem; padding: 2px 6px;">${act.category}</span>
-                        ${engineerBadge}
-                    </div>
-                    <span class="eng-activity-time">${act.date}</span>
+            <div class="recap-section-block">
+                <div class="recap-section-header">
+                    <i data-lucide="${iconName || 'users'}" style="width: 15px; height: 15px; color: var(--color-cyan);"></i>
+                    <span>${title}</span>
                 </div>
-                <div class="eng-activity-msg">${act.message}</div>
-                <div class="eng-activity-footer">
-                    <span style="font-weight: 600; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;">
-                        ${act.title}
-                    </span>
-                    <span class="text-xs text-secondary" style="font-size: 0.7rem;">${act.dept}</span>
+                <div class="recap-table-wrap">
+                    <table class="recap-custom-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 170px; text-align: left;">Nama</th>
+                                <th style="text-align: left;">Uraian Pekerjaan & Aktivitas Realtime</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowsHtml}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         `;
-    }).join('');
+    };
+
+    let fullHtml = '';
+    if (timEjoActivities.length > 0) {
+        fullHtml += renderSectionTable('TIM EJO (Mekanik, Elektrik, Sipil, Repair Part, Program, Kalibrasi)', timEjoActivities, 'wrench');
+    }
+    if (timDrafterActivities.length > 0) {
+        fullHtml += renderSectionTable('TIM DRAFTER', timDrafterActivities, 'pen-tool');
+    }
+
+    container.innerHTML = fullHtml || `
+        <div class="eng-activity-empty">
+            <i data-lucide="inbox" style="width: 32px; height: 32px; color: var(--text-secondary); opacity: 0.6;"></i>
+            <span style="font-size: 0.8rem;">Belum ada rekap aktivitas teknisi.</span>
+        </div>
+    `;
 
     lucide.createIcons();
 }
