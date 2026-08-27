@@ -5374,16 +5374,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0;">Uraian Pekerjaan / Aktivitas / Status</label>
-                        <div style="display: flex; gap: 4px;">
-                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('CUTI')">CUTI</button>
-                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('OFF')">OFF</button>
-                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('NPL')">NPL</button>
-                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('IZIN')">IZIN</button>
-                            <button type="button" class="btn btn-xs" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); border-radius: 4px;" onclick="setQuickActivityStatus('SAKIT')">SAKIT</button>
-                        </div>
-                    </div>
+                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Uraian Pekerjaan / Aktivitas / Status</label>
                     <textarea id="input-activity-text" rows="3" class="form-control" placeholder="Contoh: Penggantian bearing dan seal pompa selesai dikerjakan atau CUTI / OFF" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);"></textarea>
                 </div>
                 <div class="form-group">
@@ -5413,7 +5404,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=64.0"></script>
+    <script src="app.js?v=65.0"></script>
 </body>
 
 </html>
