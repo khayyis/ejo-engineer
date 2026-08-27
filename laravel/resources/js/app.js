@@ -6967,13 +6967,17 @@ window.openAddDailyActivityModal = function() {
     const ejoTitleInput = document.getElementById("input-activity-ejotitle");
     if (ejoTitleInput) ejoTitleInput.value = "";
 
+    modal.classList.add("active");
     modal.style.display = "flex";
     lucide.createIcons();
 };
 
 window.closeAddDailyActivityModal = function() {
     const modal = document.getElementById("modal-daily-activity");
-    if (modal) modal.style.display = "none";
+    if (modal) {
+        modal.classList.remove("active");
+        modal.style.display = "none";
+    }
 };
 
 window.handleActivityGroupChange = function() {
