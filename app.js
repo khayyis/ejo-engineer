@@ -7066,8 +7066,8 @@ function renderActivityEngineersList() {
                     </div>
                 </div>
                 <div class="custom-checkbox">
-                    <input type="checkbox" class="activity-eng-check" value="${u.fullname || u.username}" data-role="${u.role || ''}" onclick="event.stopPropagation(); syncEngineerRowSelection(this)">
-                    <span class="checkmark"></span>
+                    <input type="radio" name="activity-single-engineer" class="activity-eng-check" value="${u.fullname || u.username}" data-role="${u.role || ''}" onclick="event.stopPropagation(); syncEngineerRowSelection(this)">
+                    <span class="checkmark" style="border-radius: 50%;"></span>
                 </div>
             </div>
         `;
@@ -15132,32 +15132,56 @@ function showCustomPrompt(message, defaultValue = "", title = "Input Data", show
 
 // ponytail: Helpers for custom checklist rows selection highlight
 window.toggleEngineerRowSelection = function (row) {
-    const cb = row.querySelector('.gejo-approve-eng-check, .activity-eng-check');
+    const radio = row.querySelector('.activity-eng-check');
+    if (radio) {
+        radio.checked = true;
+        const container = row.closest('#input-activity-engineers-list');
+        if (container) {
+            container.querySelectorAll('.engineer-select-row').forEach(r => r.classList.remove('selected'));
+        }
+        row.classList.add('selected');
+        updateActivitySelectedCount();
+        if (radio.onchange) radio.onchange();
+        return;
+    }
+
+    const cb = row.querySelector('.gejo-approve-eng-check');
     if (cb) {
         cb.checked = !cb.checked;
         row.classList.toggle('selected', cb.checked);
-        if (cb.classList.contains('activity-eng-check')) {
-            updateActivitySelectedCount();
-        }
         if (cb.onchange) cb.onchange();
     }
 };
 
-window.syncEngineerRowSelection = function (checkbox) {
-    const row = checkbox.closest('.engineer-select-row');
-    if (row) {
-        row.classList.toggle('selected', checkbox.checked);
-    }
-    if (checkbox.classList.contains('activity-eng-check')) {
+window.syncEngineerRowSelection = function (element) {
+    if (element.type === 'radio' || element.classList.contains('activity-eng-check')) {
+        const container = element.closest('#input-activity-engineers-list');
+        if (container) {
+            container.querySelectorAll('.engineer-select-row').forEach(r => r.classList.remove('selected'));
+        }
+        const row = element.closest('.engineer-select-row');
+        if (row && element.checked) {
+            row.classList.add('selected');
+        }
         updateActivitySelectedCount();
+        return;
+    }
+
+    const row = element.closest('.engineer-select-row');
+    if (row) {
+        row.classList.toggle('selected', element.checked);
     }
 };
 
 function updateActivitySelectedCount() {
     const countBadge = document.getElementById("input-activity-selected-count");
     if (!countBadge) return;
-    const checked = document.querySelectorAll("#input-activity-engineers-list .activity-eng-check:checked").length;
-    countBadge.textContent = `${checked} dipilih`;
+    const selectedRadio = document.querySelector("#input-activity-engineers-list .activity-eng-check:checked");
+    if (selectedRadio) {
+        countBadge.textContent = selectedRadio.value;
+    } else {
+        countBadge.textContent = "Belum dipilih";
+    }
     if (typeof populateActivityActiveEjosDropdown === 'function') {
         populateActivityActiveEjosDropdown();
     }

@@ -5362,8 +5362,8 @@
                 </div>
                 <div class="form-group">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0;">Pilih Engineer / Personel (Bisa pilih beberapa):</label>
-                        <span id="input-activity-selected-count" style="font-size: 0.72rem; color: var(--color-cyan, #06b6d4); font-weight: 600;">0 dipilih</span>
+                        <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0;">Pilih Engineer / Personel:</label>
+                        <span id="input-activity-selected-count" style="font-size: 0.72rem; color: var(--color-cyan, #06b6d4); font-weight: 600;">Belum dipilih</span>
                     </div>
                     <div style="position: relative; margin-bottom: 6px;">
                         <input type="text" id="input-activity-engineer-search" class="form-control" placeholder="Cari nama engineer / spesialisasi..." style="width: 100%; padding: 6px 10px 6px 30px; font-size: 0.78rem; border-radius: 6px; background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: var(--text-primary);" oninput="filterActivityEngineersList(this.value)">
@@ -5413,7 +5413,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=62.0"></script>
+    <script src="app.js?v=63.0"></script>
 </body>
 
 </html>
