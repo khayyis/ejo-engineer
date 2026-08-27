@@ -1,88 +1,152 @@
-# ⚡ EJO ENGINEER MANAGEMENT SYSTEM
+# EJO Engineer Management System
 
-Sistem manajemen dan pelacakan tiket **Engineering Job Order (EJO)** terintegrasi untuk PT. BAS. Dirancang dengan tampilan modern bertema dark/glassmorphism berkinerja tinggi untuk memonitor, mengelola tiket General EJO, Drawing EJO, log aktivitas harian teknisi/drafter, analitik beban kerja, dan integrasi sinkronisasi SAP.
-
----
-
-## 🚀 Fitur Utama
-
-- 📊 **Overview & Analitik Real-Time:** 
-  - Visualisasi grafik status tiket, timeline penyelesaian, dan distribusi beban kerja personel.
-  - Rolling window analytics (mingguan, bulanan, tahunan).
-- 📋 **General EJO & Drawing EJO Tracking:**
-  - Manajemen status tiket: *Requested*, *In Progress*, hingga *Completed*.
-  - Detail item material, tracking PIC engineer, lampiran gambar teknik, dan feedback.
-- 📝 **Log Aktivitas Harian Personel (WhatsApp Recap Style):**
-  - Rekap otomatis & manual aktivitas harian teknisi dan drafter.
-  - Pengelompokan tugas berbasis aktivitas unik (`byTask`) dengan format tabel rapat.
-  - Multi-select checklist engineer lengkap dengan badge counter beban kerja aktif.
-  - Penarikan tiket aktif secara interaktif via card selection.
-  - Highlight status absensi khusus (*CUTI, OFF, NPL, IZIN, SAKIT*).
-  - Navigasi cepat: klik nama atau deskripsi tiket langsung memfilter data pada tab terkait.
-- 🔄 **Sinkronisasi Otomatis & Manual:**
-  - Konektivitas sinkronisasi data SAP EJO melalui background worker.
+Production-grade Engineering Job Order (EJO) tracking, drawing revision lifecycle, and daily technical personnel activity logging system for PT. BAS.
 
 ---
 
-## 🛠️ Stack Teknologi
-
-- **Backend:** Laravel (PHP 8.x), RESTful API Controller, SQLite Database.
-- **Frontend:** Vanilla JavaScript (ES6+), HTML5, CSS3 Glassmorphism, Chart.js, Lucide Icons, SheetJS.
-- **Architecture:** Local Hybrid Mirroring (`root` template & `laravel/resources/` + `laravel/public/`).
-
----
-
-## 📂 Struktur Direktori Penting
+## Architectural Overview
 
 ```
-├── app.js                          # Core frontend logic & state management
-├── index.html                      # Root HTML dashboard UI
-├── style.css                       # Root styling & theme definitions
+[ Web Browser Client ]
+        │
+        ▼ (Vanilla ES6+ SPA / Chart.js / Reactive State)
+[ Nginx / Web Server ]
+        │
+        ├──► Static Assets Mirror (Root / Public Web Root)
+        └──► Laravel REST API Backend (PHP 8.x)
+                    │
+                    ├──► SQLite Database (WAL Mode)
+                    └──► Internal SAP Synchronization Worker
+```
+
+### Core Architecture Highlights
+
+- **Zero-Build Dependency Frontend:** Built with high-performance Vanilla ES6+ without bundling overhead, leveraging browser-native DOM APIs and CSS variable design tokens.
+- **Atomic State Synchronization:** Single source of truth for application state with reactive filtering across Kanban pipelines and tabular views.
+- **Triple-Target File Mirroring:** Ensures consistency across local development, Blade templates, and production public assets.
+
+---
+
+## Key Modules
+
+### 1. General & Drawing EJO Lifecycle
+- Multi-stage status pipeline: `Requested` &rarr; `In Progress` &rarr; `Completed`.
+- Material request tracking, engineering drawing versioning, and technician PIC assignment.
+- Bi-directional task linking between tickets and personnel log entries.
+
+### 2. Daily Activity & WhatsApp Broadcast Engine
+- Automated & manual logging for Engineering (`TIM_EJO`) and Drafting (`TIM_DRAFTER`) teams.
+- **Task-Grouped Rendering (`byTask`):** Merges multi-personnel activities into clean, consolidated table rows.
+- **Reactive Ticket Filter:** Interactively queries and attaches active on-progress EJO tickets to selected technicians.
+- **Attendance Status Parser:** Automatic styling and classification for non-working states (`CUTI`, `OFF`, `NPL`, `IZIN`, `SAKIT`).
+- **Direct Cross-Navigation:** Clickable badge identifiers that automatically open and filter the target ticket in General or Drawing EJO tabs.
+
+### 3. Workload Analytics & Rolling Metrics
+- Workload distribution and completion performance analytics.
+- Standardized rolling window calculations:
+  - **Weekly:** Previous completed Monday-to-Sunday cycle.
+  - **Monthly:** 28 full calendar days preceding current cycle.
+  - **Yearly:** 365 calendar days rolling window.
+
+---
+
+## API Reference (Selected Endpoints)
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/login` | Session authentication & device binding |
+| `GET` | `/api/general-ejos` | Fetch all general job orders |
+| `POST` | `/api/general-ejos` | Create new general job order |
+| `PUT` | `/api/general-ejos/{id}` | Update ticket attributes & status |
+| `DELETE`| `/api/general-ejos/{id}` | Remove ticket record |
+| `GET` | `/api/drawing-ejos` | Fetch technical drawing tickets |
+| `GET` | `/api/daily-activity-logs` | Fetch daily activity logs by date |
+| `POST` | `/api/daily-activity-logs` | Create single or batch daily logs |
+| `PUT` | `/api/daily-activity-logs/{id}` | Update existing activity log |
+| `DELETE`| `/api/daily-activity-logs/{id}` | Delete activity log entry |
+
+---
+
+## Repository Structure
+
+```
+├── app.js                          # Core client-side business logic & routing
+├── index.html                      # Root single-page application entrypoint
+├── style.css                       # Design token specifications & layout stylesheets
 ├── laravel/
-│   ├── app/Http/Controllers/Api/   # API controllers (EjoController, dll)
-│   ├── database/                   # SQLite database & migrations
-│   ├── public/                     # Public assets mirror (app.js, style.css, index.html)
-│   ├── resources/views/            # Blade template mirror (welcome.blade.php)
-│   └── routes/api.php              # RESTful API routing endpoints
-└── README.md                       # Dokumentasi project
+│   ├── app/Http/Controllers/Api/   # API Resource Controllers (EjoController)
+│   ├── database/                   # Schema migrations & SQLite database file
+│   ├── public/                     # Public webroot asset mirror
+│   ├── resources/
+│   │   ├── js/app.js               # Development JS source mirror
+│   │   └── views/welcome.blade.php # Production Blade entrypoint
+│   └── routes/
+│       └── api.php                 # HTTP route definitions
+└── README.md                       # Project documentation
 ```
 
 ---
 
-## ⚡ Panduan Instalasi & Menjalankan
+## Getting Started
 
-### 1. Prasyarat
+### Prerequisites
 - PHP >= 8.1
 - Composer
-- Node.js (untuk validasi sintaks & development tools)
+- SQLite 3
+- Node.js (for static syntax inspection)
 
-### 2. Setup Backend Laravel
-Masuk ke direktori `laravel`:
-```bash
-cd laravel
-composer install
-cp .env.example .env
-php artisan key:generate
-php artisan migrate
-```
+### Installation
 
-### 3. Menjalankan Server
-Jalankan server pengembangan Laravel:
-```bash
-php artisan serve --host=0.0.0.0 --port=8000
-```
-Akses dashboard melalui browser: `http://localhost:8000`
+1. **Clone repository & enter project directory:**
+   ```bash
+   git clone https://github.com/khayyis/ejo-engineer.git
+   cd ejo-engineer/laravel
+   ```
+
+2. **Install PHP dependencies:**
+   ```bash
+   composer install --no-dev --optimize-autoloader
+   ```
+
+3. **Configure environment:**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+
+4. **Initialize database schema:**
+   ```bash
+   touch database/database.sqlite
+   php artisan migrate --force
+   ```
+
+5. **Start development server:**
+   ```bash
+   php artisan serve --host=0.0.0.0 --port=8000
+   ```
 
 ---
 
-## 🛡️ Aturan Pengembangan (Development Rules)
+## Engineering Guidelines
 
-1. **Multi-Directory Mirroring:** Perubahan pada frontend JS/CSS wajib disinkronkan secara konsisten di 3 target:
-   - Root: `/app.js`, `/style.css`, `/index.html`
-   - Laravel Public: `/laravel/public/app.js`, `/laravel/public/style.css`, `/laravel/public/index.html`
-   - Laravel Resources: `/laravel/resources/js/app.js`, `/laravel/resources/views/welcome.blade.php`
-2. **Cache Busting:** Selalu lakukan *version bump* pada query string asset (`app.js?v=XX.0` dan `style.css?v=XX.0`).
-3. **Syntax Integrity:** Jalankan validasi sintaks sebelum commit:
-   ```bash
-   node --check app.js
-   ```
+### Asset Mirroring & Cache Protocol
+Any modification to client-side logic or stylesheets must be synchronized across all three file targets:
+
+```
+Root File               Public Mirror                     Blade Template Mirror
+app.js          ───►    laravel/public/app.js       ───►  laravel/resources/js/app.js
+style.css       ───►    laravel/public/style.css    ───►  (linked in welcome.blade.php)
+index.html      ───►    laravel/public/index.html   ───►  laravel/resources/views/welcome.blade.php
+```
+
+After updating assets, increment the query string cache parameter in HTML/Blade:
+- `app.js?v=XX.0`
+- `style.css?v=XX.0`
+
+### Static Syntax Check
+Verify JavaScript files before committing:
+```bash
+node --check app.js
+node --check laravel/public/app.js
+node --check laravel/resources/js/app.js
+```
