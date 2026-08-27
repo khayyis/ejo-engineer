@@ -2140,17 +2140,17 @@ function checkAuth() {
         }
         applySidebarRoleRestrictions();
         initData();
-        // ponytail: start polling notifikasi live tiap 10 detik
+        // ponytail: start polling notifikasi live tiap 20 detik (optimasi background load)
         fetchNotifications();
         if (window._notifPoll) clearInterval(window._notifPoll);
-        window._notifPoll = setInterval(fetchNotifications, 10000);
-        // ponytail: start polling background data refresh every 4 seconds
+        window._notifPoll = setInterval(fetchNotifications, 20000);
+        // ponytail: start polling background data refresh every 10 seconds
         if (window._dataPoll) clearInterval(window._dataPoll);
-        window._dataPoll = setInterval(refreshDataBackground, 4000);
-        // ponytail: start heartbeat polling to enforce single-device login (fast 2s poll for instant responsiveness)
+        window._dataPoll = setInterval(refreshDataBackground, 10000);
+        // ponytail: start heartbeat polling to enforce single-device login (setiap 10 detik)
         sendHeartbeat();
         if (window._heartbeatPoll) clearInterval(window._heartbeatPoll);
-        window._heartbeatPoll = setInterval(sendHeartbeat, 2000);
+        window._heartbeatPoll = setInterval(sendHeartbeat, 10000);
     } else {
         if (window._notifPoll) {
             clearInterval(window._notifPoll);
