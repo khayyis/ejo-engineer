@@ -7029,9 +7029,46 @@ window.fetchDailyActivityLogs = async function() {
     renderOverviewActivityLog();
 };
 
+window.openDailyActivityTableModal = function() {
+    const modal = document.getElementById("modal-daily-activity-table");
+    if (!modal) return;
+
+    const modalDateInput = document.getElementById("modal-eng-activity-date-input");
+    const mainDate = document.getElementById("eng-activity-date-input");
+    if (modalDateInput && mainDate) {
+        modalDateInput.value = mainDate.value || state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10);
+    }
+
+    const modalAddBtn = document.getElementById("modal-btn-add-activity");
+    if (modalAddBtn) {
+        modalAddBtn.style.display = canManageDailyActivity() ? "inline-flex" : "none";
+    }
+
+    modal.style.removeProperty("display");
+    modal.classList.add("active");
+    renderOverviewActivityLog();
+    lucide.createIcons();
+};
+
+window.closeDailyActivityTableModal = function() {
+    const modal = document.getElementById("modal-daily-activity-table");
+    if (modal) {
+        modal.classList.remove("active");
+        modal.style.display = "none";
+    }
+};
+
+window.syncModalActivityDate = async function(newDate) {
+    state.selectedDailyActivityDate = newDate;
+    const mainDateInput = document.getElementById("eng-activity-date-input");
+    if (mainDateInput) mainDateInput.value = newDate;
+    await fetchDailyActivityLogs();
+};
+
 window.deleteDailyActivityLog = async function(id, event) {
     if (event) event.stopPropagation();
-    if (!confirm("Hapus entri log aktivitas ini?")) return;
+    const isConfirmed = await showCustomConfirm("Apakah Anda yakin ingin menghapus entri log aktivitas ini?", "Hapus Log Aktivitas");
+    if (!isConfirmed) return;
 
     try {
         const res = await fetch(`/api/daily-activity-logs/${id}`, { method: 'DELETE' });
@@ -7046,10 +7083,11 @@ window.deleteDailyActivityLog = async function(id, event) {
 
 // ponytail: extract, sort, and render live engineer activity stream in WhatsApp/Daily Recap style
 function renderOverviewActivityLog() {
-    const container = document.getElementById("overview-eng-activity-list");
+    const container = document.getElementById("modal-overview-eng-activity-list") || document.getElementById("overview-eng-activity-list");
     const panel = document.getElementById("overview-eng-activity-panel");
     const totalBadge = document.getElementById("eng-activity-total-badge");
     const addBtn = document.getElementById("btn-add-daily-activity");
+    const modalAddBtn = document.getElementById("modal-btn-add-activity");
     const mainDateInput = document.getElementById("eng-activity-date-input");
     
     const isEng = isCurrentUserEngDept();
@@ -7057,8 +7095,12 @@ function renderOverviewActivityLog() {
         panel.style.display = isEng ? "" : "none";
     }
 
+    const canManage = canManageDailyActivity();
     if (addBtn) {
-        addBtn.style.display = canManageDailyActivity() ? "inline-flex" : "none";
+        addBtn.style.display = canManage ? "inline-flex" : "none";
+    }
+    if (modalAddBtn) {
+        modalAddBtn.style.display = canManage ? "inline-flex" : "none";
     }
 
     if (mainDateInput && !mainDateInput.value) {

@@ -725,35 +725,39 @@
                         </div>
                     </div>
 
-                    <!-- Log Aktivitas Engineer (Di Bawah EJO URGENT) -->
+                    <!-- Log Aktivitas Engineer (Card Minimalis / Trigger Button Popup Tengah) -->
                     <div class="overview-activity-standalone-row" id="overview-eng-activity-panel" style="margin-top: 1.5rem; width: 100%;">
-                        <div class="list-card card-glass eng-activity-card">
-                            <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border);">
+                        <div class="list-card card-glass eng-activity-card" style="padding: 1rem 1.25rem;">
+                            <div class="card-header" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
                                 <div class="card-header-left" style="gap: 10px;">
                                     <div class="card-icon-wrap card-icon-cyan" style="width: 34px; height: 34px; border-radius: 8px;">
-                                        <i data-lucide="activity" style="width: 18px; height: 18px;"></i>
+                                        <i data-lucide="clipboard-list" style="width: 18px; height: 18px;"></i>
                                     </div>
                                     <div>
-                                        <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                        <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); margin: 0;">
                                             Log Aktivitas Engineer
                                         </h3>
-                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap laporan tugas &amp; aktivitas teknisi per tanggal</p>
+                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap laporan tugas &amp; status personil harian</p>
                                     </div>
                                 </div>
                                 <div class="card-actions" style="display: flex; align-items: center; gap: 8px;">
                                     <!-- Date Selector for Daily Activity Log -->
                                     <div class="eng-log-date-filter-wrap" style="display: inline-flex; align-items: center; gap: 6px;">
-                                        <input type="date" id="eng-activity-date-input" class="chart-time-filter" style="padding: 3px 8px; font-size: 0.78rem; border-radius: 6px; cursor: pointer;" onchange="fetchDailyActivityLogs()">
+                                        <input type="date" id="eng-activity-date-input" class="chart-time-filter" style="padding: 4px 8px; font-size: 0.78rem; border-radius: 6px; cursor: pointer;" onchange="fetchDailyActivityLogs()">
                                     </div>
                                     <!-- Manual Add Button (Restricted to Admin & Foreman Eng) -->
-                                    <button class="btn btn-primary btn-xs" id="btn-add-daily-activity" style="display: none; padding: 4px 10px; font-size: 0.75rem; border-radius: 6px; gap: 4px;" onclick="openAddDailyActivityModal()">
+                                    <button class="btn btn-primary btn-xs" id="btn-add-daily-activity" style="display: none; padding: 5px 10px; font-size: 0.75rem; border-radius: 6px; gap: 4px;" onclick="openAddDailyActivityModal()">
                                         <i data-lucide="plus" style="width: 12px; height: 12px;"></i> Tambah Log
                                     </button>
-                                    <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Log</span>
+                                    <!-- Button to Open Modal Popup in Center -->
+                                    <button class="btn btn-outline btn-xs" style="padding: 5px 12px; font-size: 0.78rem; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; color: var(--color-cyan); border-color: rgba(6,182,212,0.4);" onclick="openDailyActivityTableModal()">
+                                        <i data-lucide="external-link" style="width: 12px; height: 12px;"></i> Buka Rekap Tabel
+                                    </button>
+                                    <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Entri</span>
                                 </div>
                             </div>
-                            <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list">
-                                <!-- Dynamic chat-like feed of engineer activities -->
+                            <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list" style="display: none;">
+                                <!-- Hidden in main card; rendered in modal popup instead -->
                             </div>
                         </div>
                     </div>
@@ -5305,6 +5309,35 @@
 
 
 
+    <!-- MODAL: DAILY ENGINEER ACTIVITY LOG DETAILS & TABLE (POPUP TENGAH) -->
+    <div class="modal-backdrop" id="modal-daily-activity-table" style="display: none;">
+        <div class="modal-card card-glass" style="max-width: 1100px; width: 95vw; max-height: 88vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="padding: 1.15rem 1.5rem; border-bottom: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center;">
+                <div class="modal-title-group" style="display: flex; align-items: center; gap: 10px;">
+                    <div class="card-icon-wrap card-icon-cyan" style="width: 36px; height: 36px; border-radius: 8px;">
+                        <i data-lucide="clipboard-list" style="width: 20px; height: 20px;"></i>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin: 0;">Log Aktivitas Engineer</h3>
+                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0;">Rekap laporan tugas & status personil per tanggal</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <!-- Date selector inside modal -->
+                    <input type="date" id="modal-eng-activity-date-input" class="chart-time-filter" style="padding: 4px 10px; font-size: 0.82rem; border-radius: 6px; cursor: pointer;" onchange="syncModalActivityDate(this.value)">
+                    <!-- Add button inside modal -->
+                    <button class="btn btn-primary btn-xs" id="modal-btn-add-activity" style="display: none; padding: 5px 12px; font-size: 0.78rem; border-radius: 6px; gap: 5px;" onclick="openAddDailyActivityModal()">
+                        <i data-lucide="plus" style="width: 13px; height: 13px;"></i> Tambah Log
+                    </button>
+                    <button type="button" class="modal-close" onclick="closeDailyActivityTableModal()"><i data-lucide="x"></i></button>
+                </div>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem; overflow-y: auto; flex: 1; min-height: 0;" id="modal-overview-eng-activity-list">
+                <!-- Dual WhatsApp-style table rendered dynamically -->
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL: ADD DAILY ACTIVITY LOG (MANUAL INPUT BY ADMIN & FOREMAN ENG) -->
     <div class="modal-backdrop" id="modal-daily-activity" style="display: none;">
         <div class="modal-card card-glass" style="max-width: 550px;">
@@ -5359,7 +5392,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=37.0"></script>
+    <script src="app.js?v=38.0"></script>
 </body>
 
 </html>
