@@ -6799,6 +6799,7 @@ function toggleCriticalListExpand(count) {
 window.toggleCriticalListExpand = toggleCriticalListExpand;
 
 function renderCriticalList() {
+    const cardContainer = document.getElementById("overview-urgent-card-container");
     const container = document.getElementById("critical-ejo-list");
     const pulseDot = document.getElementById("urgent-pulse-dot");
     const countBadge = document.getElementById("urgent-count-badge");
@@ -6811,24 +6812,18 @@ function renderCriticalList() {
     const hiddenCount = extraCriticalEjos.length;
     const isExpanded = !!(state.expandedKanbanColumns && state.expandedKanbanColumns['critical_overview']);
 
-    // ponytail: update header indicators
-    if (pulseDot) pulseDot.classList.toggle('hidden', criticalEjos.length === 0);
-    if (countBadge) {
-        countBadge.textContent = criticalEjos.length;
-        countBadge.style.display = criticalEjos.length > 0 ? '' : 'none';
+    if (criticalEjos.length === 0) {
+        if (cardContainer) cardContainer.style.display = 'none';
+        return;
     }
 
-    if (criticalEjos.length === 0) {
-        container.innerHTML = `
-            <div class="urgent-empty-state">
-                <div class="urgent-empty-icon">
-                    <i data-lucide="shield-check"></i>
-                </div>
-                <span class="urgent-empty-text">Aman! Tidak ada EJO urgent.</span>
-            </div>
-        `;
-        lucide.createIcons();
-        return;
+    if (cardContainer) cardContainer.style.display = 'block';
+
+    // update header indicators
+    if (pulseDot) pulseDot.classList.toggle('hidden', false);
+    if (countBadge) {
+        countBadge.textContent = criticalEjos.length;
+        countBadge.style.display = '';
     }
 
     const renderItemHtml = (e) => `

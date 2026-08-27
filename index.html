@@ -703,8 +703,8 @@
                         </div>
                     </div>
 
-                    <!-- EJO URGENT! Standalone Full-Width Card -->
-                    <div class="list-card card-glass urgent-card" style="margin-top: 1.5rem; width: 100%;">
+                    <!-- EJO URGENT! Standalone Full-Width Card (Auto Hidden if Empty) -->
+                    <div class="list-card card-glass urgent-card" id="overview-urgent-card-container" style="display: none; margin-top: 1.5rem; width: 100%;">
                         <div class="card-header">
                             <div class="urgent-header-left">
                                 <div class="urgent-icon-wrap">
@@ -5404,7 +5404,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=65.0"></script>
+    <script src="app.js?v=66.0"></script>
 </body>
 
 </html>
