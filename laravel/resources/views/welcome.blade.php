@@ -433,233 +433,65 @@
                         </div>
                     </div>
 
-                    <!-- Overview Main Area Split (Left: Charts & KPI Cards, Right: Vertical Activity Log for ENG Dept) -->
+                    <!-- Row 1: Tren EJO Chart & Log Aktivitas Engineer (Sejajar Sempurna) -->
                     <div class="overview-split-layout" id="overview-split-layout">
-                        <div class="overview-main-col">
-                            <!-- Chart Area 1: Status & Trend (Moved above dashboard-summary-grid) -->
-                            <div class="chart-card card-glass" id="card-trend-chart" style="margin-bottom: 1.5rem;">
-                                <div class="card-header">
-                                    <div class="card-header-left">
-                                        <div class="card-icon-wrap card-icon-cyan">
-                                            <i data-lucide="bar-chart-3"></i>
-                                        </div>
-                                        <div>
-                                            <h3>Tren EJO <span id="tv-val-period" class="tv-period-inline">- Tahun Ini (Semua Kategori)</span></h3>
-                                        </div>
+                        <!-- Chart Area 1: Status & Trend -->
+                        <div class="chart-card card-glass" id="card-trend-chart">
+                            <div class="card-header">
+                                <div class="card-header-left">
+                                    <div class="card-icon-wrap card-icon-cyan">
+                                        <i data-lucide="bar-chart-3"></i>
                                     </div>
-                                    <div class="card-actions">
-                                        <!-- ponytail: Filter Kategori Kerja & Drawing trend chart -->
-                                        <select id="trend-category-filter" class="chart-time-filter" title="Filter Kategori">
-                                            <option value="all">Semua Kategori</option>
-                                            <option value="Sipil">Sipil</option>
-                                            <option value="Elektrik">Elektrik</option>
-                                            <option value="Kalibrasi">Kalibrasi</option>
-                                            <option value="Mekanik">Mekanik</option>
-                                            <option value="Program">Program</option>
-                                            <option value="Repair Part">Repair Part</option>
-                                            <option value="Drawing">Drawing</option>
-                                        </select>
-                                        <!-- ponytail: Filter rentang waktu trend chart -->
-                                        <select id="trend-time-filter" class="chart-time-filter">
-                                            <option value="week">Minggu Ini</option>
-                                            <option value="month" selected>Bulan Ini</option>
-                                            <option value="year">Tahun Ini</option>
-                                        </select>
-                                        <span class="badge badge-accent badge-live">Live Chart</span>
+                                    <div>
+                                        <h3>Tren EJO <span id="tv-val-period" class="tv-period-inline">- Tahun Ini (Semua Kategori)</span></h3>
                                     </div>
                                 </div>
-                                <!-- ponytail: TradingView-style interactive real-time data tracker -->
-                                <div class="trend-tv-tracker" id="trend-tv-tracker">
-                                    <div class="tv-item tv-masuk">
-                                        <span class="tv-dot tv-dot-red"></span>
-                                        <span>Masuk:</span>
-                                        <strong id="tv-val-masuk">--</strong>
-                                    </div>
-                                    <div class="tv-item tv-selesai">
-                                        <span class="tv-dot tv-dot-green"></span>
-                                        <span>Selesai:</span>
-                                        <strong id="tv-val-selesai">--</strong>
-                                    </div>
-                                    <div class="tv-item tv-batal">
-                                        <span class="tv-dot tv-dot-darkgreen"></span>
-                                        <span>Dibatalkan:</span>
-                                        <strong id="tv-val-batal">--</strong>
-                                    </div>
-                                    <div class="tv-item tv-os">
-                                        <span class="tv-dot tv-dot-orange"></span>
-                                        <span>OS:</span>
-                                        <strong id="tv-val-os">--</strong>
-                                    </div>
-                                </div>
-                                <div class="card-body chart-container">
-                                    <canvas id="trendChart"></canvas>
+                                <div class="card-actions">
+                                    <!-- ponytail: Filter Kategori Kerja & Drawing trend chart -->
+                                    <select id="trend-category-filter" class="chart-time-filter" title="Filter Kategori">
+                                        <option value="all">Semua Kategori</option>
+                                        <option value="Sipil">Sipil</option>
+                                        <option value="Elektrik">Elektrik</option>
+                                        <option value="Kalibrasi">Kalibrasi</option>
+                                        <option value="Mekanik">Mekanik</option>
+                                        <option value="Program">Program</option>
+                                        <option value="Repair Part">Repair Part</option>
+                                        <option value="Drawing">Drawing</option>
+                                    </select>
+                                    <!-- ponytail: Filter rentang waktu trend chart -->
+                                    <select id="trend-time-filter" class="chart-time-filter">
+                                        <option value="week">Minggu Ini</option>
+                                        <option value="month" selected>Bulan Ini</option>
+                                        <option value="year">Tahun Ini</option>
+                                    </select>
+                                    <span class="badge badge-accent badge-live">Live Chart</span>
                                 </div>
                             </div>
-
-                            <!-- Second row of KPI scorecards (General EJO & Drawing summaries) -->
-                            <div class="dashboard-summary-grid">
-                                <!-- General EJO Summary Card -->
-                                <div class="kpi-card card-glass glow-cyan dashboard-summary-card" id="overview-card-gejo"
-                                    onclick="switchTab('general-ejo')">
-                                    <div class="summary-card-header">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
-                                            <div class="kpi-icon icon-cyan">
-                                                <i data-lucide="layers"></i>
-                                            </div>
-                                            <div>
-                                                <h4
-                                                    style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
-                                                    GENERAL EJO</h4>
-                                            </div>
-                                        </div>
-                                        <span class="kpi-trend text-cyan" id="overview-gejo-limit">
-                                            <i data-lucide="shield-alert"></i> Limit: -
-                                        </span>
-                                    </div>
-                                    <div class="summary-card-body">
-                                        <div
-                                            style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
-                                            <!-- Left Column: Total EJO -->
-                                            <div
-                                                style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                                                <span class="total-label"
-                                                    style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
-                                                    EJO</span>
-                                                <span id="overview-gejo-active" class="kpi-value"
-                                                    style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
-                                            </div>
-                                            <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
-                                            <div id="overview-gejo-kpi-container"
-                                                style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-                                                <!-- KPI Target -->
-                                                <div
-                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                                    <span class="total-label"
-                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                        KPI Target
-                                                        <button class="btn" id="overview-gejo-kpi-edit-btn"
-                                                            style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                            onclick="event.stopPropagation(); openKpiEditModal('gejo', 'target');">
-                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                        </button>
-                                                    </span>
-                                                    <span id="overview-gejo-kpi-val" class="kpi-value"
-                                                        style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
-                                                </div>
-                                                <!-- KPI Terealisasi -->
-                                                <div
-                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                                    <span class="total-label"
-                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                        KPI Terealisasi
-                                                        <button class="btn" id="overview-gejo-kpi-realisasi-edit-btn"
-                                                            style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                            onclick="event.stopPropagation(); openKpiEditModal('gejo', 'realisasi');">
-                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                        </button>
-                                                    </span>
-                                                    <span id="overview-gejo-kpi-realisasi-val" class="kpi-value"
-                                                        style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="summary-card-footer" id="overview-gejo-breakdown">
-                                        <!-- populated dynamically -->
-                                    </div>
+                            <!-- ponytail: TradingView-style interactive real-time data tracker -->
+                            <div class="trend-tv-tracker" id="trend-tv-tracker">
+                                <div class="tv-item tv-masuk">
+                                    <span class="tv-dot tv-dot-red"></span>
+                                    <span>Masuk:</span>
+                                    <strong id="tv-val-masuk">--</strong>
                                 </div>
-
-                                <!-- Drawing Summary Card -->
-                                <div class="kpi-card card-glass glow-blue dashboard-summary-card" id="overview-card-drawing"
-                                    onclick="switchTab('drawing')">
-                                    <div class="summary-card-header">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
-                                            <div class="kpi-icon icon-blue">
-                                                <i data-lucide="image"></i>
-                                            </div>
-                                            <div>
-                                                <h4
-                                                    style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
-                                                    DRAWING EJO</h4>
-                                            </div>
-                                        </div>
-                                        <span class="kpi-trend text-blue" id="overview-drawing-limit">
-                                            <i data-lucide="shield-alert"></i> Limit: -
-                                        </span>
-                                    </div>
-                                    <div class="summary-card-body">
-                                        <div
-                                            style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
-                                            <!-- Left Column: Total Drawing -->
-                                            <div
-                                                style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                                                <span class="total-label"
-                                                    style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
-                                                    Drawing</span>
-                                                <span id="overview-drawing-active" class="kpi-value"
-                                                    style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
-                                            </div>
-                                            <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
-                                            <div id="overview-drawing-kpi-container"
-                                                style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-                                                <!-- KPI Target -->
-                                                <div
-                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                                    <span class="total-label"
-                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                        KPI Target
-                                                        <button class="btn" id="overview-drawing-kpi-edit-btn"
-                                                            style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                            onclick="event.stopPropagation(); openKpiEditModal('drawing', 'target');">
-                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                        </button>
-                                                    </span>
-                                                    <span id="overview-drawing-kpi-val" class="kpi-value"
-                                                        style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
-                                                </div>
-                                                <!-- KPI Terealisasi -->
-                                                <div
-                                                    style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                                    <span class="total-label"
-                                                        style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
-                                                        KPI Terealisasi
-                                                        <button class="btn" id="overview-drawing-kpi-realisasi-edit-btn"
-                                                            style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
-                                                            onclick="event.stopPropagation(); openKpiEditModal('drawing', 'realisasi');">
-                                                            <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
-                                                        </button>
-                                                    </span>
-                                                    <span id="overview-drawing-kpi-realisasi-val" class="kpi-value"
-                                                        style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="summary-card-footer" id="overview-drawing-breakdown">
-                                        <!-- populated dynamically -->
-                                    </div>
+                                <div class="tv-item tv-selesai">
+                                    <span class="tv-dot tv-dot-green"></span>
+                                    <span>Selesai:</span>
+                                    <strong id="tv-val-selesai">--</strong>
+                                </div>
+                                <div class="tv-item tv-batal">
+                                    <span class="tv-dot tv-dot-darkgreen"></span>
+                                    <span>Dibatalkan:</span>
+                                    <strong id="tv-val-batal">--</strong>
+                                </div>
+                                <div class="tv-item tv-os">
+                                    <span class="tv-dot tv-dot-orange"></span>
+                                    <span>OS:</span>
+                                    <strong id="tv-val-os">--</strong>
                                 </div>
                             </div>
-
-                            <!-- Layout: Analytics & Alerts Grid (Status Proportion) -->
-                            <div class="analytics-layout-grid" id="overview-charts-grid" style="grid-template-columns: 1fr; margin-bottom: 0;">
-                                <!-- Chart Area 2: Status Distribution -->
-                                <div class="chart-card card-glass" id="card-status-prop">
-                                    <div class="card-header">
-                                        <div class="card-header-left">
-                                            <div class="card-icon-wrap card-icon-purple">
-                                                <i data-lucide="pie-chart"></i>
-                                            </div>
-                                            <div>
-                                                <h3>Proporsi Status EJO</h3>
-                                                <p class="text-secondary text-xs">Distribusi penanganan order saat ini.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="card-body chart-container doughnut-wrap">
-                                        <canvas id="statusChart"></canvas>
-                                    </div>
-                                </div>
+                            <div class="card-body chart-container">
+                                <canvas id="trendChart"></canvas>
                             </div>
                         </div>
 
@@ -686,6 +518,172 @@
                                 <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list">
                                     <!-- Dynamic chat-like feed of engineer activities -->
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: General EJO & Drawing summaries (Full Width) -->
+                    <div class="dashboard-summary-grid">
+                        <!-- General EJO Summary Card -->
+                        <div class="kpi-card card-glass glow-cyan dashboard-summary-card" id="overview-card-gejo"
+                            onclick="switchTab('general-ejo')">
+                            <div class="summary-card-header">
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div class="kpi-icon icon-cyan">
+                                        <i data-lucide="layers"></i>
+                                    </div>
+                                    <div>
+                                        <h4
+                                            style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
+                                            GENERAL EJO</h4>
+                                    </div>
+                                </div>
+                                <span class="kpi-trend text-cyan" id="overview-gejo-limit">
+                                    <i data-lucide="shield-alert"></i> Limit: -
+                                </span>
+                            </div>
+                            <div class="summary-card-body">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                    <!-- Left Column: Total EJO -->
+                                    <div
+                                        style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                        <span class="total-label"
+                                            style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
+                                            EJO</span>
+                                        <span id="overview-gejo-active" class="kpi-value"
+                                            style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
+                                    </div>
+                                    <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
+                                    <div id="overview-gejo-kpi-container"
+                                        style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                        <!-- KPI Target -->
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                KPI Target
+                                                <button class="btn" id="overview-gejo-kpi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('gejo', 'target');">
+                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                </button>
+                                            </span>
+                                            <span id="overview-gejo-kpi-val" class="kpi-value"
+                                                style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                        </div>
+                                        <!-- KPI Terealisasi -->
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                KPI Terealisasi
+                                                <button class="btn" id="overview-gejo-kpi-realisasi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-cyan); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('gejo', 'realisasi');">
+                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                </button>
+                                            </span>
+                                            <span id="overview-gejo-kpi-realisasi-val" class="kpi-value"
+                                                style="color: var(--color-cyan); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="summary-card-footer" id="overview-gejo-breakdown">
+                                <!-- populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Drawing Summary Card -->
+                        <div class="kpi-card card-glass glow-blue dashboard-summary-card" id="overview-card-drawing"
+                            onclick="switchTab('drawing')">
+                            <div class="summary-card-header">
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div class="kpi-icon icon-blue">
+                                        <i data-lucide="image"></i>
+                                    </div>
+                                    <div>
+                                        <h4
+                                            style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">
+                                            DRAWING EJO</h4>
+                                    </div>
+                                </div>
+                                <span class="kpi-trend text-blue" id="overview-drawing-limit">
+                                    <i data-lucide="shield-alert"></i> Limit: -
+                                </span>
+                            </div>
+                            <div class="summary-card-body">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
+                                    <!-- Left Column: Total Drawing -->
+                                    <div
+                                        style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
+                                        <span class="total-label"
+                                            style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">Total
+                                            Drawing</span>
+                                        <span id="overview-drawing-active" class="kpi-value"
+                                            style="margin: 0; line-height: 1; font-size: 2rem; font-weight: 850; color: var(--text-primary);">--</span>
+                                    </div>
+                                    <!-- Right Column: KPI Target & Terealisasi (Stacked) -->
+                                    <div id="overview-drawing-kpi-container"
+                                        style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                                        <!-- KPI Target -->
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                KPI Target
+                                                <button class="btn" id="overview-drawing-kpi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('drawing', 'target');">
+                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                </button>
+                                            </span>
+                                            <span id="overview-drawing-kpi-val" class="kpi-value"
+                                                style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                        </div>
+                                        <!-- KPI Terealisasi -->
+                                        <div
+                                            style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                            <span class="total-label"
+                                                style="display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.75px; color: var(--text-secondary);">
+                                                KPI Terealisasi
+                                                <button class="btn" id="overview-drawing-kpi-realisasi-edit-btn"
+                                                    style="display: none; background: none; border: none; color: var(--color-blue); cursor: pointer; padding: 0; display: inline-flex; align-items: center;"
+                                                    onclick="event.stopPropagation(); openKpiEditModal('drawing', 'realisasi');">
+                                                    <i data-lucide="edit-2" style="width: 10px; height: 10px;"></i>
+                                                </button>
+                                            </span>
+                                            <span id="overview-drawing-kpi-realisasi-val" class="kpi-value"
+                                                style="color: var(--color-blue); margin: 0; line-height: 1; font-size: 1.4rem; font-weight: 850;">0%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="summary-card-footer" id="overview-drawing-breakdown">
+                                <!-- populated dynamically -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 3: Status Proportion Chart (Full Width) -->
+                    <div class="analytics-layout-grid" id="overview-charts-grid" style="grid-template-columns: 1fr;">
+                        <!-- Chart Area 2: Status Distribution -->
+                        <div class="chart-card card-glass" id="card-status-prop">
+                            <div class="card-header">
+                                <div class="card-header-left">
+                                    <div class="card-icon-wrap card-icon-purple">
+                                        <i data-lucide="pie-chart"></i>
+                                    </div>
+                                    <div>
+                                        <h3>Proporsi Status EJO</h3>
+                                        <p class="text-secondary text-xs">Distribusi penanganan order saat ini.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body chart-container doughnut-wrap">
+                                <canvas id="statusChart"></canvas>
                             </div>
                         </div>
                     </div>

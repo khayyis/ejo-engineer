@@ -17,6 +17,14 @@ scratch/
 _pm/
 .worktrees/
 .superpowers/
+.agents/
+docs/superpowers/
+
+# Tunnel configs & scripts
+*tunnel*
+tunnel-config.yml
+start-tunnel.bat
+setup-cf-tunnel.sh
 
 # Media recordings & screen captures
 *.mp4

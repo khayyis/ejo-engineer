@@ -11628,9 +11628,11 @@ async function saveModalChanges() {
     }
 
     if (oldStatus !== nextStatus) {
+        const uRoleStr = state.currentUser ? (state.currentUser.role || '') : '';
+        const roleSuffix = uRoleStr ? ` (${uRoleStr})` : '';
         updatedFields.logs.push({
             date: timestamp,
-            message: `Status dirubah dari ${oldStatus} menjadi ${nextStatus} oleh ${state.currentUser ? state.currentUser.fullname : 'User'}.${rejectionReason ? ' Alasan Penolakan: ' + rejectionReason : ''}`
+            message: `Status dirubah dari ${oldStatus} menjadi ${nextStatus} oleh ${state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : 'User'}${roleSuffix}.${rejectionReason ? ' Alasan Penolakan: ' + rejectionReason : ''}`
         });
         // ponytail: notifikasi status sekarang di-generate server-side (update_ejo)
     }
@@ -19490,6 +19492,12 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
         finalEstDate = "";
     }
 
+    const currentLogs = parseLogs(ejo.logs || ejo);
+    currentLogs.push({
+        date: timestamp,
+        message: logMessage
+    });
+
     const updatedFields = {
         status: finalStatus,
         engineer: finalEngineer,
@@ -19498,10 +19506,7 @@ async function moveGeneralEjoStatus(ejoId, nextStatus) {
         approvals: approvalsObj,
         targetDate: finalTargetDate,
         estDate: finalEstDate,
-        logs: [{
-            date: timestamp,
-            message: logMessage
-        }]
+        logs: JSON.stringify(currentLogs)
     };
     if (finalStatus.startsWith('In Progress') && !oldStatus.startsWith('In Progress')) {
         updatedFields.qty_needed_actual = 0;
@@ -25578,13 +25583,29 @@ window.confirmEjoQtyWork = async function (ejoId, event) {
     const confirmed = confirm(`Konfirmasi pekerjaan untuk EJO ${targetId}?\n\nSetelah dikonfirmasi, Anda dapat menginput quantity Mesin dan Stok pada repair part ini.`);
     if (!confirmed) return;
 
+    const now = new Date();
+    const timestamp = now.getFullYear() + "-" +
+        String(now.getMonth() + 1).padStart(2, '0') + "-" +
+        String(now.getDate()).padStart(2, '0') + " " +
+        String(now.getHours()).padStart(2, '0') + ":" +
+        String(now.getMinutes()).padStart(2, '0');
+
+    const logs = parseLogs(ejo.logs || ejo);
+    const userRoleStr = state.currentUser ? (state.currentUser.role || 'Repair Part') : 'Repair Part';
+    const userFullNameStr = state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : 'Engineer';
+    logs.push({
+        date: timestamp,
+        message: `Pekerjaan Repair Part dikonfirmasi oleh ${userFullNameStr} (${userRoleStr}). Input alokasi quantity aktif.`
+    });
+
     const payload = {
         qty_work_confirmed: 1,
         qty_work_confirmed_date: new Date().toISOString().slice(0, 10),
         status: ejo.status,
         engineer: ejo.engineer || 'Unassigned',
         estCost: ejo.estCost || 0,
-        actCost: ejo.actCost || 0
+        actCost: ejo.actCost || 0,
+        logs: JSON.stringify(logs)
     };
 
     try {
@@ -25601,9 +25622,11 @@ window.confirmEjoQtyWork = async function (ejoId, event) {
 
         ejo.qty_work_confirmed = 1;
         ejo.qty_work_confirmed_date = payload.qty_work_confirmed_date;
+        ejo.logs = logs;
 
         renderGeneralEJO();
         if (typeof renderPartlistTab === 'function') renderPartlistTab();
+        if (typeof renderOverviewActivityLog === 'function') renderOverviewActivityLog();
 
         showToast(`✅ Pekerjaan EJO ${targetId} telah dikonfirmasi. Qty input aktif.`, "success");
     } catch (err) {
@@ -25789,6 +25812,21 @@ window.adjustEjoQtyAllocation = async function (ejoId, targetType, delta, event)
 
     const usageType = ejo.usage_type || ejo.purpose || 'Kebutuhan Mesin';
 
+    const now = new Date();
+    const timestamp = now.getFullYear() + "-" +
+        String(now.getMonth() + 1).padStart(2, '0') + "-" +
+        String(now.getDate()).padStart(2, '0') + " " +
+        String(now.getHours()).padStart(2, '0') + ":" +
+        String(now.getMinutes()).padStart(2, '0');
+
+    const logs = parseLogs(ejo.logs || ejo);
+    const userRoleStr = state.currentUser ? (state.currentUser.role || 'Repair Part') : 'Repair Part';
+    const userFullNameStr = state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : 'Engineer';
+    logs.push({
+        date: timestamp,
+        message: `Update alokasi Qty (${targetType === 'needed' ? 'Mesin' : 'Stok'} ${delta > 0 ? '+' : ''}${delta}) oleh ${userFullNameStr} (${userRoleStr}). Alokasi saat ini: Mesin ${qtyNeeded}/${qtyNeededTarget} Pcs, Stok ${qtyStock}/${qtyStockTarget} Pcs.`
+    });
+
     const payload = {
         quantity: quantity,
         qty_needed: qtyNeeded,
@@ -25801,7 +25839,8 @@ window.adjustEjoQtyAllocation = async function (ejoId, targetType, delta, event)
         status: ejo.status,
         engineer: ejo.engineer || 'Unassigned',
         estCost: ejo.estCost || 0,
-        actCost: ejo.actCost || 0
+        actCost: ejo.actCost || 0,
+        logs: JSON.stringify(logs)
     };
 
     try {
@@ -25824,9 +25863,11 @@ window.adjustEjoQtyAllocation = async function (ejoId, targetType, delta, event)
         ejo.qty_stock_target = qtyStockTarget;
         ejo.usage_type = usageType;
         ejo.purpose = usageType;
+        ejo.logs = logs;
 
         renderGeneralEJO();
         if (typeof renderPartlistTab === 'function') renderPartlistTab();
+        if (typeof renderOverviewActivityLog === 'function') renderOverviewActivityLog();
 
         showToast(`Alokasi Qty EJO ${targetId} diperbarui: Mesin ${qtyNeeded}/${qtyNeededTarget} Pcs, Stok ${qtyStock}/${qtyStockTarget} Pcs`, "success");
     } catch (err) {
