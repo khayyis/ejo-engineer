@@ -1302,4 +1302,41 @@ class EjoController extends Controller
 
         return response()->json(['status' => 'success', 'module' => $module, 'message' => $msg]);
     }
+
+    public function getDailyActivityLogs(Request $request): JsonResponse
+    {
+        $date = $request->query('date', date('Y-m-d'));
+        $logs = \DB::table('daily_activity_logs')
+            ->where('log_date', $date)
+            ->orderBy('id', 'asc')
+            ->get();
+        return response()->json(['status' => 'success', 'date' => $date, 'data' => $logs]);
+    }
+
+    public function createDailyActivityLog(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'log_date' => 'required|string',
+            'group_type' => 'required|string',
+            'engineer_name' => 'required|string',
+            'role' => 'nullable|string',
+            'activity' => 'required|string',
+            'ejo_id' => 'nullable|string',
+            'ejo_title' => 'nullable|string',
+            'created_by' => 'nullable|string'
+        ]);
+
+        $id = \DB::table('daily_activity_logs')->insertGetId(array_merge($data, [
+            'created_at' => now(),
+            'updated_at' => now()
+        ]));
+
+        return response()->json(['status' => 'success', 'id' => $id, 'message' => 'Log aktivitas berhasil ditambahkan!']);
+    }
+
+    public function deleteDailyActivityLog(Request $request, $id): JsonResponse
+    {
+        \DB::table('daily_activity_logs')->where('id', $id)->delete();
+        return response()->json(['status' => 'success', 'message' => 'Log aktivitas berhasil dihapus!']);
+    }
 }

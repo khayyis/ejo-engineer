@@ -741,7 +741,15 @@
                                         <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap interaksi & pembaruan teknisi realtime</p>
                                     </div>
                                 </div>
-                                <div class="card-actions">
+                                <div class="card-actions" style="display: flex; align-items: center; gap: 8px;">
+                                    <!-- Date Selector for Daily Activity Log -->
+                                    <div class="eng-log-date-filter-wrap" style="display: inline-flex; align-items: center; gap: 6px;">
+                                        <input type="date" id="eng-activity-date-input" class="chart-time-filter" style="padding: 3px 8px; font-size: 0.78rem; border-radius: 6px; cursor: pointer;" onchange="fetchDailyActivityLogs()">
+                                    </div>
+                                    <!-- Manual Add Button (Restricted to Admin & Foreman Eng) -->
+                                    <button class="btn btn-primary btn-xs" id="btn-add-daily-activity" style="display: none; padding: 4px 10px; font-size: 0.75rem; border-radius: 6px; gap: 4px;" onclick="openAddDailyActivityModal()">
+                                        <i data-lucide="plus" style="width: 12px; height: 12px;"></i> Tambah Log
+                                    </button>
                                     <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Log</span>
                                 </div>
                             </div>
@@ -5297,6 +5305,52 @@
 
 
 
+
+    <!-- MODAL: ADD DAILY ACTIVITY LOG (MANUAL INPUT BY ADMIN & FOREMAN ENG) -->
+    <div class="modal-overlay" id="modal-daily-activity" style="display: none;">
+        <div class="modal-card card-glass" style="max-width: 550px;">
+            <div class="modal-header">
+                <div class="modal-title-group" style="display: flex; align-items: center; gap: 8px;">
+                    <div class="card-icon-wrap card-icon-cyan" style="width: 32px; height: 32px; border-radius: 8px;">
+                        <i data-lucide="plus-circle" style="width: 18px; height: 18px;"></i>
+                    </div>
+                    <h3 style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary);">Tambah Log Aktivitas Manual</h3>
+                </div>
+                <button type="button" class="modal-close" onclick="closeAddDailyActivityModal()"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem;">
+                <div class="form-group">
+                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Tanggal Aktivitas</label>
+                    <input type="date" id="input-activity-date" class="form-control" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);">
+                </div>
+                <div class="form-group">
+                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Kelompok Tim</label>
+                    <select id="input-activity-group" class="form-control" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);" onchange="handleActivityGroupChange()">
+                        <option value="TIM_EJO">TIM EJO (Mekanik, Elektrik, Sipil, Repair Part, Program, Kalibrasi)</option>
+                        <option value="TIM_DRAFTER">TIM DRAFTER</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Nama Engineer / Personel</label>
+                    <select id="input-activity-engineer" class="form-control" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);">
+                        <!-- Dynamically filled with ENG users -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Uraian Pekerjaan / Aktivitas / Status</label>
+                    <textarea id="input-activity-text" rows="3" class="form-control" placeholder="Contoh: Penggantian bearing dan seal pompa selesai dikerjakan atau CUTI / OFF" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);"></textarea>
+                </div>
+                <div class="form-group">
+                    <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Kode EJO / Judul (Opsional)</label>
+                    <input type="text" id="input-activity-ejotitle" class="form-control" placeholder="Contoh: EJO4q18DyVl - Perbaikan Pompa Air Basah" style="width: 100%; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--text-primary);">
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 1rem 1.25rem; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--card-border);">
+                <button type="button" class="btn btn-outline" onclick="closeAddDailyActivityModal()">Batal</button>
+                <button type="button" class="btn btn-primary glow-button" onclick="submitManualDailyActivity()"><i data-lucide="check" style="width: 14px; height: 14px;"></i> Simpan Log</button>
+            </div>
+        </div>
+    </div>
 
     <!-- TOAST POPUP FOR ALERTS -->
     <div class="toast-container" id="toast-container"></div>

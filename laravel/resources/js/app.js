@@ -2276,6 +2276,18 @@ async function initData() {
             console.warn("Gagal memuat repair-parts:", err);
         }
 
+        // ponytail: load daily activity logs for current selected date
+        try {
+            const targetDate = state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10);
+            const resDaily = await fetch(`/api/daily-activity-logs?date=${encodeURIComponent(targetDate)}`);
+            if (resDaily.ok) {
+                const resDailyJson = await resDaily.json();
+                state.dailyActivityLogs = resDailyJson.data || [];
+            }
+        } catch (err) {
+            console.warn("Gagal memuat daily-activity-logs:", err);
+        }
+
         // ponytail: Fetch dynamic users from SQLite database safely
         let allUsers = [];
         try {
@@ -6924,30 +6936,228 @@ function isCurrentUserEngDept() {
     return normalizedDept === 'ENG' || / eng$/i.test(role) || / eng /i.test(role) || /_eng$/i.test(role) || isEngRole;
 }
 
+// ponytail: manual daily activity log storage & date filter state
+state.dailyActivityLogs = [];
+state.selectedDailyActivityDate = new Date().toISOString().slice(0, 10);
+
+// ponytail: check if user is Admin Eng or Foreman Eng
+function canManageDailyActivity() {
+    if (!state.currentUser) return false;
+    const role = (state.currentUser.role || '').toLowerCase();
+    const isForeman = role.includes('foreman');
+    const isAdmin = role.includes('admin') || role === 'server';
+    const isLead = role.includes('supervisor') || role.includes('manager');
+    return isForeman || isAdmin || isLead;
+}
+
+window.openAddDailyActivityModal = function() {
+    const modal = document.getElementById("modal-daily-activity");
+    if (!modal) return;
+    
+    // Set default date
+    const dateInput = document.getElementById("input-activity-date");
+    if (dateInput) dateInput.value = state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10);
+    
+    // Populate engineer dropdown
+    handleActivityGroupChange();
+    
+    // Clear inputs
+    const textInput = document.getElementById("input-activity-text");
+    if (textInput) textInput.value = "";
+    const ejoTitleInput = document.getElementById("input-activity-ejotitle");
+    if (ejoTitleInput) ejoTitleInput.value = "";
+
+    modal.style.display = "flex";
+    lucide.createIcons();
+};
+
+window.closeAddDailyActivityModal = function() {
+    const modal = document.getElementById("modal-daily-activity");
+    if (modal) modal.style.display = "none";
+};
+
+window.handleActivityGroupChange = function() {
+    const groupSel = document.getElementById("input-activity-group");
+    const engSel = document.getElementById("input-activity-engineer");
+    if (!groupSel || !engSel) return;
+
+    const group = groupSel.value; // 'TIM_EJO' or 'TIM_DRAFTER'
+    const users = state.users || [];
+    
+    let filteredUsers = [];
+    if (group === 'TIM_DRAFTER') {
+        filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && (u.role || '').toLowerCase().includes('drafter'));
+    } else {
+        filteredUsers = users.filter(u => (u.dept === 'ENG' || u.department === 'ENG') && !(u.role || '').toLowerCase().includes('drafter'));
+    }
+
+    if (filteredUsers.length === 0) {
+        filteredUsers = users.filter(u => u.dept === 'ENG' || u.department === 'ENG');
+    }
+
+    engSel.innerHTML = filteredUsers.map(u => `<option value="${u.fullname || u.username}" data-role="${u.role || ''}">${u.fullname || u.username} (${u.role || 'Teknisi'})</option>`).join('');
+};
+
+window.submitManualDailyActivity = async function() {
+    const dateInput = document.getElementById("input-activity-date");
+    const groupSel = document.getElementById("input-activity-group");
+    const engSel = document.getElementById("input-activity-engineer");
+    const textInput = document.getElementById("input-activity-text");
+    const ejoTitleInput = document.getElementById("input-activity-ejotitle");
+
+    const logDate = dateInput ? dateInput.value : '';
+    const groupType = groupSel ? groupSel.value : 'TIM_EJO';
+    const engineerName = engSel ? engSel.value : '';
+    const selectedOption = engSel && engSel.selectedOptions[0];
+    const role = selectedOption ? selectedOption.getAttribute("data-role") : '';
+    const activity = textInput ? textInput.value.trim() : '';
+    const ejoRaw = ejoTitleInput ? ejoTitleInput.value.trim() : '';
+
+    if (!logDate || !engineerName || !activity) {
+        showToast("Mohon lengkapi tanggal, nama engineer, dan uraian aktivitas.", "error");
+        return;
+    }
+
+    let ejoId = "";
+    let ejoTitle = "";
+    if (ejoRaw) {
+        const parts = ejoRaw.split(/-(.+)/);
+        if (parts.length > 1) {
+            ejoId = parts[0].trim();
+            ejoTitle = parts[1].trim();
+        } else {
+            ejoTitle = ejoRaw;
+        }
+    }
+
+    const payload = {
+        log_date: logDate,
+        group_type: groupType,
+        engineer_name: engineerName,
+        role: role,
+        activity: activity,
+        ejo_id: ejoId,
+        ejo_title: ejoTitle,
+        created_by: state.currentUser ? (state.currentUser.fullname || state.currentUser.username) : 'Admin'
+    };
+
+    try {
+        const res = await fetch('/api/daily-activity-logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('Gagal menyimpan log');
+        
+        showToast("Log aktivitas berhasil ditambahkan!", "success");
+        closeAddDailyActivityModal();
+        
+        state.selectedDailyActivityDate = logDate;
+        const mainDateInput = document.getElementById("eng-activity-date-input");
+        if (mainDateInput) mainDateInput.value = logDate;
+        
+        await fetchDailyActivityLogs();
+    } catch (err) {
+        console.error(err);
+        showToast("Terjadi kesalahan saat menyimpan log aktivitas", "error");
+    }
+};
+
+window.fetchDailyActivityLogs = async function() {
+    const mainDateInput = document.getElementById("eng-activity-date-input");
+    const date = mainDateInput ? mainDateInput.value : (state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10));
+    state.selectedDailyActivityDate = date;
+
+    try {
+        const res = await fetch(`/api/daily-activity-logs?date=${encodeURIComponent(date)}`);
+        if (res.ok) {
+            const resJson = await res.json();
+            state.dailyActivityLogs = resJson.data || [];
+        }
+    } catch (err) {
+        console.error("fetchDailyActivityLogs error:", err);
+    }
+
+    renderOverviewActivityLog();
+};
+
+window.deleteDailyActivityLog = async function(id, event) {
+    if (event) event.stopPropagation();
+    if (!confirm("Hapus entri log aktivitas ini?")) return;
+
+    try {
+        const res = await fetch(`/api/daily-activity-logs/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Gagal menghapus');
+        showToast("Entri log berhasil dihapus", "success");
+        await fetchDailyActivityLogs();
+    } catch (err) {
+        console.error(err);
+        showToast("Gagal menghapus entri log", "error");
+    }
+};
+
 // ponytail: extract, sort, and render live engineer activity stream in WhatsApp/Daily Recap style
 function renderOverviewActivityLog() {
     const container = document.getElementById("overview-eng-activity-list");
     const panel = document.getElementById("overview-eng-activity-panel");
     const totalBadge = document.getElementById("eng-activity-total-badge");
+    const addBtn = document.getElementById("btn-add-daily-activity");
+    const mainDateInput = document.getElementById("eng-activity-date-input");
     
     const isEng = isCurrentUserEngDept();
     if (panel) {
         panel.style.display = isEng ? "" : "none";
     }
 
+    if (addBtn) {
+        addBtn.style.display = canManageDailyActivity() ? "inline-flex" : "none";
+    }
+
+    if (mainDateInput && !mainDateInput.value) {
+        mainDateInput.value = state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10);
+    }
+
     if (!container) return;
 
-    // Gather all items with logs across all types (General EJO, Drawings, Standard EJO)
+    const filterDate = mainDateInput ? mainDateInput.value : state.selectedDailyActivityDate;
+
+    // Gather all items with logs across all types filtered by date
     const allItems = [...(state.generalEjos || []), ...(state.drawings || []), ...(state.ejos || [])];
     const rawActivities = [];
     const seenLogKeys = new Set();
 
+    // 1. Manual logs from daily_activity_logs table for this date
+    (state.dailyActivityLogs || []).forEach(mLog => {
+        rawActivities.push({
+            id: mLog.ejo_id || '',
+            title: mLog.ejo_title || '',
+            category: mLog.group_type === 'TIM_DRAFTER' ? 'Drafter' : (mLog.role || 'Mekanik'),
+            engineer: mLog.engineer_name,
+            dept: 'ENG',
+            message: mLog.activity,
+            date: mLog.log_date,
+            sortTime: new Date(mLog.created_at || mLog.log_date).getTime() || 0,
+            isManual: true,
+            manualId: mLog.id,
+            isDrawing: mLog.group_type === 'TIM_DRAFTER'
+        });
+    });
+
+    // 2. Automatic logs from tickets that occurred on filterDate
     allItems.forEach(item => {
         const logs = parseLogs(item.logs || item);
         if (Array.isArray(logs) && logs.length > 0) {
             logs.forEach((log) => {
                 const rawMsg = log.cleanMessage || log.message || log.text || "";
                 if (!rawMsg) return;
+
+                let rawDate = log.date || item.updated_at || item.createdDate || "";
+                const logDateOnly = String(rawDate).slice(0, 10);
+                
+                // If filtering by date and date does not match, skip
+                if (filterDate && logDateOnly && !logDateOnly.includes(filterDate)) {
+                    return;
+                }
 
                 // Clean message
                 let cleanMsg = rawMsg.replace(/\s*Laporan Penyelesaian:\s*.*$/, "")
@@ -6956,10 +7166,7 @@ function renderOverviewActivityLog() {
                                      .replace(/\s*Alasan revisi:\s*.*$/, "")
                                      .replace(/\s*Alasan Penolakan:\s*.*$/, "");
 
-                // Parse date timestamp
-                let rawDate = log.date || item.updated_at || item.createdDate || "";
                 let sortTime = 0;
-
                 if (rawDate) {
                     const dt = new Date(rawDate.replace(/-/g, '/'));
                     if (!isNaN(dt.getTime())) {
@@ -6971,14 +7178,14 @@ function renderOverviewActivityLog() {
                     }
                 }
 
-                // Detect category badge per message if available (e.g. Mekanik, Elektrik, Sipil, Repair Part, Drafter)
+                // Detect category badge per message
                 let itemCategory = item.category || (item.isDrawing ? 'Drawing' : 'General');
                 const matchedDiscipline = cleanMsg.match(/\((Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter)\)/i);
                 if (matchedDiscipline && matchedDiscipline[1]) {
                     itemCategory = matchedDiscipline[1];
                 }
 
-                // Extract engineer name from log message or assignment
+                // Extract engineer name
                 let engineerName = "";
                 const assignedToMatch = cleanMsg.match(/(?:kepada|ditugaskan kepada|ditunjuk:?)\s+([^,.\(\n\r]+?)(?:\s*\((?:Mekanik|Elektrik|Sipil|Repair Part|Program|Kalibrasi|Drafter|Foreman|Admin|User|Supervisor|Manager)\)|\s*\.|\s*$)/i);
                 if (assignedToMatch && assignedToMatch[1] && assignedToMatch[1].toLowerCase() !== 'unassigned') {
@@ -7003,6 +7210,10 @@ function renderOverviewActivityLog() {
                     engineerName = item.engineer && item.engineer !== 'Unassigned' ? item.engineer.split(',')[0].trim() : 'Teknisi';
                 }
 
+                const uniqueKey = `${item.id}_${engineerName}_${cleanMsg}`;
+                if (seenLogKeys.has(uniqueKey)) return;
+                seenLogKeys.add(uniqueKey);
+
                 rawActivities.push({
                     id: item.id,
                     title: item.title || "Pekerjaan EJO",
@@ -7019,9 +7230,6 @@ function renderOverviewActivityLog() {
         }
     });
 
-    // Sort newest activity first
-    rawActivities.sort((a, b) => b.sortTime - a.sortTime || String(b.date).localeCompare(String(a.date)));
-
     if (totalBadge) {
         totalBadge.textContent = `${rawActivities.length} Entri`;
     }
@@ -7029,15 +7237,16 @@ function renderOverviewActivityLog() {
     if (rawActivities.length === 0) {
         container.innerHTML = `
             <div class="eng-activity-empty">
-                <i data-lucide="inbox" style="width: 32px; height: 32px; color: var(--text-secondary); opacity: 0.6;"></i>
-                <span style="font-size: 0.8rem;">Belum ada rekap aktivitas teknisi.</span>
+                <i data-lucide="calendar-x" style="width: 32px; height: 32px; color: var(--text-secondary); opacity: 0.6;"></i>
+                <span style="font-size: 0.82rem; font-weight: 500;">Tidak ada rekap aktivitas pada tanggal ${filterDate}.</span>
+                ${canManageDailyActivity() ? `<button type="button" class="btn btn-outline btn-xs" style="margin-top: 6px;" onclick="openAddDailyActivityModal()"><i data-lucide="plus" style="width: 12px; height: 12px;"></i> Tambah Log Manual</button>` : ''}
             </div>
         `;
         lucide.createIcons();
         return;
     }
 
-    // Separate into TIM EJO (Mekanik, Elektrik, Sipil, Repair Part, Program, Kalibrasi) and TIM DRAFTER
+    // Separate into TIM EJO and TIM DRAFTER
     const timEjoActivities = [];
     const timDrafterActivities = [];
 
@@ -7050,11 +7259,12 @@ function renderOverviewActivityLog() {
         }
     });
 
-    // Helper to render table section in WhatsApp/Daily Recap tabular style
+    const isCanManage = canManageDailyActivity();
+
+    // Helper to render table section
     const renderSectionTable = (title, activities, iconName) => {
         if (activities.length === 0) return '';
         
-        // Group activities by engineer
         const byEngineer = new Map();
         activities.forEach(act => {
             const eng = act.engineer || 'Teknisi';
@@ -7066,22 +7276,30 @@ function renderOverviewActivityLog() {
         byEngineer.forEach((actList, engName) => {
             const firstAct = actList[0];
             const rowSpan = actList.length;
-            const clickHandler = firstAct.isDrawing ? `openDrawingDetails('${firstAct.id}')` : (firstAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${firstAct.id}')` : `openEJODetails('${firstAct.id}')`);
+            const clickHandler = firstAct.id ? (firstAct.isDrawing ? `openDrawingDetails('${firstAct.id}')` : (firstAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${firstAct.id}')` : `openEJODetails('${firstAct.id}')`)) : '';
             const catClass = 'role-badge-' + (firstAct.category || 'general').toLowerCase().replace(/\s+/g, '-');
+            const deleteBtn = (firstAct.isManual && isCanManage) ? `<button class="btn-delete-log-entry" title="Hapus Entri" onclick="deleteDailyActivityLog(${firstAct.manualId}, event)"><i data-lucide="trash-2" style="width: 11px; height: 11px;"></i></button>` : '';
+
+            // Check if status is CUTI / OFF / NPL
+            const isOffStatus = /^(cuti|off|npl|izin|sakit)/i.test(firstAct.message.trim());
+            const rowBgStyle = isOffStatus ? 'background: rgba(234, 179, 8, 0.15);' : '';
 
             rowsHtml += `
-                <tr class="recap-table-row">
+                <tr class="recap-table-row" style="${rowBgStyle}">
                     <td class="recap-cell-name" rowspan="${rowSpan}">
                         <div class="recap-name-box">
                             <span class="recap-engineer-name">${engName}</span>
                             <span class="eng-role-badge ${catClass}" style="font-size: 0.65rem; padding: 1px 5px;">${firstAct.category}</span>
                         </div>
                     </td>
-                    <td class="recap-cell-task clickable-task" onclick="${clickHandler}">
-                        <div class="recap-task-content">
-                            <span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${firstAct.id}</span>
-                            <span class="recap-task-msg">${firstAct.message}</span>
-                            <span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${firstAct.title})</span>
+                    <td class="recap-cell-task ${clickHandler ? 'clickable-task' : ''}" ${clickHandler ? `onclick="${clickHandler}"` : ''}>
+                        <div class="recap-task-content" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                ${firstAct.id ? `<span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${firstAct.id}</span>` : ''}
+                                <span class="recap-task-msg" style="${isOffStatus ? 'font-weight: 700; color: var(--color-yellow);' : ''}">${firstAct.message}</span>
+                                ${firstAct.title ? `<span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${firstAct.title})</span>` : ''}
+                            </div>
+                            ${deleteBtn}
                         </div>
                     </td>
                 </tr>
@@ -7089,14 +7307,21 @@ function renderOverviewActivityLog() {
 
             for (let i = 1; i < actList.length; i++) {
                 const subAct = actList[i];
-                const subClick = subAct.isDrawing ? `openDrawingDetails('${subAct.id}')` : (subAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${subAct.id}')` : `openEJODetails('${subAct.id}')`);
+                const subClick = subAct.id ? (subAct.isDrawing ? `openDrawingDetails('${subAct.id}')` : (subAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${subAct.id}')` : `openEJODetails('${subAct.id}')`)) : '';
+                const subDeleteBtn = (subAct.isManual && isCanManage) ? `<button class="btn-delete-log-entry" title="Hapus Entri" onclick="deleteDailyActivityLog(${subAct.manualId}, event)"><i data-lucide="trash-2" style="width: 11px; height: 11px;"></i></button>` : '';
+                const subIsOff = /^(cuti|off|npl|izin|sakit)/i.test(subAct.message.trim());
+                const subRowBg = subIsOff ? 'background: rgba(234, 179, 8, 0.15);' : '';
+
                 rowsHtml += `
-                    <tr class="recap-table-row">
-                        <td class="recap-cell-task clickable-task" onclick="${subClick}">
-                            <div class="recap-task-content">
-                                <span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${subAct.id}</span>
-                                <span class="recap-task-msg">${subAct.message}</span>
-                                <span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${subAct.title})</span>
+                    <tr class="recap-table-row" style="${subRowBg}">
+                        <td class="recap-cell-task ${subClick ? 'clickable-task' : ''}" ${subClick ? `onclick="${subClick}"` : ''}>
+                            <div class="recap-task-content" style="display: flex; align-items: center; justify-content: space-between;">
+                                <div>
+                                    ${subAct.id ? `<span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${subAct.id}</span>` : ''}
+                                    <span class="recap-task-msg" style="${subIsOff ? 'font-weight: 700; color: var(--color-yellow);' : ''}">${subAct.message}</span>
+                                    ${subAct.title ? `<span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${subAct.title})</span>` : ''}
+                                </div>
+                                ${subDeleteBtn}
                             </div>
                         </td>
                     </tr>
@@ -7115,7 +7340,7 @@ function renderOverviewActivityLog() {
                         <thead>
                             <tr>
                                 <th style="width: 170px; text-align: left;">Nama</th>
-                                <th style="text-align: left;">Uraian Pekerjaan & Aktivitas Realtime</th>
+                                <th style="text-align: left;">Uraian Pekerjaan & Status Hari Ini</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -7137,8 +7362,8 @@ function renderOverviewActivityLog() {
 
     container.innerHTML = fullHtml || `
         <div class="eng-activity-empty">
-            <i data-lucide="inbox" style="width: 32px; height: 32px; color: var(--text-secondary); opacity: 0.6;"></i>
-            <span style="font-size: 0.8rem;">Belum ada rekap aktivitas teknisi.</span>
+            <i data-lucide="calendar-x" style="width: 32px; height: 32px; color: var(--text-secondary); opacity: 0.6;"></i>
+            <span style="font-size: 0.82rem;">Tidak ada aktivitas pada tanggal yang dipilih.</span>
         </div>
     `;
 

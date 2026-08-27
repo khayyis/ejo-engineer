@@ -1388,7 +1388,23 @@ body {
     color: var(--text-secondary, #94a3b8);
 }
 
-/* Custom minimal slim scrollbar */
+.btn-delete-log-entry {
+    background: none;
+    border: none;
+    color: var(--color-rose, #f43f5e);
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-delete-log-entry:hover {
+    opacity: 1;
+    background: rgba(244, 63, 94, 0.12);
+}
 .overview-activity-standalone-row .eng-activity-scroll-body::-webkit-scrollbar {
     width: 5px;
 }
