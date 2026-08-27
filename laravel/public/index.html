@@ -433,92 +433,63 @@
                         </div>
                     </div>
 
-                    <!-- Row 1: Tren EJO Chart & Log Aktivitas Engineer (Sejajar Sempurna) -->
-                    <div class="overview-split-layout" id="overview-split-layout">
-                        <!-- Chart Area 1: Status & Trend -->
-                        <div class="chart-card card-glass" id="card-trend-chart">
-                            <div class="card-header">
-                                <div class="card-header-left">
-                                    <div class="card-icon-wrap card-icon-cyan">
-                                        <i data-lucide="bar-chart-3"></i>
-                                    </div>
-                                    <div>
-                                        <h3>Tren EJO <span id="tv-val-period" class="tv-period-inline">- Tahun Ini (Semua Kategori)</span></h3>
-                                    </div>
+                    <!-- Chart Area 1: Status & Trend (Moved above dashboard-summary-grid) -->
+                    <div class="chart-card card-glass" id="card-trend-chart" style="margin-bottom: 1.5rem;">
+                        <div class="card-header">
+                            <div class="card-header-left">
+                                <div class="card-icon-wrap card-icon-cyan">
+                                    <i data-lucide="bar-chart-3"></i>
                                 </div>
-                                <div class="card-actions">
-                                    <!-- ponytail: Filter Kategori Kerja & Drawing trend chart -->
-                                    <select id="trend-category-filter" class="chart-time-filter" title="Filter Kategori">
-                                        <option value="all">Semua Kategori</option>
-                                        <option value="Sipil">Sipil</option>
-                                        <option value="Elektrik">Elektrik</option>
-                                        <option value="Kalibrasi">Kalibrasi</option>
-                                        <option value="Mekanik">Mekanik</option>
-                                        <option value="Program">Program</option>
-                                        <option value="Repair Part">Repair Part</option>
-                                        <option value="Drawing">Drawing</option>
-                                    </select>
-                                    <!-- ponytail: Filter rentang waktu trend chart -->
-                                    <select id="trend-time-filter" class="chart-time-filter">
-                                        <option value="week">Minggu Ini</option>
-                                        <option value="month" selected>Bulan Ini</option>
-                                        <option value="year">Tahun Ini</option>
-                                    </select>
-                                    <span class="badge badge-accent badge-live">Live Chart</span>
+                                <div>
+                                    <h3>Tren EJO <span id="tv-val-period" class="tv-period-inline">- Tahun Ini (Semua Kategori)</span></h3>
                                 </div>
                             </div>
-                            <!-- ponytail: TradingView-style interactive real-time data tracker -->
-                            <div class="trend-tv-tracker" id="trend-tv-tracker">
-                                <div class="tv-item tv-masuk">
-                                    <span class="tv-dot tv-dot-red"></span>
-                                    <span>Masuk:</span>
-                                    <strong id="tv-val-masuk">--</strong>
-                                </div>
-                                <div class="tv-item tv-selesai">
-                                    <span class="tv-dot tv-dot-green"></span>
-                                    <span>Selesai:</span>
-                                    <strong id="tv-val-selesai">--</strong>
-                                </div>
-                                <div class="tv-item tv-batal">
-                                    <span class="tv-dot tv-dot-darkgreen"></span>
-                                    <span>Dibatalkan:</span>
-                                    <strong id="tv-val-batal">--</strong>
-                                </div>
-                                <div class="tv-item tv-os">
-                                    <span class="tv-dot tv-dot-orange"></span>
-                                    <span>OS:</span>
-                                    <strong id="tv-val-os">--</strong>
-                                </div>
-                            </div>
-                            <div class="card-body chart-container">
-                                <canvas id="trendChart"></canvas>
+                            <div class="card-actions">
+                                <!-- ponytail: Filter Kategori Kerja & Drawing trend chart -->
+                                <select id="trend-category-filter" class="chart-time-filter" title="Filter Kategori">
+                                    <option value="all">Semua Kategori</option>
+                                    <option value="Sipil">Sipil</option>
+                                    <option value="Elektrik">Elektrik</option>
+                                    <option value="Kalibrasi">Kalibrasi</option>
+                                    <option value="Mekanik">Mekanik</option>
+                                    <option value="Program">Program</option>
+                                    <option value="Repair Part">Repair Part</option>
+                                    <option value="Drawing">Drawing</option>
+                                </select>
+                                <!-- ponytail: Filter rentang waktu trend chart -->
+                                <select id="trend-time-filter" class="chart-time-filter">
+                                    <option value="week">Minggu Ini</option>
+                                    <option value="month" selected>Bulan Ini</option>
+                                    <option value="year">Tahun Ini</option>
+                                </select>
+                                <span class="badge badge-accent badge-live">Live Chart</span>
                             </div>
                         </div>
-
-                        <!-- Right Column: Dedicated Vertical Activity Log for ENG Dept -->
-                        <div class="overview-activity-col" id="overview-eng-activity-panel">
-                            <div class="list-card card-glass eng-activity-card">
-                                <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border);">
-                                    <div class="card-header-left" style="gap: 10px;">
-                                        <div class="card-icon-wrap card-icon-cyan" style="width: 34px; height: 34px; border-radius: 8px;">
-                                            <i data-lucide="activity" style="width: 18px; height: 18px;"></i>
-                                        </div>
-                                        <div>
-                                            <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
-                                                Log Aktivitas Engineer
-                                                <span class="badge badge-accent badge-live" style="font-size: 0.65rem; padding: 2px 6px;">Live</span>
-                                            </h3>
-                                            <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap interaksi & pembaruan teknisi realtime</p>
-                                        </div>
-                                    </div>
-                                    <div class="card-actions">
-                                        <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Log</span>
-                                    </div>
-                                </div>
-                                <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list">
-                                    <!-- Dynamic chat-like feed of engineer activities -->
-                                </div>
+                        <!-- ponytail: TradingView-style interactive real-time data tracker -->
+                        <div class="trend-tv-tracker" id="trend-tv-tracker">
+                            <div class="tv-item tv-masuk">
+                                <span class="tv-dot tv-dot-red"></span>
+                                <span>Masuk:</span>
+                                <strong id="tv-val-masuk">--</strong>
                             </div>
+                            <div class="tv-item tv-selesai">
+                                <span class="tv-dot tv-dot-green"></span>
+                                <span>Selesai:</span>
+                                <strong id="tv-val-selesai">--</strong>
+                            </div>
+                            <div class="tv-item tv-batal">
+                                <span class="tv-dot tv-dot-darkgreen"></span>
+                                <span>Dibatalkan:</span>
+                                <strong id="tv-val-batal">--</strong>
+                            </div>
+                            <div class="tv-item tv-os">
+                                <span class="tv-dot tv-dot-orange"></span>
+                                <span>OS:</span>
+                                <strong id="tv-val-os">--</strong>
+                            </div>
+                        </div>
+                        <div class="card-body chart-container">
+                            <canvas id="trendChart"></canvas>
                         </div>
                     </div>
 
@@ -750,6 +721,32 @@
                         <div class="card-body text-scroll">
                             <div class="recent-list" id="critical-ejo-list">
                                 <!-- Dynamic list of critical EJOs -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Log Aktivitas Engineer (Di Bawah EJO URGENT) -->
+                    <div class="overview-activity-standalone-row" id="overview-eng-activity-panel" style="margin-top: 1.5rem; width: 100%;">
+                        <div class="list-card card-glass eng-activity-card">
+                            <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--card-border);">
+                                <div class="card-header-left" style="gap: 10px;">
+                                    <div class="card-icon-wrap card-icon-cyan" style="width: 34px; height: 34px; border-radius: 8px;">
+                                        <i data-lucide="activity" style="width: 18px; height: 18px;"></i>
+                                    </div>
+                                    <div>
+                                        <h3 style="font-size: 0.98rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                                            Log Aktivitas Engineer
+                                            <span class="badge badge-accent badge-live" style="font-size: 0.65rem; padding: 2px 6px;">Live</span>
+                                        </h3>
+                                        <p class="text-secondary text-xs" style="margin: 2px 0 0 0; font-size: 0.72rem;">Rekap interaksi & pembaruan teknisi realtime</p>
+                                    </div>
+                                </div>
+                                <div class="card-actions">
+                                    <span class="badge" id="eng-activity-total-badge" style="background: rgba(6, 182, 212, 0.12); color: var(--color-cyan); font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 12px; border: 1px solid rgba(6, 182, 212, 0.25);">0 Log</span>
+                                </div>
+                            </div>
+                            <div class="card-body eng-activity-scroll-body" id="overview-eng-activity-list">
+                                <!-- Dynamic chat-like feed of engineer activities -->
                             </div>
                         </div>
                     </div>

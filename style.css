@@ -1254,32 +1254,16 @@ body {
     }
 }
 
-.overview-split-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    gap: 1.25rem;
-    align-items: stretch;
-    margin-bottom: 1.5rem;
+.overview-activity-standalone-row {
+    width: 100%;
+    margin-top: 1.5rem;
 }
 
-.overview-split-layout > .chart-card {
-    margin-bottom: 0 !important;
-    height: 100%;
-}
-
-.overview-activity-col {
+.overview-activity-standalone-row .eng-activity-card {
     display: flex;
     flex-direction: column;
-    min-width: 0;
-    height: 100%;
-}
-
-.eng-activity-card {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    max-height: none;
-    padding: 1rem 1.15rem;
+    width: 100%;
+    padding: 1.25rem 1.25rem 1rem 1.25rem;
     box-sizing: border-box;
     border-radius: var(--border-radius-lg);
     background: var(--card-bg, rgba(20, 26, 38, 0.7));
@@ -1288,37 +1272,20 @@ body {
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
-.eng-activity-scroll-body {
+.overview-activity-standalone-row .eng-activity-scroll-body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     overflow-y: auto;
     padding-right: 4px;
-    flex: 1;
-    min-height: 0;
-    max-height: 380px;
-}
-
-/* Custom minimal slim scrollbar */
-.eng-activity-scroll-body::-webkit-scrollbar {
-    width: 4px;
-}
-.eng-activity-scroll-body::-webkit-scrollbar-track {
-    background: transparent;
-}
-.eng-activity-scroll-body::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
-}
-.eng-activity-scroll-body::-webkit-scrollbar-thumb:hover {
-    background: var(--color-cyan, #06b6d4);
+    max-height: 420px;
 }
 
 .eng-activity-item {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 0.75rem 0.85rem;
+    padding: 0.85rem 1rem;
     border-radius: var(--border-radius-sm, 8px);
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.04);
@@ -1337,40 +1304,40 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
+    gap: 8px;
 }
 
 .eng-activity-badge-grp {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     flex-wrap: wrap;
 }
 
 .eng-activity-engineer-badge {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    font-size: 0.7rem;
+    gap: 4px;
+    font-size: 0.72rem;
     font-weight: 700;
     color: var(--color-cyan, #06b6d4);
     background: rgba(6, 182, 212, 0.1);
     border: 1px solid rgba(6, 182, 212, 0.22);
-    padding: 2px 6px;
+    padding: 2px 7px;
     border-radius: 4px;
     letter-spacing: 0.2px;
 }
 
 .eng-activity-time {
-    font-size: 0.68rem;
+    font-size: 0.72rem;
     color: var(--text-secondary, #94a3b8);
     white-space: nowrap;
     font-weight: 500;
 }
 
 .eng-activity-msg {
-    font-size: 0.8rem;
-    line-height: 1.4;
+    font-size: 0.82rem;
+    line-height: 1.45;
     color: var(--text-primary, #f8fafc);
     word-break: break-word;
 }
@@ -1379,9 +1346,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     color: var(--text-secondary, #94a3b8);
-    margin-top: 1px;
+    margin-top: 2px;
     padding-top: 4px;
     border-top: 1px dashed rgba(255, 255, 255, 0.05);
 }
@@ -1391,22 +1358,25 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2.5rem 1rem;
-    gap: 6px;
+    padding: 3rem 1rem;
+    gap: 8px;
     text-align: center;
     color: var(--text-secondary);
 }
 
-@media (max-width: 1200px) {
-    .overview-split-layout {
-        grid-template-columns: 1fr;
-    }
-    .eng-activity-card {
-        max-height: 400px;
-    }
-    .eng-activity-scroll-body {
-        max-height: 320px;
-    }
+/* Custom minimal slim scrollbar */
+.overview-activity-standalone-row .eng-activity-scroll-body::-webkit-scrollbar {
+    width: 5px;
+}
+.overview-activity-standalone-row .eng-activity-scroll-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+.overview-activity-standalone-row .eng-activity-scroll-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+.overview-activity-standalone-row .eng-activity-scroll-body::-webkit-scrollbar-thumb:hover {
+    background: var(--color-cyan, #06b6d4);
 }
 
 .eng-activity-item {

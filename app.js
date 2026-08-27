@@ -6929,18 +6929,10 @@ function renderOverviewActivityLog() {
     const container = document.getElementById("overview-eng-activity-list");
     const panel = document.getElementById("overview-eng-activity-panel");
     const totalBadge = document.getElementById("eng-activity-total-badge");
-    const splitLayout = document.getElementById("overview-split-layout");
     
     const isEng = isCurrentUserEngDept();
     if (panel) {
-        if (!isEng) {
-            panel.style.display = "none";
-            if (splitLayout) splitLayout.style.gridTemplateColumns = "1fr";
-            return;
-        } else {
-            panel.style.display = "";
-            if (splitLayout) splitLayout.style.gridTemplateColumns = "";
-        }
+        panel.style.display = isEng ? "" : "none";
     }
 
     if (!container) return;
