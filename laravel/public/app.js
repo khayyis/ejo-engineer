@@ -6890,11 +6890,17 @@ function canManageDailyActivity() {
 
 window.openAddDailyActivityModal = function() {
     const modal = document.getElementById("modal-daily-activity");
-    if (!modal) return;
+    if (!modal) {
+        console.error("Modal #modal-daily-activity not found in DOM");
+        return;
+    }
     
     // Set default date
     const dateInput = document.getElementById("input-activity-date");
-    if (dateInput) dateInput.value = state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10);
+    if (dateInput) {
+        const mainDate = document.getElementById("eng-activity-date-input");
+        dateInput.value = (mainDate && mainDate.value) ? mainDate.value : (state.selectedDailyActivityDate || new Date().toISOString().slice(0, 10));
+    }
     
     // Populate engineer dropdown
     handleActivityGroupChange();
@@ -6905,8 +6911,8 @@ window.openAddDailyActivityModal = function() {
     const ejoTitleInput = document.getElementById("input-activity-ejotitle");
     if (ejoTitleInput) ejoTitleInput.value = "";
 
+    modal.style.removeProperty("display");
     modal.classList.add("active");
-    modal.style.display = "flex";
     lucide.createIcons();
 };
 
@@ -7113,7 +7119,7 @@ function renderOverviewActivityLog() {
 
     const isCanManage = canManageDailyActivity();
 
-    // Helper to render table section
+    // Helper to render table section matching WhatsApp tabular structure
     const renderSectionTable = (title, activities, iconName) => {
         if (activities.length === 0) return '';
         
@@ -7124,32 +7130,42 @@ function renderOverviewActivityLog() {
             byEngineer.get(eng).push(act);
         });
 
+        // Format day name in Indonesian (e.g. "Selasa", "Rabu", "Kamis")
+        let dayName = "Hari Ini";
+        let dateFormatted = filterDate;
+        if (filterDate) {
+            const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+            const dtObj = new Date(filterDate + 'T00:00:00');
+            if (!isNaN(dtObj.getTime())) {
+                dayName = days[dtObj.getDay()];
+                const d = String(dtObj.getDate()).padStart(2, '0');
+                const m = String(dtObj.getMonth() + 1).padStart(2, '0');
+                const y = dtObj.getFullYear();
+                dateFormatted = `${d}/${m}/${y}`;
+            }
+        }
+
         let rowsHtml = '';
         byEngineer.forEach((actList, engName) => {
             const firstAct = actList[0];
             const rowSpan = actList.length;
             const clickHandler = firstAct.id ? (firstAct.isDrawing ? `openDrawingDetails('${firstAct.id}')` : (firstAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${firstAct.id}')` : `openEJODetails('${firstAct.id}')`)) : '';
-            const catClass = 'role-badge-' + (firstAct.category || 'general').toLowerCase().replace(/\s+/g, '-');
             const deleteBtn = (firstAct.isManual && isCanManage) ? `<button class="btn-delete-log-entry" title="Hapus Entri" onclick="deleteDailyActivityLog(${firstAct.manualId}, event)"><i data-lucide="trash-2" style="width: 11px; height: 11px;"></i></button>` : '';
 
-            // Check if status is CUTI / OFF / NPL
             const isOffStatus = /^(cuti|off|npl|izin|sakit)/i.test(firstAct.message.trim());
-            const rowBgStyle = isOffStatus ? 'background: rgba(234, 179, 8, 0.15);' : '';
+            const rowClass = isOffStatus ? 'recap-status-yellow' : '';
 
             rowsHtml += `
-                <tr class="recap-table-row" style="${rowBgStyle}">
-                    <td class="recap-cell-name" rowspan="${rowSpan}">
-                        <div class="recap-name-box">
-                            <span class="recap-engineer-name">${engName}</span>
-                            <span class="eng-role-badge ${catClass}" style="font-size: 0.65rem; padding: 1px 5px;">${firstAct.category}</span>
-                        </div>
+                <tr class="recap-table-row">
+                    <td class="recap-cell-name ${rowClass}" rowspan="${rowSpan}">
+                        <span class="recap-engineer-name">${engName}</span>
                     </td>
-                    <td class="recap-cell-task ${clickHandler ? 'clickable-task' : ''}" ${clickHandler ? `onclick="${clickHandler}"` : ''}>
-                        <div class="recap-task-content" style="display: flex; align-items: center; justify-content: space-between;">
-                            <div>
+                    <td class="recap-cell-task ${rowClass} ${clickHandler ? 'clickable-task' : ''}" ${clickHandler ? `onclick="${clickHandler}"` : ''}>
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                            <div style="flex: 1;">
                                 ${firstAct.id ? `<span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${firstAct.id}</span>` : ''}
-                                <span class="recap-task-msg" style="${isOffStatus ? 'font-weight: 700; color: var(--color-yellow);' : ''}">${firstAct.message}</span>
-                                ${firstAct.title ? `<span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${firstAct.title})</span>` : ''}
+                                <span class="recap-task-msg">${firstAct.message}</span>
+                                ${firstAct.title ? `<span style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${firstAct.title})</span>` : ''}
                             </div>
                             ${deleteBtn}
                         </div>
@@ -7162,16 +7178,16 @@ function renderOverviewActivityLog() {
                 const subClick = subAct.id ? (subAct.isDrawing ? `openDrawingDetails('${subAct.id}')` : (subAct.id.startsWith('PRJ') ? `openProjectDetails(null, '${subAct.id}')` : `openEJODetails('${subAct.id}')`)) : '';
                 const subDeleteBtn = (subAct.isManual && isCanManage) ? `<button class="btn-delete-log-entry" title="Hapus Entri" onclick="deleteDailyActivityLog(${subAct.manualId}, event)"><i data-lucide="trash-2" style="width: 11px; height: 11px;"></i></button>` : '';
                 const subIsOff = /^(cuti|off|npl|izin|sakit)/i.test(subAct.message.trim());
-                const subRowBg = subIsOff ? 'background: rgba(234, 179, 8, 0.15);' : '';
+                const subRowClass = subIsOff ? 'recap-status-yellow' : '';
 
                 rowsHtml += `
-                    <tr class="recap-table-row" style="${subRowBg}">
-                        <td class="recap-cell-task ${subClick ? 'clickable-task' : ''}" ${subClick ? `onclick="${subClick}"` : ''}>
-                            <div class="recap-task-content" style="display: flex; align-items: center; justify-content: space-between;">
-                                <div>
+                    <tr class="recap-table-row">
+                        <td class="recap-cell-task ${subRowClass} ${subClick ? 'clickable-task' : ''}" ${subClick ? `onclick="${subClick}"` : ''}>
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                <div style="flex: 1;">
                                     ${subAct.id ? `<span class="ejo-id-badge" style="font-size: 0.68rem; padding: 1px 5px; margin-right: 6px;">${subAct.id}</span>` : ''}
-                                    <span class="recap-task-msg" style="${subIsOff ? 'font-weight: 700; color: var(--color-yellow);' : ''}">${subAct.message}</span>
-                                    ${subAct.title ? `<span class="recap-task-title" style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${subAct.title})</span>` : ''}
+                                    <span class="recap-task-msg">${subAct.message}</span>
+                                    ${subAct.title ? `<span style="color: var(--text-secondary); font-size: 0.72rem; margin-left: 6px;">(${subAct.title})</span>` : ''}
                                 </div>
                                 ${subDeleteBtn}
                             </div>
@@ -7184,15 +7200,15 @@ function renderOverviewActivityLog() {
         return `
             <div class="recap-section-block">
                 <div class="recap-section-header">
-                    <i data-lucide="${iconName || 'users'}" style="width: 15px; height: 15px; color: var(--color-cyan);"></i>
+                    <i data-lucide="${iconName || 'users'}" style="width: 15px; height: 15px; color: #ffffff;"></i>
                     <span>${title}</span>
                 </div>
                 <div class="recap-table-wrap">
                     <table class="recap-custom-table">
                         <thead>
                             <tr>
-                                <th style="width: 170px; text-align: left;">Nama</th>
-                                <th style="text-align: left;">Uraian Pekerjaan & Status Hari Ini</th>
+                                <th style="width: 130px;">Nama</th>
+                                <th>${dayName}<br/><span style="font-size: 0.7rem; font-weight: 500; opacity: 0.85;">${dateFormatted}</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -7204,13 +7220,14 @@ function renderOverviewActivityLog() {
         `;
     };
 
-    let fullHtml = '';
+    let fullHtml = '<div class="recap-dual-table-layout">';
     if (timEjoActivities.length > 0) {
-        fullHtml += renderSectionTable('TIM EJO (Mekanik, Elektrik, Sipil, Repair Part, Program, Kalibrasi)', timEjoActivities, 'wrench');
+        fullHtml += renderSectionTable('TIM EJO', timEjoActivities, 'wrench');
     }
     if (timDrafterActivities.length > 0) {
         fullHtml += renderSectionTable('TIM DRAFTER', timDrafterActivities, 'pen-tool');
     }
+    fullHtml += '</div>';
 
     container.innerHTML = fullHtml || `
         <div class="eng-activity-empty">
