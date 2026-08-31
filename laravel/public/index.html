@@ -2399,16 +2399,19 @@
                                         edit dari tabel.</small>
                                 </div>
                                 <div class="form-field" id="user-password-field-container">
-                                    <label for="usr-password">Password <span class="required">*</span></label>
+                                    <label for="usr-password">Password <span class="text-muted" style="font-size: 0.78rem; font-weight: normal;">(Otomatis terisi sama dengan username)</span></label>
                                     <div class="password-input-wrapper">
-                                        <input type="password" id="usr-password" placeholder="Minimal 6 karakter"
+                                        <input type="text" id="usr-password" placeholder="Otomatis mengikuti username"
                                             required>
                                         <button type="button" class="btn-toggle-password" id="btn-toggle-usr-pass"
-                                            title="Tampilkan Password">
+                                            title="Tampilkan/Sembunyikan Password">
                                             <i data-lucide="eye" id="usr-pass-eye-icon"
                                                 style="width: 16px; height: 16px;"></i>
                                         </button>
                                     </div>
+                                    <small class="text-muted" style="font-size: 0.75rem; margin-top: 4px; display: block;">
+                                        💡 <em>Password otomatis terisi nama akun (username). Anda tetap bisa mengubahnya jika diperlukan.</em>
+                                    </small>
                                 </div>
                                 <div class="form-field">
                                     <label for="usr-fullname">Nama Lengkap Personel <span
@@ -3516,7 +3519,8 @@
                     <p class="text-secondary" style="margin-top: -0.25rem; font-size: 0.85rem;">
                         <i data-lucide="user"
                             style="width: 14px; height: 14px; display: inline; vertical-align: middle; margin-right: 4px;"></i>
-                        Uploaded by: <span id="modal-drawing-uploader">Drafter</span>
+                        Pemohon: <strong id="modal-drawing-requester" style="color: var(--text-primary);">-</strong>
+                        <span id="modal-drawing-uploader-wrapper">&bull; Pengunggah: <span id="modal-drawing-uploader">-</span></span>
                         &bull; <span id="modal-drawing-date">28 Jun 2026</span>
                         <span id="modal-drawing-cat-wrapper" style="display: none;">&bull; Kategori: <strong
                                 id="modal-drawing-category" style="color: var(--color-cyan);">-</strong></span>
@@ -3591,6 +3595,23 @@
                             style="margin-bottom: 0.75rem; font-size: 0.95rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px;">
                             Persetujuan Bertingkat</h3>
                         <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <!-- Drafter Card -->
+                            <div class="card-glass" id="card-sig-drafter"
+                                style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
+                                <div>
+                                    <div id="sig-title-drafter"
+                                        style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">
+                                        PEMBUAT DRAWING (DRAFTER/ENG)</div>
+                                    <div id="sig-info-drafter"
+                                        style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">Menunggu
+                                    </div>
+                                </div>
+                                <div id="sig-img-container-drafter"
+                                    style="display: flex; align-items: center; gap: 8px;">
+                                    <!-- Canvas or Image signature -->
+                                </div>
+                            </div>
+
                             <!-- Requester Card -->
                             <div class="card-glass" id="card-sig-requester"
                                 style="padding: 12px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--card-border); border-radius: var(--border-radius-md);">
@@ -5404,7 +5425,7 @@
     <!-- SheetJS Excel Library -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <!-- ponytail: App Logic -->
-    <script src="app.js?v=66.0"></script>
+    <script src="app.js?v=68.0"></script>
 </body>
 
 </html>

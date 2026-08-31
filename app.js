@@ -1223,11 +1223,19 @@ function applySidebarRoleRestrictions() {
         if (galleryBtn) galleryBtn.style.display = 'none';
     }
 
+    const isEngUser = typeof isCurrentUserEngDept === 'function' ? isCurrentUserEngDept() : isEngRole;
+
     if (btnNavDrawingGallery && wrapperDrawingGallery) {
-        setNavVisibility(btnNavDrawingGallery, wrapperDrawingGallery, true);
-        btnNavDrawingGallery.style.removeProperty('display');
-        wrapperDrawingGallery.style.removeProperty('display');
-        btnNavDrawingGallery.style.display = 'flex';
+        if (isEngUser) {
+            setNavVisibility(btnNavDrawingGallery, wrapperDrawingGallery, true);
+            btnNavDrawingGallery.style.removeProperty('display');
+            wrapperDrawingGallery.style.removeProperty('display');
+            btnNavDrawingGallery.style.display = 'flex';
+        } else {
+            setNavVisibility(btnNavDrawingGallery, wrapperDrawingGallery, false);
+            btnNavDrawingGallery.style.setProperty('display', 'none', 'important');
+            wrapperDrawingGallery.style.setProperty('display', 'none', 'important');
+        }
     }
 
     if (!showProjectsNav) {
@@ -2106,9 +2114,14 @@ function checkAuth() {
         if (serverDbControl) {
             serverDbControl.style.display = isServerUser ? 'flex' : 'none';
         }
+        const isServerOrForeman = state.currentUser && (
+            state.currentUser.username === 'server' ||
+            (state.currentUser.role && state.currentUser.role.toLowerCase() === 'server') ||
+            (state.currentUser.role && ['Foreman Eng', 'Admin Eng'].includes(state.currentUser.role))
+        );
         const btnSeedBased = document.getElementById("btn-seed-based-accounts");
         if (btnSeedBased) {
-            btnSeedBased.style.display = isServerUser ? 'inline-flex' : 'none';
+            btnSeedBased.style.display = isServerOrForeman ? 'inline-flex' : 'none';
         }
         const serverMaintenanceControl = document.getElementById("server-maintenance-control-bar");
         if (serverMaintenanceControl) {
@@ -2149,7 +2162,7 @@ function checkAuth() {
         window._dataPoll = setInterval(refreshDataBackground, 10000);
         sendHeartbeat();
         if (window._heartbeatPoll) clearInterval(window._heartbeatPoll);
-        window._heartbeatPoll = setInterval(sendHeartbeat, 10000);
+        window._heartbeatPoll = setInterval(sendHeartbeat, 15000);
     } catch (e) {
         console.debug("Background poll start suppressed:", e);
     }
@@ -5160,6 +5173,14 @@ function initEventListeners() {
             const val = usrUsernameInput.value.trim().toLowerCase();
             const orig = (usrUsernameInput.getAttribute("data-original-username") || '').toLowerCase();
 
+            // Auto-fill password with username if in add mode
+            if (mode === "add") {
+                const pwInput = document.getElementById("usr-password");
+                if (pwInput) {
+                    pwInput.value = val;
+                }
+            }
+
             if (val && Array.isArray(state.users)) {
                 const isTaken = mode === "add"
                     ? state.users.some(u => u.username.toLowerCase() === val)
@@ -6105,15 +6126,11 @@ function renderKPIs() {
         if (!isLimited) {
             drawingLimitHtml = `<i data-lucide="shield" style="width:12px; height:12px; color: var(--color-green);"></i> <span style="color: var(--color-green);">Limit: Unlimited</span>`;
         } else {
-            const myDrawingsCount = (state.drawings || []).filter(d => {
-                const isOwner = d.uploader === state.currentUser.fullname || d.uploader === state.currentUser.username ||
-                    d.requester === state.currentUser.fullname || d.requester === state.currentUser.username;
-                if (!isOwner) return false;
-                if (d.is_archived) return false;
-                const status = d.status || '';
-                if (status === 'Completed' || status === 'Cancelled' || status === 'Archived' || status === 'Rejected') return false;
-                return true;
-            }).length;
+            const myDrawingsCount = (state.drawings || []).filter(d => (typeof isDrawingQuotaActiveForUser === 'function' ? isDrawingQuotaActiveForUser(d, state.currentUser) : (
+                (d.uploader === state.currentUser.fullname || d.uploader === state.currentUser.username ||
+                 d.requester === state.currentUser.fullname || d.requester === state.currentUser.username) &&
+                !d.is_archived && d.status !== 'Completed' && d.status !== 'Cancelled' && d.status !== 'Archived' && d.status !== 'Rejected'
+            ))).length;
             const sisa = Math.max(0, 2 - myDrawingsCount);
             if (sisa === 0) {
                 drawingLimitHtml = `<i data-lucide="shield-alert" style="width:12px; height:12px; color: var(--color-red);"></i> <span style="color: var(--color-red);">Limit: ${myDrawingsCount}/2 (Penuh)</span>`;
@@ -6803,6 +6820,13 @@ function renderCriticalList() {
     const container = document.getElementById("critical-ejo-list");
     const pulseDot = document.getElementById("urgent-pulse-dot");
     const countBadge = document.getElementById("urgent-count-badge");
+
+    // ponytail: hide EJO Urgent section for non-engineering users & dept leads (only visible to Engineering Dept)
+    if (typeof isCurrentUserEngDept === 'function' && !isCurrentUserEngDept()) {
+        if (cardContainer) cardContainer.style.display = 'none';
+        return;
+    }
+
     const allItems = getVisibleOverviewEjos();
     const criticalEjos = allItems.filter(e =>
         getPriorityInfo(e.priority).code === '1' && e.status !== 'Completed' && e.status !== 'Cancelled'
@@ -7735,8 +7759,8 @@ function checkIsRequesterOrRole(d) {
         return true;
     }
 
-    // 1. Direct identity match on requester or uploader
-    if (checkIsRequester(d.requester) || checkIsRequester(d.uploader)) {
+    // 1. Direct identity match on requester ONLY (not uploader/drafter)
+    if (checkIsRequester(d.requester)) {
         return true;
     }
 
@@ -8670,15 +8694,11 @@ function filterGeneralEjosByPhase() {
 function renderDrawings() {
     // ponytail: update limit badge dynamically
     if (state.currentUser) {
-        const myDrawingsCount = (state.drawings || []).filter(d => {
-            const isOwner = d.uploader === state.currentUser.fullname || d.uploader === state.currentUser.username ||
-                d.requester === state.currentUser.fullname || d.requester === state.currentUser.username;
-            if (!isOwner) return false;
-            if (d.is_archived) return false;
-            const status = d.status || '';
-            if (status === 'Completed' || status === 'Cancelled' || status === 'Archived' || status === 'Rejected') return false;
-            return true;
-        }).length;
+        const myDrawingsCount = (state.drawings || []).filter(d => (typeof isDrawingQuotaActiveForUser === 'function' ? isDrawingQuotaActiveForUser(d, state.currentUser) : (
+            (d.uploader === state.currentUser.fullname || d.uploader === state.currentUser.username ||
+             d.requester === state.currentUser.fullname || d.requester === state.currentUser.username) &&
+            !d.is_archived && d.status !== 'Completed' && d.status !== 'Cancelled' && d.status !== 'Archived' && d.status !== 'Rejected'
+        ))).length;
         const limitInfoEl = document.getElementById("drawing-limit-info");
         const actionsContainerEl = document.getElementById("drawing-actions-container");
         const controlBarEl = document.getElementById("drawing-control-bar");
@@ -9041,7 +9061,7 @@ function renderDrawings() {
             }
         }
         const prioInfo = getPriorityInfo(d.priority);
-        const reqRaw = d.uploader || d.requester || '';
+        const reqRaw = d.requester || d.uploader || '';
         const reqUser = (state.users || []).find(u =>
             (u.username && u.username.toLowerCase() === reqRaw.toLowerCase()) ||
             (u.fullname && u.fullname.toLowerCase() === reqRaw.toLowerCase())
@@ -12528,21 +12548,34 @@ function updateGejoFormCategoryLimitNotice(cat) {
     }
 }
 
-// ponytail: helper to check Drawing limit of 2 active per user (excluding Completed/Cancelled/Archived and Rejected drawings)
+// ponytail: helper to check if a drawing still occupies user's quota (quota released if Completed/Cancelled/Archived/Rejected OR if requester has approved and signed)
+function isDrawingQuotaActiveForUser(d, currentUser) {
+    if (!d || !currentUser) return false;
+    const isOwner = d.requester === currentUser.fullname || d.requester === currentUser.username;
+    if (!isOwner) return false;
+    if (d.is_archived) return false;
+    const status = d.status || '';
+    if (status === 'Completed' || status === 'Cancelled' || status === 'Archived' || status === 'Rejected') return false;
+
+    // Release quota once requester has signed & approved the drawing
+    let approvalsObj = {};
+    try {
+        approvalsObj = (typeof d.approvals === 'string') ? JSON.parse(d.approvals || '{}') : (d.approvals || {});
+    } catch (e) {
+        approvalsObj = {};
+    }
+    const hasRequesterSig = !!(approvalsObj.requester && (approvalsObj.requester.signature || approvalsObj.requester.signer));
+    if (hasRequesterSig) return false;
+
+    return true;
+}
+
+// ponytail: helper to check Drawing limit of 2 active per user (excluding Completed/Cancelled/Archived and Rejected drawings or already signed by requester)
 function checkDrawingLimit() {
     if (!state.currentUser) return false;
     // ponytail: User role and non-ENG Supervisor/Manager have 2 active Drawing limit
     if (!isUserLimited(state.currentUser)) return false;
-    const myDrawings = (state.drawings || []).filter(d => {
-        const isOwner = d.uploader === state.currentUser.fullname || d.uploader === state.currentUser.username ||
-            d.requester === state.currentUser.fullname || d.requester === state.currentUser.username;
-        if (!isOwner) return false;
-        if (d.is_archived) return false;
-        const status = d.status || '';
-        // Exclude Completed/Cancelled/Archived (Done) and Rejected drawings (Schedule)
-        if (status === 'Completed' || status === 'Cancelled' || status === 'Archived' || status === 'Rejected') return false;
-        return true;
-    });
+    const myDrawings = (state.drawings || []).filter(d => isDrawingQuotaActiveForUser(d, state.currentUser));
     return myDrawings.length >= 2;
 }
 
@@ -13068,6 +13101,7 @@ async function uploadDrawing() {
     }
     const finalCustomId = customId || generateDrawingId();
     if (finalCustomId) {
+        fd.append("id", finalCustomId);
         fd.append("drawing_id", finalCustomId);
     }
     fd.append("title", title);
@@ -13355,9 +13389,22 @@ function openDrawingDetails(drawingId, fromNotification = false) {
     }
 
     document.getElementById("modal-drawing-title").textContent = drawing.title;
-    document.getElementById("modal-drawing-uploader").textContent = drawing.uploader
-        ? `${drawing.uploader} (${drawing.dept || '-'})`
-        : '-';
+    const reqEl = document.getElementById("modal-drawing-requester");
+    if (reqEl) {
+        reqEl.textContent = drawing.requester
+            ? `${drawing.requester} (${drawing.dept || '-'})`
+            : '-';
+    }
+    const upEl = document.getElementById("modal-drawing-uploader");
+    const upWrapper = document.getElementById("modal-drawing-uploader-wrapper");
+    if (upEl && upWrapper) {
+        if (drawing.uploader && drawing.uploader !== drawing.requester) {
+            upWrapper.style.display = "inline";
+            upEl.textContent = `${drawing.uploader}`;
+        } else {
+            upWrapper.style.display = "none";
+        }
+    }
     document.getElementById("modal-drawing-date").textContent = drawing.uploaded_at || '-';
     const targetDateEl = document.getElementById("modal-drawing-target-date");
     if (targetDateEl) {
@@ -13427,9 +13474,11 @@ function openDrawingDetails(drawingId, fromNotification = false) {
     const statusBadge = document.getElementById("modal-drawing-status-badge");
     if (statusBadge) {
         let displayStatus = drawing.status;
+        const deptCode = (drawing.dept || '').trim().toUpperCase();
         if (drawing.status === 'Pending Requester Approval') {
-            const deptCode = (drawing.dept || '').trim().toUpperCase();
             displayStatus = deptCode ? `Pending Staff (${deptCode}) Approval` : 'Pending Staff Approval';
+        } else if (drawing.status === 'Pending Dept Approval') {
+            displayStatus = deptCode ? `Pending SPV (${deptCode}) Approval` : 'Pending SPV Dept Approval';
         }
         statusBadge.textContent = displayStatus;
         statusBadge.className = "badge";
@@ -13857,24 +13906,30 @@ function openDrawingDetails(drawingId, fromNotification = false) {
             cardEl.style.display = isSipil ? 'flex' : 'none';
         }
 
-        // Dynamically update role title based on who signed (e.g. Admin Eng or Foreman Eng)
+        // Preserve standard approval hierarchy titles for Requester and Dept SPV
         if (titleEl) {
-            if (app && app.role) {
+            const deptCode = (drawing.dept || '').trim().toUpperCase();
+            const requesterTitle = deptCode ? `STAFF (${deptCode})` : 'STAFF (DEPT)';
+            const deptTitle = deptCode ? `SPV (${deptCode})` : 'SPV (DEPT)';
+            const defaultTitles = {
+                drafter: 'PEMBUAT DRAWING (DRAFTER/ENG)',
+                requester: requesterTitle,
+                dept: deptTitle,
+                foreman: 'FOREMAN ENG',
+                supervisor: 'SUPERVISOR ENG',
+                manager: 'MANAGER ENG',
+                factory_manager: 'FACTORY MANAGER'
+            };
+
+            if (r === 'requester') {
+                titleEl.textContent = requesterTitle;
+            } else if (r === 'dept') {
+                titleEl.textContent = deptTitle;
+            } else if (app && app.role) {
                 titleEl.textContent = app.role.toUpperCase();
             } else if (rejectApp && rejectApp.role) {
                 titleEl.textContent = rejectApp.role.toUpperCase();
             } else {
-                const deptCode = (drawing.dept || '').trim().toUpperCase();
-                const requesterTitle = deptCode ? `STAFF (${deptCode})` : 'STAFF (DEPT)';
-                const deptTitle = deptCode ? `SPV (${deptCode})` : 'SPV (DEPT)';
-                const defaultTitles = {
-                    requester: requesterTitle,
-                    dept: deptTitle,
-                    foreman: 'FOREMAN ENG',
-                    supervisor: 'SUPERVISOR ENG',
-                    manager: 'MANAGER ENG',
-                    factory_manager: 'FACTORY MANAGER'
-                };
                 titleEl.textContent = defaultTitles[r] || r.toUpperCase();
             }
         }
@@ -19477,12 +19532,33 @@ async function triggerCardDrawingCompleteUpload(drawingId) {
 
         const etiketSelect = document.getElementById("drawing-upload-complete-etiket-category");
         if (etiketSelect) {
-            if (currentDrawing && (currentDrawing.category === "Sipil" || currentDrawing.etiket_category === "Sipil")) {
+            const rawCat = ((currentDrawing && (currentDrawing.category || currentDrawing.etiket_category)) || '').toLowerCase();
+            const isSipilCat = rawCat.includes('sipil');
+            const isMekanikCat = rawCat.includes('mekanik') || rawCat.includes('part');
+            const isElektrikCat = rawCat.includes('elektrik') || rawCat.includes('electric');
+
+            if (isSipilCat) {
                 etiketSelect.value = "Sipil";
-            } else {
+                etiketSelect.disabled = true;
+                etiketSelect.title = "Kategori tiket Sipil otomatis menggunakan Etiket Sipil";
+            } else if (isMekanikCat) {
                 etiketSelect.value = "Mekanik / Part";
+                etiketSelect.disabled = true;
+                etiketSelect.title = "Kategori tiket Mekanik otomatis menggunakan Etiket Mekanik / Part";
+            } else if (isElektrikCat) {
+                etiketSelect.value = (currentDrawing && currentDrawing.etiket_category === "Sipil") ? "Sipil" : "Mekanik / Part";
+                etiketSelect.disabled = false;
+                etiketSelect.title = "Kategori tiket Elektrik dapat memilih Etiket Mekanik / Part atau Sipil";
+            } else {
+                if (currentDrawing && (currentDrawing.category === "Sipil" || currentDrawing.etiket_category === "Sipil")) {
+                    etiketSelect.value = "Sipil";
+                } else {
+                    etiketSelect.value = "Mekanik / Part";
+                }
+                etiketSelect.disabled = false;
             }
             etiketSelect.onchange = updateEtiketModalPreviews;
+            updateEtiketModalPreviews();
         }
 
         // Helper to update active visual highlight on Landscape vs Portrait cards
@@ -19657,7 +19733,7 @@ async function triggerCardDrawingCompleteUpload(drawingId) {
 
             try {
                 const res = await fetch(`/api/drawings/${drawingId}`, {
-                    method: "PUT",
+                    method: "POST",
                     body: fd
                 });
                 if (!res.ok) {
@@ -19721,7 +19797,7 @@ async function triggerCardDrawingUpload(drawingId) {
 
         try {
             const res = await fetch(`/api/drawings/${drawingId}`, {
-                method: "PUT",
+                method: "POST",
                 body: fd
             });
             if (!res.ok) throw new Error("Gagal mengunggah file drawing");
@@ -23587,7 +23663,10 @@ async function saveUserData() {
     const usrInput = document.getElementById("usr-username");
     const username = usrInput ? usrInput.value.trim().toLowerCase() : "";
     const originalUsername = usrInput ? (usrInput.getAttribute("data-original-username") || username) : username;
-    const password = document.getElementById("usr-password").value;
+    let password = document.getElementById("usr-password").value;
+    if (mode === "add" && (!password || password.trim() === "")) {
+        password = username;
+    }
     const fullname = document.getElementById("usr-fullname").value.trim();
     const section = (document.getElementById("usr-section")?.value || "").trim();
     const dept = document.getElementById("usr-dept").value;

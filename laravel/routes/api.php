@@ -26,7 +26,7 @@ Route::delete('/general-ejos/{id}', [EjoController::class, 'deleteGeneralEjo']);
 // Drawings
 Route::get('/drawings', [EjoController::class, 'getDrawings']);
 Route::post('/drawings', [EjoController::class, 'uploadDrawing']);
-Route::put('/drawings/{id}', [EjoController::class, 'updateDrawing']);
+Route::match(['put', 'post'], '/drawings/{id}', [EjoController::class, 'updateDrawing']);
 Route::delete('/drawings/{id}', [EjoController::class, 'deleteDrawing']);
 
 // Projects
